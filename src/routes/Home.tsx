@@ -12,7 +12,8 @@ const menuItems = [
   { label: "Ordini", path: "/ordini", icon: <ClipboardList size={24} /> },
   { label: "Prodotti", path: "/prodotti", icon: <Package size={24} /> },
   { label: "Movimenti", path: "/movimenti", icon: <ArrowLeftRight size={24} /> },
-  { label: "Import/Export", path: "/import", icon: <ArrowDown size={24} /> },
+  { label: "Imp/Exp", path: "/import", icon: <ArrowDown size={24} /> },
+  { label: "Sync", path: "/sync", icon: <Package size={24} /> }
 ];
 
 export default function HomePage() {
@@ -33,3 +34,4 @@ export default function HomePage() {
     </div>
   );
 }
+

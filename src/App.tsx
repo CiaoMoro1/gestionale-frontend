@@ -1,9 +1,11 @@
+import type { Session } from "@supabase/supabase-js";
 import {
   BrowserRouter as Router,
   Routes,
   Route,
   Link,
   useLocation,
+  Navigate,
 } from "react-router-dom";
 import { useState, useEffect, lazy, Suspense } from "react";
 import {
@@ -13,19 +15,35 @@ import {
   ArrowLeftRight,
   ArrowDown,
   Menu,
+  LogOut,
 } from "lucide-react";
-import { cloneElement } from "react";
+import { supabase } from "./lib/supabase";
 
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
+const SyncPage = lazy(() => import("./routes/Sync"));
+const LoginPage = lazy(() => import("./routes/LoginPage"));
 
 function AppContent() {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [session, setSession] = useState<Session | null>(null);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) =>
+      setSession(session)
+    );
+    return () => listener?.subscription?.unsubscribe();
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  if (!session && location.pathname !== "/login") {
+    return <Navigate to="/login" replace />;
+  }
 
   const navItems = [
     { label: "Home", icon: <Home size={24} />, path: "/" },
@@ -70,9 +88,14 @@ function AppContent() {
     );
   };
 
+  const logout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = "/login";
+  };
+
   return (
     <div className="h-screen flex flex-col sm:flex-row bg-gray-100 relative">
-      {/* Header mobile con hamburger */}
+      {/* Header mobile */}
       <div className="sm:hidden p-4 flex items-center justify-between">
         <button
           onClick={() => setIsMenuOpen(true)}
@@ -90,10 +113,16 @@ function AppContent() {
           {navItems.map((item) => (
             <NavLink key={item.label} {...item} layout="horizontal" />
           ))}
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 text-red-500 hover:underline mt-4"
+          >
+            <LogOut size={18} /> Logout
+          </button>
         </nav>
       </aside>
 
-      {/* Overlay e menù mobile */}
+      {/* Overlay e menu mobile */}
       {isMenuOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-30 z-20 sm:hidden"
@@ -123,6 +152,12 @@ function AppContent() {
               onClick={() => setIsMenuOpen(false)}
             />
           ))}
+          <button
+            onClick={logout}
+            className="flex items-center gap-2 text-red-500 hover:underline mt-4"
+          >
+            <LogOut size={18} /> Logout
+          </button>
         </nav>
       </aside>
 
@@ -131,43 +166,13 @@ function AppContent() {
         <section className="flex-grow w-full mx-auto sm:max-w-5xl sm:bg-white sm:rounded-xl sm:shadow-md sm:p-6 p-4">
           <Suspense fallback={<div>Caricamento...</div>}>
             <Routes>
+              <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/prodotti" element={<Prodotti />} />
+              <Route path="/sync" element={<SyncPage />} />
             </Routes>
           </Suspense>
         </section>
-        {/* Navigazione mobile */}
-        <nav className="bg-white border-t shadow-inner fixed bottom-0 left-0 right-0 sm:hidden z-10">
-          <ul className="flex justify-around px-2 py-3">
-            {navItems.map(({ label, icon, path }) => {
-              const isActive = location.pathname === path;
-
-              return (
-                <li key={label}>
-                  <Link
-                    to={path}
-                    aria-label={label}
-                    className={`flex flex-col items-center text-xs font-medium ${
-                      isActive ? "text-blue-500" : "text-blue-500"
-                    } focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300`}
-                  >
-                    <div
-                      className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-200 ${
-                        isActive ? "bg-blue-500" : "bg-white"
-                      }`}
-                    >
-                      {cloneElement(icon, {
-                        className: isActive ? "text-white" : "text-blue-500",
-                      })}
-                    </div>
-                    <span className="mt-1">{label}</span>
-                  </Link>
-                </li>
-              );
-            })}
-          </ul>
-        </nav>
-
       </main>
     </div>
   );
