@@ -14,6 +14,7 @@ import {
   ArrowDown,
   Menu,
 } from "lucide-react";
+import { cloneElement } from "react";
 
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
@@ -79,12 +80,12 @@ function AppContent() {
         >
           <Menu size={28} />
         </button>
-        <h2 className="text-xl font-bold text-blue-500">PETTI</h2>
+        <h2 className="text-xl font-bold text-blue-500">Gestionale PETTI</h2>
       </div>
 
       {/* Sidebar desktop */}
       <aside className="hidden sm:flex sm:flex-col sm:w-64 sm:bg-white sm:shadow-md sm:py-6">
-        <h2 className="text-xl font-bold text-blue-500 text-center mb-6">PETTI</h2>
+        <h2 className="text-xl font-bold text-blue-500 text-center mb-6">Gestionale PETTI</h2>
         <nav className="flex flex-col items-center space-y-4">
           {navItems.map((item) => (
             <NavLink key={item.label} {...item} layout="horizontal" />
@@ -135,17 +136,38 @@ function AppContent() {
             </Routes>
           </Suspense>
         </section>
-
-        {/* Bottom nav mobile */}
+        {/* Navigazione mobile */}
         <nav className="bg-white border-t shadow-inner fixed bottom-0 left-0 right-0 sm:hidden z-10">
           <ul className="flex justify-around px-2 py-3">
-            {navItems.map((item) => (
-              <li key={item.label}>
-                <NavLink {...item} layout="vertical" />
-              </li>
-            ))}
+            {navItems.map(({ label, icon, path }) => {
+              const isActive = location.pathname === path;
+
+              return (
+                <li key={label}>
+                  <Link
+                    to={path}
+                    aria-label={label}
+                    className={`flex flex-col items-center text-xs font-medium ${
+                      isActive ? "text-blue-500" : "text-blue-500"
+                    } focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300`}
+                  >
+                    <div
+                      className={`w-10 h-10 flex items-center justify-center rounded-full transition-colors duration-200 ${
+                        isActive ? "bg-blue-500" : "bg-white"
+                      }`}
+                    >
+                      {cloneElement(icon, {
+                        className: isActive ? "text-white" : "text-blue-500",
+                      })}
+                    </div>
+                    <span className="mt-1">{label}</span>
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
+
       </main>
     </div>
   );
