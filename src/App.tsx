@@ -47,7 +47,7 @@ function AppContent() {
   }, [location.pathname]);
 
   if (session === undefined) {
-    return <div>Caricamento sessione...</div>; // oppure uno spinner
+    return <div className="h-screen w-screen bg-white" />; // placeholder pulito
   }
   
   if (!session && location.pathname !== "/login") {
