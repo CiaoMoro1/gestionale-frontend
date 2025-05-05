@@ -8,6 +8,8 @@ export default function SyncButton() {
   >("idle");
   const [message, setMessage] = useState<string | null>(null);
 
+  const api = import.meta.env.VITE_API_URL;
+
   const showToast = (msg: string, duration = 4000) => {
     setMessage(msg);
     setTimeout(() => setMessage(null), duration);
@@ -29,7 +31,7 @@ export default function SyncButton() {
 
     try {
       // 1. Avvia bulk
-      const launchRes = await fetch("http://localhost:5000/shopify/bulk-launch", {
+      const launchRes = await fetch(`${api}/shopify/bulk-launch`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
@@ -53,7 +55,7 @@ export default function SyncButton() {
 
       for (let i = 0; i < 30; i++) {
         await new Promise((r) => setTimeout(r, 15000));
-        const statusRes = await fetch("http://localhost:5000/shopify/bulk-status", {
+        const statusRes = await fetch(`${api}/shopify/bulk-status`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         const statusData = await statusRes.json();
@@ -73,7 +75,7 @@ export default function SyncButton() {
       // 3. Importa dati
       setStatus("importing");
       showToast("📥 Importazione dati in corso...");
-      const importRes = await fetch("http://localhost:5000/shopify/bulk-fetch", {
+      const importRes = await fetch(`${api}/shopify/bulk-fetch`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
@@ -135,7 +137,9 @@ export default function SyncButton() {
       )}
 
       {status === "error" && (
-        <p className="text-red-600 text-sm text-center">❌ Errore durante la sincronizzazione.</p>
+        <p className="text-red-600 text-sm text-center">
+          ❌ Errore durante la sincronizzazione.
+        </p>
       )}
     </div>
   );
