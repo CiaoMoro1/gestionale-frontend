@@ -214,8 +214,8 @@ function AppContent() {
       {/* Main content */}
       <main className="flex-1 sm:ml-40 p-4 sm:p flex flex-col justify-between sm:items-center">
       <section className="safe-bottom flex-grow w-full mx-auto sm:max-w-7xl sm:bg-white sm:rounded-xl sm:shadow-md sm:p-6 p-4">
-          <Suspense fallback={<div>Caricamento...</div>}>
-            <Routes>
+          <Suspense fallback={<></>}>
+              <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/prodotti" element={<Prodotti />} />
