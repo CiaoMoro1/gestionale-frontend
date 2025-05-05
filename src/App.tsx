@@ -32,7 +32,7 @@ const ProductDetail = lazy(() => import("./routes/ProductDetail"));
 function AppContent() {
   const location = useLocation();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSession] = useState<Session | null | undefined>(undefined);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -46,6 +46,10 @@ function AppContent() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  if (session === undefined) {
+    return <div>Caricamento sessione...</div>; // oppure uno spinner
+  }
+  
   if (!session && location.pathname !== "/login") {
     return <Navigate to="/login" replace />;
   }
