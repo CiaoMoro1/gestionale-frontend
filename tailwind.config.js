@@ -6,8 +6,11 @@ export default {
   ],
   theme: {
     extend: {
-      // puoi personalizzare qui colori, font, ecc.
+      fontFamily: {
+        sans: ['Inter', 'sans-serif'],
     },
   },
   plugins: [],
+}
+
 };

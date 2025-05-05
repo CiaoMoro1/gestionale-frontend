@@ -21,10 +21,10 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="h-screen flex flex-col justify-center items-center bg-gray-100 px-4">
+    <div className="h-full flex flex-col justify-up items-center bg-gray-100 px-4">
       <form
         onSubmit={handleLogin}
-        className="bg-white shadow-md rounded-xl p-6 w-full max-w-sm"
+        className="bg-white mt-[6rem] shadow-md rounded-xl p-6 w-full max-w-sm"
       >
         <h2 className="text-xl font-bold mb-4 text-center text-blue-600">Accedi</h2>
 

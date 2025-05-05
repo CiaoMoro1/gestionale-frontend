@@ -18,11 +18,16 @@ import {
   LogOut,
 } from "lucide-react";
 import { supabase } from "./lib/supabase";
+import { motion, AnimatePresence } from "framer-motion";
+import Logo from "./assets/Logo_Gestionale_PETTI.svg";
+
 
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
 const SyncPage = lazy(() => import("./routes/Sync"));
 const LoginPage = lazy(() => import("./routes/LoginPage"));
+const ProductDetail = lazy(() => import("./routes/ProductDetail"));
+
 
 function AppContent() {
   const location = useLocation();
@@ -68,22 +73,52 @@ function AppContent() {
   }) => {
     const isActive = location.pathname === path;
 
-    const baseClass =
-      layout === "vertical"
-        ? "flex flex-col items-center gap-1 text-sm"
-        : "flex items-center gap-2 px-2 py-2 text-sm";
+    if (layout === "vertical") {
+      return (
+        <Link
+          to={path}
+          onClick={onClick}
+          className="flex flex-col items-center justify-center relative text-xs text-blue-500"
+          aria-label={label}
+        >
+          <div className="relative h-10 w-10 flex items-center justify-center">
+            <AnimatePresence>
+              {isActive && (
+                <motion.div
+                  layoutId="active-circle"
+                  initial={{ scale: 0.5, opacity: 0 }}
+                  animate={{
+                    scale: [0.5, 1.2, 1],
+                    opacity: 1,
+                    rotate: [0, 360],
+                    transition: {
+                      duration: 0.5,
+                      ease: "easeInOut",
+                    },
+                  }}
+                  exit={{ opacity: 0, scale: 0.5 }}
+                  className="absolute w-10 h-10 rounded-full bg-blue-100 z-0"
+                />
+              )}
+            </AnimatePresence>
+            <div className="relative z-10">{icon}</div>
+          </div>
+          <span className="mt-1 text-sm font-bold">{label}</span>
+        </Link>
+      );
+    }
 
     return (
       <Link
         to={path}
         onClick={onClick}
-        className={`${baseClass} rounded-md ${
-          isActive ? "text-blue-600 font-semibold" : "text-gray-700"
-        } hover:text-blue-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300`}
+        className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md ${
+          isActive ? "text-blue-600 font-semibold" : "text-blue-500"
+        } focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300`}
         aria-label={label}
       >
         {icon}
-        <span className={layout === "vertical" ? "text-xs mt-1" : ""}>{label}</span>
+        <span>{label}</span>
       </Link>
     );
   };
@@ -95,34 +130,45 @@ function AppContent() {
 
   return (
     <div className="h-screen flex flex-col sm:flex-row bg-gray-100 relative">
-      {/* Header mobile */}
-      <div className="sm:hidden p-4 flex items-center justify-between">
-        <button
-          onClick={() => setIsMenuOpen(true)}
-          className="text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
-        >
-          <Menu size={28} />
-        </button>
-        <h2 className="text-xl font-bold text-blue-500">Gestionale PETTI</h2>
-      </div>
+          {/* Header (mobile) */}
+          <div className="sm:hidden fixed top-0 left-0 right-0 bg-white shadow z-30 flex items-center justify-between px-4 py-3">
+            <button
+              onClick={() => setIsMenuOpen(true)}
+              className="text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+            >
+              <Menu size={28} />
+            </button>
+            <div className="flex-1 flex justify-center">
+              <img src={Logo} alt="Logo" className="h-16" />
+            </div>
+            <div className="w-7" /> {/* placeholder per simmetria */}
+          </div>
 
-      {/* Sidebar desktop */}
-      <aside className="hidden sm:flex sm:flex-col sm:w-64 sm:bg-white sm:shadow-md sm:py-6">
-        <h2 className="text-xl font-bold text-blue-500 text-center mb-6">Gestionale PETTI</h2>
-        <nav className="flex flex-col items-center space-y-4">
+
+      {/* Sidebar (desktop) */}
+      <aside className="hidden sm:fixed sm:inset-y-0 sm:left-0 sm:w-48 sm:flex sm:flex-col sm:bg-white sm:shadow-md z-40">
+        <div className="flex justify-center items-center h-20 border-b">
+          <img src={Logo} alt="Logo" className="h-10" />
+        </div>
+
+        <nav className="flex-1 flex flex-col items-center justify-start space-y-4 pt-6">
           {navItems.map((item) => (
             <NavLink key={item.label} {...item} layout="horizontal" />
           ))}
+        </nav>
+
+        <div className="p-4 border-t">
           <button
             onClick={logout}
-            className="flex items-center gap-2 text-red-500 hover:underline mt-4"
+            className="flex items-center gap-2 text-red-500 hover:underline"
           >
             <LogOut size={18} /> Logout
           </button>
-        </nav>
+        </div>
       </aside>
 
-      {/* Overlay e menu mobile */}
+
+      {/* Drawer menu (mobile) */}
       {isMenuOpen && (
         <div
           className="fixed inset-0 bg-black bg-opacity-30 z-20 sm:hidden"
@@ -161,19 +207,27 @@ function AppContent() {
         </nav>
       </aside>
 
-      {/* Contenuto principale */}
-      <main className="flex-1 p-4 sm:p-8 flex flex-col justify-between sm:items-center">
-        <section className="flex-grow w-full mx-auto sm:max-w-5xl sm:bg-white sm:rounded-xl sm:shadow-md sm:p-6 p-4">
+      {/* Main content */}
+      <main className="flex-1 sm:ml-40 p-4 sm:p flex flex-col justify-between sm:items-center">
+      <section className="safe-bottom flex-grow w-full mx-auto sm:max-w-7xl sm:bg-white sm:rounded-xl sm:shadow-md sm:p-6 p-4">
           <Suspense fallback={<div>Caricamento...</div>}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/prodotti" element={<Prodotti />} />
               <Route path="/sync" element={<SyncPage />} />
+              <Route path="/prodotti/:id" element={<ProductDetail />} />
             </Routes>
           </Suspense>
         </section>
       </main>
+
+      {/* Bottom nav (mobile only) */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t shadow-inner flex justify-around items-center sm:hidden py-2 z-50">
+        {navItems.map((item) => (
+          <NavLink key={item.label} {...item} layout="vertical" />
+        ))}
+      </nav>
     </div>
   );
 }

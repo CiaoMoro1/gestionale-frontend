@@ -3,87 +3,139 @@ import { supabase } from "../lib/supabase";
 
 export default function SyncButton() {
   const [loading, setLoading] = useState(false);
-  const [status, setStatus] = useState<"idle" | "success" | "error">("idle");
-  const [skipped, setSkipped] = useState<string[]>([]);
+  const [status, setStatus] = useState<
+    "idle" | "launching" | "waiting" | "importing" | "success" | "error"
+  >("idle");
+  const [message, setMessage] = useState<string | null>(null);
 
-  // Sostituisci con l’URL ottenuto da /shopify/bulk-status
-  const bulkUrl = "https://storage.googleapis.com/shopify-tiers-assets-prod-us-east1/bulk-operation-outputs/1fv6cidd787hsoc05beegvfuu4q3-final?GoogleAccessId=assets-us-prod%40shopify-tiers.iam.gserviceaccount.com&Expires=1746811517&Signature=G2Xkc6hNPH7GhCcgqJdNchNCpuklSc8TXppxCnVcBsnofiXbNDkMjGLxelTg%2Fa%2FgV77MEzA1c1vJ581V9fhgt%2B%2BX3XyaA%2F%2BnoG98oyVH485z8A5pTb0pFq76bDqne3I4X%2FQrlzKaECErDO5eqGeQ7tMNrsWo5B7TLphoS4knB3V2JCLtLdWxgm9COkCV%2B7CiAnB4euceW5lFW3xVTphSujyL3pmJKOWdoGQBoedFyWerriW3cQSjqh4ZRX7agL1J8qOeOU3jO8zhj1a2XFgBrmZREqsmJrvk1LJL5KVuA9WZBb4LOthe%2BRrAnqKD0xoL7jOETthJa9K9r%2FfAmx1JIw%3D%3D&response-content-disposition=attachment%3B+filename%3D%22bulk-6437243191633.jsonl%22%3B+filename%2A%3DUTF-8%27%27bulk-6437243191633.jsonl&response-content-type=application%2Fjsonl";
+  const showToast = (msg: string, duration = 4000) => {
+    setMessage(msg);
+    setTimeout(() => setMessage(null), duration);
+  };
 
   const handleSync = async () => {
     setLoading(true);
-    setStatus("idle");
-    setSkipped([]);
+    setStatus("launching");
 
     const session = await supabase.auth.getSession();
     const token = session.data.session?.access_token;
 
-    console.log("Token:", token);
-
     if (!token) {
-      alert("⚠️ Devi essere autenticato per sincronizzare.");
+      showToast("⚠️ Devi essere autenticato per sincronizzare.");
       setStatus("error");
       setLoading(false);
       return;
     }
 
     try {
-      const res = await fetch("http://localhost:5000/shopify/bulk-fetch", {
+      // 1. Avvia bulk
+      const launchRes = await fetch("http://localhost:5000/shopify/bulk-launch", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const launchData = await launchRes.json();
+
+      const userErrors = launchData.data?.bulkOperationRunQuery?.userErrors;
+      if (userErrors?.length > 0) {
+        throw new Error(`Shopify: ${userErrors[0].message}`);
+      }
+
+      const bulkId = launchData.data?.bulkOperationRunQuery?.bulkOperation?.id;
+      if (!launchRes.ok || !bulkId) {
+        throw new Error("Errore nell'avvio della bulk operation");
+      }
+
+      // 2. Poll stato fino a COMPLETED
+      setStatus("waiting");
+      showToast("⌛ Attendere... preparazione dei dati Shopify");
+      let completed = false;
+      let fileUrl = "";
+
+      for (let i = 0; i < 30; i++) {
+        await new Promise((r) => setTimeout(r, 15000));
+        const statusRes = await fetch("http://localhost:5000/shopify/bulk-status", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const statusData = await statusRes.json();
+        const op = statusData.data?.currentBulkOperation;
+
+        if (op?.status === "COMPLETED" && op?.url) {
+          fileUrl = op.url;
+          completed = true;
+          break;
+        }
+      }
+
+      if (!completed || !fileUrl || !fileUrl.startsWith("https://")) {
+        throw new Error("Timeout o URL file bulk non valido");
+      }
+
+      // 3. Importa dati
+      setStatus("importing");
+      showToast("📥 Importazione dati in corso...");
+      const importRes = await fetch("http://localhost:5000/shopify/bulk-fetch", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${token}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ url: bulkUrl }),
+        body: JSON.stringify({ url: fileUrl }),
       });
 
-      const data = await res.json();
-      console.log("🧾 Risposta:", data);
-
-      if (!res.ok || data.status !== "success") {
-        throw new Error(data.message || "Errore durante il fetch");
+      const importData = await importRes.json();
+      if (!importRes.ok || importData.status !== "success") {
+        throw new Error(importData.message || "Errore durante l'importazione");
       }
 
-      setSkipped(data.skipped_duplicates || []);
       setStatus("success");
-    } catch (err) {
-      console.error("❌ Errore:", err);
+      showToast(importData.message || "✅ Importazione completata!");
+    } catch (err: any) {
+      console.error("❌ Errore sync bulk:", err);
+      showToast(err.message || "Errore sconosciuto");
       setStatus("error");
     } finally {
       setLoading(false);
     }
   };
 
+  const steps = [
+    { label: "1️⃣ Bulk avviata", key: "launching" },
+    { label: "2️⃣ In attesa completamento", key: "waiting" },
+    { label: "3️⃣ Importazione dati", key: "importing" },
+    { label: "✅ Completato", key: "success" },
+  ];
+
   return (
-    <div className="flex flex-col items-center gap-4 w-full max-w-xl mx-auto text-center">
+    <div className="flex flex-col items-center gap-4">
       <button
         onClick={handleSync}
         disabled={loading}
-        className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition disabled:opacity-50"
+        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition disabled:opacity-50"
       >
-        {loading ? "Sincronizzo..." : "Sincronizza Varianti da Shopify"}
+        {loading ? "Sincronizzazione in corso..." : "Sincronizza tutto da Shopify (Bulk)"}
       </button>
 
-      {status === "success" && (
-        <div className="text-green-600">
-          ✅ Sincronizzazione completata!
-          {skipped.length > 0 && (
-            <div className="mt-2 text-sm text-yellow-600">
-              ⛔ Varianti duplicate ignorate: <strong>{skipped.length}</strong>
-              <details className="mt-1">
-                <summary className="cursor-pointer underline">Mostra SKU duplicati</summary>
-                <ul className="mt-1 max-h-40 overflow-y-auto text-xs">
-                  {skipped.map((sku, i) => (
-                    <li key={i}>{sku}</li>
-                  ))}
-                </ul>
-              </details>
-            </div>
-          )}
+      <div className="flex flex-col gap-1 text-sm text-center">
+        {steps.map((step) => (
+          <div
+            key={step.key}
+            className={`transition ${
+              status === step.key ? "text-blue-700 font-semibold" : "text-gray-500"
+            }`}
+          >
+            {step.label}
+          </div>
+        ))}
+      </div>
+
+      {message && (
+        <div className="text-sm text-center mt-2 px-4 py-2 bg-gray-100 border rounded text-blue-800 shadow">
+          {message}
         </div>
       )}
 
       {status === "error" && (
-        <p className="text-red-600">❌ Errore durante la sincronizzazione</p>
+        <p className="text-red-600 text-sm text-center">❌ Errore durante la sincronizzazione.</p>
       )}
     </div>
   );

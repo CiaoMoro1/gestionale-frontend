@@ -10,3 +10,23 @@
   outline: 2px solid #3b82f6;
   outline-offset: 2px;
 }
+
+body {
+  @apply font-sans text-[20px] sm:text-base text-gray-800 leading-relaxed;
+
+}
+
+
+.neumorphic {
+  box-shadow:
+    8px 8px 16px #1a1a27,
+    -8px -8px 16px #2e2e43;
+}
+
+.safe-bottom {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+  padding-top: calc(6rem + env(safe-area-inset-bottom));
+}
+
+
+
