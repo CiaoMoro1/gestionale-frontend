@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
 import { useState, useMemo, useEffect } from "react";
@@ -10,30 +10,74 @@ interface Product {
   ean: string | null;
   product_title: string | null;
   price: number | null;
-  quantity: number | null;
+  inventario: number | null;
 }
 
 export default function Prodotti() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [visibleCount, setVisibleCount] = useState(10);
+  const queryClient = useQueryClient();
 
+  // 🔄 debounce della ricerca
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
+  // 📡 Realtime su inventario
+  useEffect(() => {
+    const channel = supabase
+      .channel("realtime:products+inventory")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "products" },
+        (payload) => {
+          console.log("🟦 Realtime update su products:", payload);
+          queryClient.invalidateQueries({ queryKey: ["products"] });
+        }
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "inventory" },
+        (payload) => {
+          console.log("🟩 Realtime update su inventory:", payload);
+          queryClient.invalidateQueries({ queryKey: ["products"] });
+        }
+      )
+      .subscribe();
+  
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [queryClient]);
+  
+
+  // 📦 Fetch prodotti + inventario
   const { data, isLoading, error } = useQuery<Product[]>({
     queryKey: ["products"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("products")
-        .select("id, sku, ean, product_title, price, quantity");
+        .select(`
+          id,
+          sku,
+          ean,
+          product_title,
+          price,
+          inventory (inventario)
+        `);
+
       if (error) throw error;
-      return data ?? [];
+
+      return data?.map((p: any) => ({
+        ...p,
+        inventario: p.inventory?.inventario ?? 0,
+      })) ?? [];
     },
   });
 
+  // 🔍 Filtro ricerca
   const filtered = useMemo(() => {
     const normalize = (str: string) =>
       str.toLowerCase().replace(/[^a-z0-9]/gi, " ").split(/\s+/).join(" ");
@@ -49,14 +93,19 @@ export default function Prodotti() {
       );
   }, [data, debouncedSearch]);
 
-  const visibleItems = debouncedSearch ? filtered : filtered.slice(0, visibleCount);
+  const visibleItems = debouncedSearch
+    ? filtered
+    : filtered.slice(0, visibleCount);
 
-  if (isLoading) return <div className="p-4 text-blue-500">Caricamento prodotti...</div>;
-  if (error) return <div className="p-4 text-red-500">Errore: {error.message}</div>;
+  if (isLoading)
+    return <div className="p-4 text-blue-500">Caricamento prodotti...</div>;
+  if (error)
+    return (
+      <div className="p-4 text-red-500">Errore: {(error as Error).message}</div>
+    );
 
   return (
     <div className="relative">
-      {/* Ricerca fissa in alto, sotto header, mobile & desktop compatibile */}
       <div className="fixed top-16 sm:top-0 sm:ml-48 left-0 right-0 z-40 bg-white px-4 py-2 border-b shadow-sm">
         <div className="flex items-center gap-3 bg-white border border-blue-200 rounded-lg px-3 py-2 shadow-sm">
           <Search size={28} className="text-blue-400" />
@@ -72,7 +121,6 @@ export default function Prodotti() {
         </div>
       </div>
 
-      {/* Contenuto con spazio sotto la barra */}
       <div className="pt-[40px] space-y-3">
         {filtered.length === 0 && (
           <p className="text-gray-500 text-center italic">
@@ -99,8 +147,8 @@ export default function Prodotti() {
                 <div className="text-sm text-gray-700">
                   Prezzo: €{Number(product.price ?? 0).toFixed(2)}
                 </div>
-                <div className="text-sm text-gray-700">
-                  Quantità: {product.quantity ?? 0}
+                <div className="text-sm text-gray-700 font-bold">
+                  Inventario: {product.inventario}
                 </div>
               </Link>
             </li>

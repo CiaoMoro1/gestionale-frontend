@@ -8,7 +8,8 @@ export default function SyncButton() {
   >("idle");
   const [message, setMessage] = useState<string | null>(null);
 
-  const api = import.meta.env.VITE_API_URL;
+  // ✅ Supporta fallback a localhost in sviluppo
+  const api = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
   const showToast = (msg: string, duration = 4000) => {
     setMessage(msg);
