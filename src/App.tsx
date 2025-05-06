@@ -27,7 +27,8 @@ const Prodotti = lazy(() => import("./routes/Prodotti"));
 const SyncPage = lazy(() => import("./routes/Sync"));
 const LoginPage = lazy(() => import("./routes/LoginPage"));
 const ProductDetail = lazy(() => import("./routes/ProductDetail"));
-
+const Ordini = lazy(() => import("./routes/Ordini"));
+const OrdineDetail = lazy(() => import("./routes/OrdineDetail"));
 
 function AppContent() {
   const location = useLocation();
@@ -219,6 +220,8 @@ function AppContent() {
               <Route path="/login" element={<LoginPage />} />
               <Route path="/" element={<HomePage />} />
               <Route path="/prodotti" element={<Prodotti />} />
+              <Route path="/ordini" element={<Ordini />} />
+              <Route path="/ordini/:id" element={<OrdineDetail />} />
               <Route path="/sync" element={<SyncPage />} />
               <Route path="/prodotti/:id" element={<ProductDetail />} />
             </Routes>
