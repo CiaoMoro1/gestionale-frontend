@@ -42,8 +42,7 @@ export default function Prodotti() {
         { event: "*", schema: "public", table: "inventory" },
         (payload) => {
           console.log("🟩 Realtime update su inventory:", payload);
-          queryClient.invalidateQueries({ queryKey: ["inventory"] });
-        }
+          queryClient.invalidateQueries({ queryKey: ["products"] });        }
       )
       .subscribe();
   
@@ -65,14 +64,14 @@ export default function Prodotti() {
           ean,
           product_title,
           price,
-          inventory (inventario)
+          inventory_product_id_fkey (inventario)
         `);
 
       if (error) throw error;
 
       return data?.map((p: any) => ({
         ...p,
-        inventario: p.inventory?.inventario ?? 0,
+        inventario: p.inventory_product_id_fkey?.inventario ?? 0,
       })) ?? [];
     },
   });
