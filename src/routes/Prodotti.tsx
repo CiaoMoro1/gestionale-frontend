@@ -42,7 +42,7 @@ export default function Prodotti() {
         { event: "*", schema: "public", table: "inventory" },
         (payload) => {
           console.log("🟩 Realtime update su inventory:", payload);
-          queryClient.invalidateQueries({ queryKey: ["products"] });
+          queryClient.invalidateQueries({ queryKey: ["inventory"] });
         }
       )
       .subscribe();
