@@ -30,33 +30,41 @@ export default function OrdineDetail() {
   const { data, isLoading, error } = useQuery<{ ordine: Ordine; items: OrderItem[] }>({
     queryKey: ["ordine", id],
     queryFn: async (): Promise<{ ordine: Ordine; items: OrderItem[] }> => {
-        const { data: ordine, error: err1 } = await supabase
-          .from("orders")
-          .select("*")
-          .eq("id", id)
-          .single();
-        if (err1) throw err1;
-      
-        const { data: rawItems, error: err2 } = await supabase
-          .from("order_items")
-          .select("sku, quantity, shopify_variant_id, product_id, products(product_title, variant_title)")
-          .eq("order_id", id);
-        if (err2) throw err2;
-      
-        const items: OrderItem[] = (rawItems ?? []).map((item: any) => ({
-          ...item,
-          products: Array.isArray(item.products) ? item.products[0] : item.products,
-        }));
-      
-        return { ordine, items };
+      if (!id) throw new Error("ID ordine non valido");
+
+      const { data: ordine, error: err1 } = await supabase
+        .from("orders")
+        .select("*")
+        .eq("id", id)
+        .single();
+      if (err1) {
+        console.error("Errore fetch ordine:", err1);
+        throw err1;
       }
-      
+
+      const { data: rawItems, error: err2 } = await supabase
+        .from("order_items")
+        .select("sku, quantity, shopify_variant_id, product_id, products:product_id(product_title, variant_title)")
+        .eq("order_id", id);
+      if (err2) {
+        console.error("Errore fetch articoli ordine:", err2);
+        throw err2;
+      }
+
+      const items: OrderItem[] = (rawItems ?? []).map((item: any) => ({
+        ...item,
+        products: item.products,
+      }));
+
+      return { ordine, items };
+    }
   });
 
   if (isLoading) return <div className="p-6 text-blue-500 text-center">Caricamento...</div>;
   if (error) return <div className="p-6 text-red-500">Errore: {error.message}</div>;
 
   const { ordine, items } = data!;
+  const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
 
   return (
     <div className="p-4 space-y-6 rounded-3xl border text-white bg-gradient-to-b from-blue-900 to-blue-300 min-h-screen">
@@ -72,17 +80,16 @@ export default function OrdineDetail() {
       </div>
 
       <div>
-        <h2 className="text-xl font-semibold text-white/90 mt-6 mb-2">Articoli ({items.length})</h2>
+        <h2 className="text-xl font-semibold text-white/90 mt-6 mb-2">
+          Articoli ({items.length}) — Totale pezzi: {totalQty}
+        </h2>
         <div className="grid grid-cols-1 gap-2">
           {items.map((item: OrderItem, i: number) => (
-            <div key={i} className="p-4 rounded-xl bg-white/50 border text-black backdrop-blur">
-              <div className="text-sm font-semibold">
-                {item.products?.product_title || "Prodotto sconosciuto"}
-              </div>
-              <div className="text-xl text-gray-700">
-                {item.products?.variant_title || item.sku || "—"}
-              </div>
-              <div className="text-s">Quantità: {item.quantity}</div>
+            <div key={i} className="p-4 rounded-xl bg-white/50 border text-black backdrop-blur space-y-1">
+              <div><strong>SKU:</strong> {item.sku || "—"}</div>
+              <div><strong>Prodotto:</strong> {item.products?.product_title || "Prodotto sconosciuto"}</div>
+              <div><strong>Variante:</strong> {item.products?.variant_title || "—"}</div>
+              <div><strong>Quantità:</strong> {item.quantity}</div>
             </div>
           ))}
         </div>
