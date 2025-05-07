@@ -19,7 +19,7 @@ export default function SyncOrdersButton() {
     }
 
     try {
-      const res = await fetch(`${api}/shopify/manual-sync-orders`, {
+     const res = await fetch(`${api}/shopify/import-orders`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
       });
