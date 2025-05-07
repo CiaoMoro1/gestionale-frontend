@@ -30,44 +30,43 @@ export default function Ordini() {
     return <div className="p-6 text-blue-500 text-center">Caricamento...</div>;
 
   return (
-    <div className="p-4 space-y-2 rounded-3xl border text-white bg-gradient-to-b from-blue-900 to-blue-500 min-h-screen">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-white/90">Ordini Attivi</h1>
-        <p className="text-s text-white/50">Visualizza gli ordini recenti da Shopify</p>
+    <div className="min-h-screen rounded-2xl bg-gradient-to-b from-blue-900 to-blue-600 p-4 text-white">
+      <div className="text-center mb-6">
+        <h1 className="text-3xl font-bold text-white">Ordini Attivi</h1>
+        <p className="text-s text-white/70">Visualizza gli ordini recenti da Shopify</p>
       </div>
 
-      <div className="overflow-x-auto rounded-3xl border border-white/20 bg-white/5 shadow-xl backdrop-blur">
-      <table className="min-w-full text-s text-white">
-        <thead className="bg-white/10">
-          <tr>
-            <th className="text-center px-4 py-3">Cliente</th>
-            <th className="text-center px-4 py-3">Totale</th>
-            <th className="text-center px-4 py-3">Pagamento</th>
-            <th className="text-center px-4 py-3">Ordine</th>
-            <th className="text-center px-4 py-3">Canale</th>
-            <th className="text-center px-4 py-3">Evasione</th>
-            <th className="text-center px-4 py-3">Data</th>
-          </tr>
-        </thead>
-        <tbody>
-          {orders.map((order) => (
-            <tr
-              key={order.id}
-              className="hover:bg-white/10 cursor-pointer border-b border-white/10"
-              onClick={() => navigate(`/ordini/${order.id}`)}
-            >
-              <td className="px-4 py-3 text-center">{order.customer_name}</td>
-              <td className="px-4 py-3 text-center">{Number(order.total).toFixed(2)}</td>
-              <td className="px-4 py-3 text-center">{order.payment_status}</td>
-              <td className="px-4 py-3 text-center font-semibold">{order.number}</td>
-              <td className="px-4 py-3 text-center">{order.channel}</td>
-              <td className="px-4 py-3 text-center">{order.fulfillment_status}</td>
-              <td className="px-4 py-3 text-center">{formatDate(order.created_at)}</td>
+      <div className="overflow-x-auto rounded-2xl bg-white/10 shadow-xl backdrop-blur border border-white/20">
+        <table className="min-w-full text-sm">
+          <thead className="bg-white/10 text-white uppercase tracking-wide text-xs">
+            <tr>
+              <th className="px-4 py-3 text-center">Cliente</th>
+              <th className="px-4 py-3 text-center">Totale</th>
+              <th className="px-4 py-3 text-center">Pagamento</th>
+              <th className="px-4 py-3 text-center">Ordine</th>
+              <th className="px-4 py-3 text-center">Canale</th>
+              <th className="px-4 py-3 text-center">Evasione</th>
+              <th className="px-4 py-3 text-center">Data</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
-
+          </thead>
+          <tbody>
+            {orders.map((order) => (
+              <tr
+                key={order.id}
+                className="hover:bg-white/10 border-b border-white/10 transition cursor-pointer"
+                onClick={() => navigate(`/ordini/${order.id}`)}
+              >
+                <td className="px-4 py-3 text-center">{order.customer_name}</td>
+                <td className="px-4 py-3 text-center">{Number(order.total).toFixed(2)} €</td>
+                <td className="px-4 py-3 text-center">{order.payment_status}</td>
+                <td className="px-4 py-3 text-center font-semibold">{order.number}</td>
+                <td className="px-4 py-3 text-center">{order.channel}</td>
+                <td className="px-4 py-3 text-center">{order.fulfillment_status}</td>
+                <td className="px-4 py-3 text-center">{formatDate(order.created_at)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
