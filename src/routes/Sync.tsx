@@ -5,6 +5,7 @@ import SyncOrdersButton from "../components/SyncOrdersButton";
 
 export default function SyncPage() {
   const [tab, setTab] = useState<"prodotti" | "ordini">("prodotti");
+  const [syncStatus, setSyncStatus] = useState<null | { status: string; message: string }>(null);
   const api = import.meta.env.VITE_API_URL;
 
   const downloadLog = async () => {
@@ -36,46 +37,66 @@ export default function SyncPage() {
   };
 
   return (
-    <div className="space-y-6 p-4">
-      <h1 className="text-2xl font-bold text-gray-700">Sincronizzazione Shopify</h1>
+    <div className="text-black/70 space-y-6 px-6 py-8 max-w-4xl mx-auto">
+      <div className="text-center space-y-2">
+        <h1 className="text-3xl font-bold text-black">Sincronizzazione Shopify</h1>
+        <p className="text-sm text-black/70">
+          Sincronizza prodotti o ordini manualmente. Usa questa funzione solo se necessario.
+        </p>
+      </div>
 
-      <div className="flex gap-4">
+      <div className="flex justify-center gap-4">
         <button
           onClick={() => setTab("prodotti")}
-          className={`px-4 py-2 rounded ${
-            tab === "prodotti" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"
+          className={`px-5 py-2 rounded font-semibold text-sm shadow-sm transition ${
+            tab === "prodotti"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
           Prodotti
         </button>
         <button
           onClick={() => setTab("ordini")}
-          className={`px-4 py-2 rounded ${
-            tab === "ordini" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700"
+          className={`px-5 py-2 rounded font-semibold text-sm shadow-sm transition ${
+            tab === "ordini"
+              ? "bg-blue-600 text-white"
+              : "bg-gray-200 text-gray-700 hover:bg-gray-300"
           }`}
         >
           Ordini
         </button>
       </div>
 
-      {tab === "prodotti" && (
-        <div className="space-y-4">
-          <SyncButton />
-        </div>
-      )}
+      <div className="bg-white rounded-xl border shadow px-6 py-6 space-y-4">
+        {tab === "prodotti" && <SyncButton />}
+        {tab === "ordini" && (
+          <SyncOrdersButton onSyncStatus={(status, message) => setSyncStatus({ status, message })} />
+        )}
 
-      {tab === "ordini" && (
-        <div className="space-y-4">
-          <SyncOrdersButton />
-        </div>
-      )}
+        {syncStatus && (
+          <div
+            className={`text-sm px-4 py-3 rounded text-center border shadow transition ${
+              syncStatus.status === "success"
+                ? "bg-green-100 text-green-800"
+                : syncStatus.status === "error"
+                ? "bg-red-100 text-red-800"
+                : "bg-yellow-100 text-yellow-800"
+            }`}
+          >
+            {syncStatus.message}
+          </div>
+        )}
+      </div>
 
-      <button
-        onClick={downloadLog}
-        className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
-      >
-        Scarica log errori
-      </button>
+      <div className="text-center">
+        <button
+          onClick={downloadLog}
+          className="px-5 py-2 bg-red-600 text-white rounded hover:bg-red-700 text-sm font-medium"
+        >
+          Scarica log errori
+        </button>
+      </div>
     </div>
   );
 }
