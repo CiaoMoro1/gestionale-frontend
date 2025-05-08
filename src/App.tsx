@@ -83,7 +83,7 @@ function AppContent() {
         <Link
           to={path}
           onClick={onClick}
-          className="flex flex-col items-center justify-center relative text-xs text-blue-500"
+          className="flex flex-col items-center justify-center relative text-xs text-black/70"
           aria-label={label}
         >
           <div className="relative h-10 w-10 flex items-center justify-center">
@@ -102,7 +102,7 @@ function AppContent() {
                     },
                   }}
                   exit={{ opacity: 0, scale: 0.5 }}
-                  className="absolute w-10 h-10 rounded-full bg-blue-100 z-0"
+                  className="absolute w-10 h-10 rounded-full bg-black/30 z-0"
                 />
               )}
             </AnimatePresence>
@@ -118,8 +118,8 @@ function AppContent() {
         to={path}
         onClick={onClick}
         className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md ${
-          isActive ? "text-blue-600 font-semibold" : "text-blue-500"
-        } focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300`}
+          isActive ? "text-black font-semibold" : "text-black/50"
+        } focus:outline-none focus-visible:ring-2 focus-visible:ring-black`}
         aria-label={label}
       >
         {icon}
@@ -139,12 +139,12 @@ function AppContent() {
           <div className="sm:hidden fixed top-0 left-0 right-0 bg-white shadow z-30 flex items-center justify-between px-4 py-3">
             <button
               onClick={() => setIsMenuOpen(true)}
-              className="text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+              className="text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
             >
               <Menu size={28} />
             </button>
             <div className="flex-1 flex justify-center">
-              <img src={Logo} alt="Logo" className="h-16" />
+              <img src={Logo} alt="Logo" className="h-12" />
             </div>
             <div className="w-7" /> {/* placeholder per simmetria */}
           </div>
@@ -186,10 +186,10 @@ function AppContent() {
         }`}
       >
         <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-lg font-bold text-blue-500">Menu</h2>
+          <h2 className="text-lg font-bold text-black/80">Menu</h2>
           <button
             onClick={() => setIsMenuOpen(false)}
-            className="text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300"
+            className="text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-black"
           >
             ✕
           </button>
@@ -213,19 +213,20 @@ function AppContent() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 sm:ml-40 p-4 sm:p flex flex-col justify-between sm:items-center">
-      <section className="safe-bottom flex-grow w-full mx-auto sm:max-w-7xl sm:bg-white sm:rounded-xl sm:shadow-md sm:p-6 p-4">
-          <Suspense fallback={<></>}>
-              <Routes>
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/" element={<HomePage />} />
-              <Route path="/prodotti" element={<Prodotti />} />
-              <Route path="/ordini" element={<Ordini />} />
-              <Route path="/ordini/:id" element={<OrdineDetail />} />
-              <Route path="/sync" element={<SyncPage />} />
-              <Route path="/prodotti/:id" element={<ProductDetail />} />
-            </Routes>
-          </Suspense>
+      <main className="flex-1 sm:ml-40 sm:p-4 flex flex-col justify-between sm:items-center">
+      <section className="safe-bottom flex-grow w-full mx-auto px-4 sm:px-8 max-w-screen-lg pt-4 sm:pt-0">
+
+            <Suspense fallback={<></>}>
+                <Routes>
+                <Route path="/login" element={<LoginPage />} />
+                <Route path="/" element={<HomePage />} />
+                <Route path="/prodotti" element={<Prodotti />} />
+                <Route path="/ordini" element={<Ordini />} />
+                <Route path="/ordini/:id" element={<OrdineDetail />} />
+                <Route path="/sync" element={<SyncPage />} />
+                <Route path="/prodotti/:id" element={<ProductDetail />} />
+              </Routes>
+            </Suspense>
         </section>
       </main>
 

@@ -27,18 +27,18 @@ export default function Ordini() {
   }, []);
 
   if (loading)
-    return <div className="p-6 text-blue-500 text-center">Caricamento...</div>;
+    return <div className="p-6 text-black text-center">Caricamento Ordini...</div>;
 
   return (
-    <div className="min-h-screen rounded-2xl bg-gradient-to-b from-blue-900 to-blue-600 p-4 text-white">
-      <div className="text-center mb-6">
-        <h1 className="text-3xl font-bold text-white">Ordini Attivi</h1>
-        <p className="text-s text-white/70">Visualizza gli ordini recenti da Shopify</p>
+    <div className="text-black/70">
+      <div className="text-center mb-4">
+        <h1 className="text-3xl font-bold text-black">Ordini Attivi</h1>
+        <p className="text-sm text-black/70">Visualizza gli ordini recenti da Shopify</p>
       </div>
 
-      <div className="overflow-x-auto rounded-2xl bg-white/10 shadow-xl backdrop-blur border border-white/20">
-        <table className="min-w-full text-sm">
-          <thead className="bg-white/10 text-white uppercase tracking-wide text-xs">
+      <div className="overflow-x-auto rounded-xl bg-white shadow-md border border-gray-100">
+        <table className="min-w-full text-sm border-collapse">
+          <thead className="bg-black text-white uppercase tracking-wide text-xs">
             <tr>
               <th className="px-4 py-3 text-center">Cliente</th>
               <th className="px-4 py-3 text-center">Totale</th>
@@ -53,7 +53,7 @@ export default function Ordini() {
             {orders.map((order) => (
               <tr
                 key={order.id}
-                className="hover:bg-white/10 border-b border-white/10 transition cursor-pointer"
+                className="hover:bg-gray-50 transition cursor-pointer border-b border-black/60"
                 onClick={() => navigate(`/ordini/${order.id}`)}
               >
                 <td className="px-4 py-3 text-center">{order.customer_name}</td>
