@@ -117,7 +117,7 @@ function AppContent() {
 <Link
   to={path}
   onClick={onClick}
-  className={`relative flex items-center gap-2 px-4 py-2 text-sm w-full transition-colors duration-200
+  className={`relative flex items-center gap-2 px-8 py-2 text-sm w-full transition-colors duration-200
     ${isActive ? "text-black font-semibold bg-gray-200" : "text-black/50 hover:bg-black/5"}
     focus:outline-none focus-visible:ring-2 focus-visible:ring-black rounded-l-3xl rounded-r-s`}
   aria-label={label}
@@ -140,7 +140,7 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen flex flex-col sm:flex-row bg-gray-200 relative">
+    <div className="min-h-screen flex flex-col sm:flex-row bg-gray-200 relative">
           {/* Header (mobile) */}
           <div className="sm:hidden fixed top-0 left-0 right-0 bg-white shadow z-30 flex items-center justify-between px-4 py-3">
             <button
