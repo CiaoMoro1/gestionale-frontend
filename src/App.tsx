@@ -114,17 +114,23 @@ function AppContent() {
     }
 
     return (
-      <Link
-        to={path}
-        onClick={onClick}
-        className={`flex items-center gap-2 px-2 py-2 text-sm rounded-md ${
-          isActive ? "text-black font-semibold" : "text-black/50"
-        } focus:outline-none focus-visible:ring-2 focus-visible:ring-black`}
-        aria-label={label}
-      >
-        {icon}
-        <span>{label}</span>
-      </Link>
+<Link
+  to={path}
+  onClick={onClick}
+  className={`relative flex items-center gap-2 px-4 py-2 text-sm w-full transition-colors duration-200
+    ${isActive ? "text-black font-semibold bg-gray-200" : "text-black/50 hover:bg-black/5"}
+    focus:outline-none focus-visible:ring-2 focus-visible:ring-black rounded-l-3xl rounded-r-s`}
+  aria-label={label}
+>
+  {isActive && (
+    <span className="absolute right-[-12px] top-0 bottom-0 w-6 bg-gray-200  z-[-1]" />
+  )}
+
+  {icon}
+  <span>{label}</span>
+</Link>
+
+
     );
   };
 
@@ -134,7 +140,7 @@ function AppContent() {
   };
 
   return (
-    <div className="h-screen flex flex-col sm:flex-row bg-gray-100 relative">
+    <div className="h-screen flex flex-col sm:flex-row bg-gray-200 relative">
           {/* Header (mobile) */}
           <div className="sm:hidden fixed top-0 left-0 right-0 bg-white shadow z-30 flex items-center justify-between px-4 py-3">
             <button
