@@ -1,19 +1,21 @@
+// src/components/OrdineRow.tsx
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
-import EvadiButton from "./EvadiButton";
+import { memo } from "react";
+import { ToggleSelector } from "./ToggleSelector";
+import { EvadiStatus } from "./EvadiStatus";
+import { useSelectedOrders } from "../state/useSelectedOrders";
 
-export default function OrdineRow({
+export const OrdineRow = memo(function OrdineRow({
   order,
-  evadibiliOnly,
+  status,
 }: {
   order: any;
-  evadibiliOnly: boolean;
+  status: { stato: "green" | "yellow" | "red"; tot: number; disponibili: number };
 }) {
-  const [status, setStatus] = useState<"green" | "yellow" | "red" | null>(null);
   const navigate = useNavigate();
-
-  // Filtro attivo: nascondi se non evadibile
-  if (evadibiliOnly && status === "red") return null;
+  const { selected, toggleSelected } = useSelectedOrders();
+  const isSelected = selected.includes(order.id);
+  const isSelectable = status.stato !== "red";
 
   const formatDate = (dateString: string) =>
     new Date(dateString).toLocaleString("it-IT", {
@@ -26,19 +28,26 @@ export default function OrdineRow({
 
   return (
     <tr
-      className="hover:bg-gray-50 transition cursor-pointer border-b border-black/60"
       onClick={() => navigate(`/ordini/${order.id}`)}
+      className="hover:bg-gray-50 transition cursor-pointer border-b border-black/10"
     >
-      <td className="px-4 py-3 text-center">
-        <EvadiButton orderId={order.id} onStatus={(s) => setStatus(s)} />
+      <td className="text-center p-3">
+        <ToggleSelector
+          checked={isSelected}
+          disabled={!isSelectable}
+          onToggle={() => toggleSelected(order.id, isSelectable)}
+        />
       </td>
-      <td className="px-4 py-3 text-center">{order.customer_name}</td>
-      <td className="px-4 py-3 text-center">{Number(order.total).toFixed(2)} €</td>
-      <td className="px-4 py-3 text-center">{order.payment_status}</td>
-      <td className="px-4 py-3 text-center font-semibold">{order.number}</td>
-      <td className="px-4 py-3 text-center">{order.channel}</td>
-      <td className="px-4 py-3 text-center">{order.fulfillment_status}</td>
-      <td className="px-4 py-3 text-center">{formatDate(order.created_at)}</td>
+
+      <td className="text-center p-3">
+        <EvadiStatus stato={status.stato} tot={status.tot} disponibili={status.disponibili} />
+      </td>
+      <td className="text-center p-3">{order.customer_name}</td>
+      <td className="text-center p-3">{Number(order.total).toFixed(2)} €</td>
+      <td className="text-center p-3">{order.payment_status}</td>
+      <td className="text-center p-3 font-semibold">{order.number}</td>
+      <td className="text-center p-3">{order.channel}</td>
+      <td className="text-center p-3">{formatDate(order.created_at)}</td>
     </tr>
   );
-}
+});
