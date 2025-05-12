@@ -1,7 +1,8 @@
 import { useEffect, useState, useMemo, useDeferredValue } from "react";
 import { supabase } from "../lib/supabase";
-import { useNavigate } from "react-router-dom";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import SearchInput from "../components/SearchInput";
+import OrdineRow from "../components/OrdineRow"; // ✅ deve esistere
 
 export default function Ordini() {
   const [orders, setOrders] = useState<any[]>([]);
@@ -12,9 +13,9 @@ export default function Ordini() {
   const [endDate, setEndDate] = useState("");
   const [showAll, setShowAll] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
+  const [evadibiliOnly, setEvadibiliOnly] = useState(false);
 
   const debouncedSearch = useDeferredValue(search);
-  const navigate = useNavigate();
 
   useEffect(() => {
     const loadOrders = async () => {
@@ -55,122 +56,109 @@ export default function Ordini() {
   }, [orders, debouncedSearch, paymentFilter, startDate, endDate, showAll]);
 
   if (loading)
-    return <div className="p-6 text-black text-center">Caricamento Ordini...</div>;
+    return <div className="p-6 text-black/70 text-center text-[clamp(1rem,2vw,1.2rem)]">Caricamento Ordini...</div>;
 
   return (
     <div className="text-black/70 px-2 pb-10 max-w-6xl mx-auto">
-      {/* Tabs Attivi / Tutti */}
       <div className="text-center mb-4">
-        <h1 className="text-2xl sm:text-3xl font-bold text-black mb-2">Ordini</h1>
-        <div className="flex justify-center gap-2 sm:gap-4 text-sm flex-wrap">
+        <h1 className="text-[clamp(1.5rem,4vw,2.2rem)] font-bold text-black/70 mb-2">Ordini</h1>
+        <div className="flex justify-center gap-2 sm:gap-4 flex-wrap">
           <button
             onClick={() => setShowAll(false)}
-            className={`px-3 py-1 rounded-full font-semibold transition ${
-              !showAll ? "bg-black text-white" : "bg-white text-black border"
+            className={`px-4 py-2 rounded-full ${
+              !showAll
+                ? "bg-white/60 border border-black/20 shadow text-black/70"
+                : "bg-white/30 border border-black/10 text-black/70"
             }`}
           >
-            📦 Attivi
+            Attivi
           </button>
           <button
             onClick={() => setShowAll(true)}
-            className={`px-3 py-1 rounded-full font-semibold transition ${
-              showAll ? "bg-black text-white" : "bg-white text-black border"
+            className={`px-4 py-2 rounded-full ${
+              showAll
+                ? "bg-white/60 border border-black/20 shadow text-black/70"
+                : "bg-white/30 border border-black/10 text-black/70"
             }`}
           >
-            🗃️ Tutti
+            Tutti
+          </button>
+          <button
+            onClick={() => setEvadibiliOnly((v) => !v)}
+            className={`px-4 py-2 rounded-full ${
+              evadibiliOnly
+                ? "bg-green-100 border border-green-400 shadow text-green-800"
+                : "bg-white/30 border border-black/10 text-black/70"
+            }`}
+          >
+            Solo evadibili
           </button>
         </div>
       </div>
 
-      {/* Campo ricerca */}
-      <div className="mb-2 max-w-md mx-auto">
-        <input
-          type="text"
-          placeholder="🔍 Cerca per nome, numero, stato..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full px-4 py-2 border rounded-lg shadow-sm text-sm"
-        />
-      </div>
+      <SearchInput
+        value={search}
+        onChange={(val: string) => setSearch(val)}
+        placeholder=" Cerca per nome, numero, stato..."
+      />
 
-      {/* Toggle filtri */}
       <div className="text-center mb-4">
         <button
           onClick={() => setShowFilters(!showFilters)}
-          className="text-sm text-blue-600 hover:underline flex items-center justify-center gap-1 mx-auto"
+          className="text-[clamp(0.8rem,2vw,1rem)] text-black/70 font-medium rounded-full px-4 py-2 backdrop-blur-md bg-white/50 border border-black/20 shadow-sm flex items-center justify-center gap-1 mx-auto"
         >
           {showFilters ? "Nascondi filtri" : "Mostra filtri"}
           {showFilters ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         </button>
       </div>
 
-      {/* Filtri visibili */}
       {showFilters && (
         <div className="mb-4 max-w-4xl mx-auto grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-
-          {/* Filtro pagamento con dropdown mobile-friendly */}
           <div className="flex flex-col">
-            <label htmlFor="payment-select" className="mb-1 text-black font-medium">Pagamento</label>
-            <div className="relative">
-              <select
-                id="payment-select"
-                value={paymentFilter}
-                onChange={(e) => setPaymentFilter(e.target.value)}
-                className="w-full px-4 py-2 pr-10 border rounded-lg text-sm bg-white text-black shadow-sm appearance-none"
-                style={{
-                  WebkitAppearance: "none",
-                  MozAppearance: "none",
-                  appearance: "none",
-                }}
-              >
-                <option value="">Tutti i pagamenti</option>
-                <option value="pagato">Pagato</option>
-                <option value="in attesa">In attesa</option>
-                <option value="fallito">Fallito</option>
-              </select>
-              <div className="pointer-events-none absolute top-1/2 right-3 transform -translate-y-1/2 text-gray-500">
-                ▼
-              </div>
-            </div>
+            <label htmlFor="payment-select" className="mb-1 text-black/70 font-medium">Pagamento</label>
+            <select
+              id="payment-select"
+              value={paymentFilter}
+              onChange={(e) => setPaymentFilter(e.target.value)}
+              className="px-4 py-2 border rounded-full text-black/70"
+            >
+              <option value="">Tutti</option>
+              <option value="pagato">Pagato</option>
+              <option value="contrassegno">Contrassegno</option>
+            </select>
           </div>
-
-          {/* Data inizio */}
           <div className="flex flex-col">
-            <label htmlFor="start-date" className="mb-1 text-black font-medium">Data inizio</label>
+            <label htmlFor="start-date" className="mb-1 text-black/70 font-medium">Data inizio</label>
             <input
-              id="start-date"
               type="date"
+              id="start-date"
               value={startDate}
               onChange={(e) => setStartDate(e.target.value)}
-              className="px-4 py-2 border rounded-lg shadow-sm text-sm w-full"
+              className="px-4 py-2 border rounded-full"
             />
           </div>
-
-          {/* Data fine */}
           <div className="flex flex-col">
-            <label htmlFor="end-date" className="mb-1 text-black font-medium">Data fine</label>
+            <label htmlFor="end-date" className="mb-1 text-black/70 font-medium">Data fine</label>
             <input
-              id="end-date"
               type="date"
+              id="end-date"
               value={endDate}
               onChange={(e) => setEndDate(e.target.value)}
-              className="px-4 py-2 border rounded-lg shadow-sm text-sm w-full"
+              className="px-4 py-2 border rounded-full"
             />
           </div>
         </div>
       )}
 
-
-      {/* Totale risultati */}
-      <p className="text-sm text-gray-600 text-center mt-2 italic">
+      <p className="text-[clamp(0.85rem,2vw,1rem)] text-gray-600 text-center mt-2 italic">
         Ordini trovati: <strong>{filteredOrders.length}</strong>
       </p>
 
-      {/* Tabella ordini */}
-      <div className="overflow-x-auto rounded-xl bg-white shadow-md border border-gray-100 mt-4">
-        <table className="min-w-full text-sm border-collapse">
-          <thead className="bg-black text-white uppercase tracking-wide text-xs">
+      <div className="w-full rounded-xl bg-white shadow-md border border-gray-100 mt-4 overflow-x-auto">
+        <table className="min-w-[600px] w-full text-[clamp(1rem,2vw,1.2rem)] border-collapse">
+          <thead className="bg-black text-white uppercase tracking-wide">
             <tr>
+              <th className="px-4 py-3 text-center">Evadi</th>
               <th className="px-4 py-3 text-center">Cliente</th>
               <th className="px-4 py-3 text-center">Totale</th>
               <th className="px-4 py-3 text-center">Pagamento</th>
@@ -182,33 +170,11 @@ export default function Ordini() {
           </thead>
           <tbody>
             {filteredOrders.map((order) => (
-              <tr
-                key={order.id}
-                className="hover:bg-gray-50 transition cursor-pointer border-b border-black/60"
-                onClick={() => navigate(`/ordini/${order.id}`)}
-              >
-                <td className="px-4 py-3 text-center">{order.customer_name}</td>
-                <td className="px-4 py-3 text-center">{Number(order.total).toFixed(2)} €</td>
-                <td className="px-4 py-3 text-center">{order.payment_status}</td>
-                <td className="px-4 py-3 text-center font-semibold">{order.number}</td>
-                <td className="px-4 py-3 text-center">{order.channel}</td>
-                <td className="px-4 py-3 text-center">{order.fulfillment_status}</td>
-                <td className="px-4 py-3 text-center">{formatDate(order.created_at)}</td>
-              </tr>
+              <OrdineRow key={order.id} order={order} evadibiliOnly={evadibiliOnly} />
             ))}
           </tbody>
         </table>
       </div>
     </div>
   );
-
-  function formatDate(dateString: string = "") {
-    return new Date(dateString).toLocaleString("it-IT", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
 }

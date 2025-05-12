@@ -10,7 +10,8 @@ import {
 } from "react";
 import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
-import { Search } from "lucide-react";
+import SearchInput from "../components/SearchInput";
+import { ArrowUp } from "lucide-react";
 
 interface Product {
   id: string;
@@ -26,7 +27,7 @@ export default function Prodotti() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const deferredSearch = useDeferredValue(debouncedSearch);
   const [visibleCount, setVisibleCount] = useState(10);
-  const [showSearchIcon, setShowSearchIcon] = useState(false);
+  const [showScrollToTop, setShowScrollToTop] = useState(false);
   const queryClient = useQueryClient();
 
   // debounce effettivo
@@ -52,11 +53,10 @@ export default function Prodotti() {
     };
   }, [queryClient]);
 
-  // Scroll: mostra bottone search fluttuante
+  // Bottone "scroll to top"
   useEffect(() => {
     const handleScroll = () => {
-      const top = document.getElementById("search-bar")?.getBoundingClientRect().top ?? 0;
-      setShowSearchIcon(top < 0);
+      setShowScrollToTop(window.scrollY > 100);
     };
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
@@ -86,7 +86,7 @@ export default function Prodotti() {
     },
   });
 
-  // Filtro ricerca ottimizzato
+  // Filtro su SKU + nome + EAN
   const filtered = useMemo(() => {
     const normalize = (str: string) =>
       str.toLowerCase().replace(/[^a-z0-9]/gi, " ").split(/\s+/).join(" ");
@@ -94,7 +94,7 @@ export default function Prodotti() {
 
     return (data ?? [])
       .filter((p) => {
-        const full = normalize(`${p.sku ?? ""} ${p.product_title ?? ""}`);
+        const full = normalize(`${p.sku ?? ""} ${p.product_title ?? ""} ${p.ean ?? ""}`);
         return tokens.every((token) => full.includes(token));
       })
       .sort((a, b) => (a.product_title ?? "").localeCompare(b.product_title ?? ""));
@@ -105,38 +105,34 @@ export default function Prodotti() {
     : filtered.slice(0, visibleCount);
 
   if (isLoading)
-    return <div className="p-6 text-black text-center">Caricamento prodotti...</div>;
+    return <div className="p-6 text-black text-center text-[clamp(1rem,2vw,1.2rem)]">Caricamento prodotti...</div>;
 
   if (error)
-    return <div className="p-6 text-red-500 text-center">Errore: {(error as Error).message}</div>;
+    return <div className="p-6 text-red-500 text-center text-[clamp(1rem,2vw,1.2rem)]">Errore: {(error as Error).message}</div>;
 
   return (
-    <div className="text-black/70">
+    <div className="text-black/70 px-2 pb-10 max-w-6xl mx-auto">
       {/* Header */}
       <div className="text-center mb-4">
-        <h1 className="text-3xl font-bold text-black">Prodotti</h1>
-        <p className="text-sm text-black/70">Gestione inventario e anagrafica prodotti</p>
+        <h1 className="text-[clamp(1.5rem,4vw,2.2rem)] font-bold text-black mb-1">Prodotti</h1>
+        <p className="text-[clamp(0.85rem,2vw,1.1rem)] text-black/60">
+          Gestione inventario e anagrafica prodotti
+        </p>
       </div>
 
       {/* Campo ricerca */}
-      <div id="search-bar" className="mb-4 max-w-md mx-auto">
-        <div className="flex items-center gap-3 bg-white border border-gray-200 rounded-lg px-3 py-2 shadow-sm">
-          <Search size={22} className="text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
-              setVisibleCount(10);
-            }}
-            className="flex-1 outline-none bg-transparent text-sm text-gray-800 placeholder:text-gray-300"
-            placeholder="Cerca per SKU o nome prodotto..."
-          />
-        </div>
-      </div>
+      <SearchInput
+        value={search}
+        onChange={(val) => {
+          setSearch(val);
+          setVisibleCount(10);
+        }}
+        placeholder=" Cerca per SKU, nome o EAN..."
+      />
 
       {/* Lista prodotti */}
       {filtered.length === 0 ? (
-        <p className="text-gray-500 text-center italic">
+        <p className="text-gray-500 text-center italic text-[clamp(0.85rem,2vw,1rem)]">
           🔍 Nessun prodotto trovato per "{deferredSearch}"
         </p>
       ) : (
@@ -147,19 +143,19 @@ export default function Prodotti() {
               className="bg-white rounded-xl border border-gray-100 p-4 shadow hover:ring-2 hover:ring-gray-400 transition"
             >
               <Link to={`/prodotti/${product.id}`} className="block space-y-1">
-                <div className="text-sm text-gray-600 font-semibold">
+                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-600 font-semibold">
                   SKU: {product.sku || "—"}
                 </div>
-                <div className="text-sm text-gray-700">
+                <div className="text-[clamp(0.85rem,2vw,1.05rem)] text-gray-800">
                   {product.product_title || "(Nessun titolo prodotto)"}
                 </div>
-                <div className="text-sm text-gray-500 italic">
+                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-500 italic">
                   EAN: {product.ean || "—"}
                 </div>
-                <div className="text-sm text-gray-700">
+                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-700">
                   Prezzo: €{Number(product.price ?? 0).toFixed(2)}
                 </div>
-                <div className="text-sm text-gray-700 font-bold">
+                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-800 font-bold">
                   Inventario: {product.inventario}
                 </div>
               </Link>
@@ -173,21 +169,21 @@ export default function Prodotti() {
         <div className="text-center">
           <button
             onClick={() => setVisibleCount((prev) => prev + 10)}
-            className="text-gray-600 text-sm mt-4 hover:underline"
+            className="text-gray-600 text-[clamp(0.8rem,2vw,1rem)] mt-4 hover:underline"
           >
             Mostra altri 10 prodotti
           </button>
         </div>
       )}
 
-      {/* Bottone ricerca flottante */}
-      {showSearchIcon && (
+      {/* Bottone scroll to top */}
+      {showScrollToTop && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-          className="fixed bottom-24 right-4 bg-gray-800 text-white p-3 rounded-full shadow-lg z-50"
-          aria-label="Torna alla ricerca"
+          className="fixed bottom-24 right-4 bg-black text-white p-3 rounded-full shadow-lg z-50 hover:bg-gray-800 transition"
+          aria-label="Torna su"
         >
-          <Search size={20} />
+          <ArrowUp size={20} />
         </button>
       )}
     </div>

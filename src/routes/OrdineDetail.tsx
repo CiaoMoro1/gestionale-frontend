@@ -30,6 +30,8 @@ type OrderItem = {
   } | null;
 };
 
+// ...import e tipi invariati
+
 export default function OrdineDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -104,7 +106,12 @@ export default function OrdineDetail() {
   if (error) return <div className="p-6 text-red-500">Errore: {error.message}</div>;
 
   const { ordine, items } = data!;
-  const totalQty = items.reduce((sum, item) => sum + item.quantity, 0);
+
+  const totalQty = items.reduce((sum, item) => {
+    const titolo = item.products?.product_title;
+    if (!titolo || titolo.trim() === "—") return sum;
+    return sum + item.quantity;
+  }, 0);
 
   return (
     <div className="p-4 space-y-6 rounded-3xl border text-white bg-gradient-to-b from-white to-gray-200 min-h-screen">
@@ -139,6 +146,22 @@ export default function OrdineDetail() {
         </h2>
         <div className="grid grid-cols-1 gap-2">
           {items.map((item, i) => {
+            const titolo = item.products?.product_title;
+            const isNota = !titolo || titolo.trim() === "—";
+
+            if (isNota) {
+              return (
+                <div key={i} className="p-4 rounded-xl bg-white/50 border text-black backdrop-blur space-y-1 text-[clamp(0.9rem,2vw,1.1rem)]">
+                  <div className="flex items-center gap-2">
+                    <strong>SKU:</strong> {item.sku || "—"}
+                  </div>
+                  <div><strong>Prodotto:</strong> —</div>
+                  <div><strong>Variante:</strong> {item.products?.variant_title || "—"}</div>
+                  <div><strong>Quantità:</strong> {item.quantity}</div>
+                </div>
+              );
+            }
+
             const inv = item.products?.inventory;
             const qty = item.quantity;
             const invDisponibile = inv?.disponibile ?? 0;
@@ -163,12 +186,7 @@ export default function OrdineDetail() {
                     <button
                       onClick={() =>
                         navigate(`/prodotti/${item.product_id}`, {
-                          state: {
-                            originOrder: {
-                              id: ordine.id,
-                              number: ordine.number
-                            }
-                          }
+                          state: { originOrder: { id: ordine.id, number: ordine.number } },
                         })
                       }
                       className="text-blue-600 hover:text-blue-800 text-sm underline"
@@ -179,7 +197,7 @@ export default function OrdineDetail() {
                   )}
                 </div>
 
-                <div><strong>Prodotto:</strong> {item.products?.product_title || "—"}</div>
+                <div><strong>Prodotto:</strong> {item.products?.product_title}</div>
                 <div><strong>Variante:</strong> {item.products?.variant_title || "—"}</div>
                 <div className="flex items-center gap-3">
                   <span><strong>Quantità:</strong> {item.quantity}</span>
@@ -198,15 +216,16 @@ export default function OrdineDetail() {
                     </button>
                   )}
                 </div>
+
                 {stato === "bg-yellow-500" && (
                   <div className="pt-3">
                     <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-700 font-semibold mb-1">
-                      INVENTARIO: <span className="text-black font-bold">{item.products?.inventory?.inventario ?? "—"}</span> &nbsp;–&nbsp; RISERVATI:
+                      INVENTARIO: <span className="text-black font-bold">{inv?.inventario ?? "—"}</span> &nbsp;–&nbsp; RISERVATI:
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-[clamp(0.75rem,2vw,0.95rem)]">
                       <div className="p-2 rounded-xl bg-white/70 border text-center shadow">
                         <div className="text-xs text-gray-500 mb-1">S (Sito)</div>
-                        <div className="font-semibold">{item.products?.inventory?.riservato_sito ?? "—"}</div>
+                        <div className="font-semibold">{inv?.riservato_sito ?? "—"}</div>
                       </div>
                       <div className="p-2 rounded-xl bg-white/70 border text-center shadow">
                         <div className="text-xs text-gray-500 mb-1">P (Seller)</div>
