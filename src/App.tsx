@@ -29,6 +29,8 @@ const LoginPage = lazy(() => import("./routes/LoginPage"));
 const ProductDetail = lazy(() => import("./routes/ProductDetail"));
 const Ordini = lazy(() => import("./routes/Ordini"));
 const OrdineDetail = lazy(() => import("./routes/OrdineDetail"));
+const Movimenti = lazy(() => import("./routes/Movimenti"));
+
 
 function AppContent() {
   const location = useLocation();
@@ -231,6 +233,7 @@ function AppContent() {
                 <Route path="/ordini/:id" element={<OrdineDetail />} />
                 <Route path="/sync" element={<SyncPage />} />
                 <Route path="/prodotti/:id" element={<ProductDetail />} />
+                <Route path="/movimenti" element={<Movimenti />} />
               </Routes>
             </Suspense>
         </section>

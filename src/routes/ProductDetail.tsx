@@ -8,8 +8,8 @@ export default function ProductDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   const originOrder = typeof location.state?.originOrder?.id === "string"
-  ? location.state.originOrder
-  : null;
+    ? location.state.originOrder
+    : null;
 
   const queryClient = useQueryClient();
   const [modalState, setModalState] = useState<{
@@ -37,8 +37,13 @@ export default function ProductDetail() {
 
   const mutation = useMutation({
     mutationFn: async ({ field, value }: { field: string; value: any }) => {
-      const { error } = await supabase.from("products").update({ [field]: value }).eq("id", id);
-      if (error) throw error;
+      if (!id) throw new Error("ID mancante");
+
+      if (["price", "inventory_policy", "status", "ean"].includes(field)) {
+        return supabase.from("products").update({ [field]: value }).eq("id", id);
+      }
+
+      return supabase.from("inventory").update({ [field]: value }).eq("product_id", id);
     },
     onSuccess: () => {
       if (id) queryClient.invalidateQueries({ queryKey: ["product", id] });
@@ -91,16 +96,16 @@ export default function ProductDetail() {
 
       <div className="space-y-2">
         <GlassField label="SKU" value={data.sku} />
-        <GlassField label="EAN" value={data.ean} editable field="ean" /> 
+        <GlassField label="EAN" value={data.ean} editable field="ean" />
         <GlassField label="ASIN" value={"—"} />
       </div>
 
       <Section label="Quantità & Magazzino" cols={2}>
-        <GlassField label="Inventario" value={data.inventory?.inventario} />
+        <GlassField label="Inventario" value={data.inventory?.inventario} editable field="inventario" />
         <GlassField label="Costo" value={`€ ${Number(data.cost ?? 0).toFixed(2)}`} />
-        <GlassField 
-          label="Disponibile" 
-          value={data.inventory?.disponibile} 
+        <GlassField
+          label="Disponibile"
+          value={data.inventory?.disponibile}
           extra={data.inventory?.in_produzione > 0 ? ` (${data.inventory.in_produzione} in arrivo)` : ""}
         />
         <GlassField label="In Produzione" value={data.inventory?.in_produzione} />
@@ -161,7 +166,7 @@ export default function ProductDetail() {
               ) : (
                 <>
                   <input
-                    value={modalInput || modalState.value}
+                    value={modalInput ?? modalState.value}
                     onChange={(e) => setModalInput(e.target.value)}
                     className="w-full p-3 rounded text-black bg-white/70"
                   />
@@ -196,9 +201,10 @@ export default function ProductDetail() {
         ? value.toLowerCase() === "continue" ? "Sì" : "No"
         : value;
 
-    const openModal = () => {
-      setModalState({ label, value: String(value), field, editable, type });
-    };
+        const openModal = () => {
+          setModalInput(String(value ?? ""));
+          setModalState({ label, value: String(value ?? ""), field, editable, type });
+        };
 
     return (
       <div
