@@ -71,7 +71,7 @@ export default function Ordini() {
   const allSelected = idsToSelect.every((id) => selected.includes(id)) && idsToSelect.length > 0;
 
   return (
-    <div className="px-4 max-w-6xl mx-auto pb-28">
+    <div className="px-2 max-w-6xl mx-auto pb-28">
       <h1 className="text-[clamp(1.5rem,4vw,2.2rem)] font-bold text-center mb-4">📦 Ordini</h1>
 
       <div className="flex flex-wrap justify-center gap-2 mb-4">
