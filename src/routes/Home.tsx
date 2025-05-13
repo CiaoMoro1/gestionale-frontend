@@ -15,7 +15,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const menuItems = [
-    { label: "Cerca1", icon: <Search size={24} />, action: "search" },
+    { label: "Cerca Articolo", icon: <Search size={24} />, action: "search" },
     { label: "Ordini", path: "/ordini", icon: <ClipboardList size={24} /> },
     { label: "Prodotti", path: "/prodotti", icon: <Package size={24} /> },
     { label: "Movimenti", path: "/movimenti", icon: <ArrowLeftRight size={24} /> },

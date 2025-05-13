@@ -20,13 +20,13 @@ import {
 import { supabase } from "./lib/supabase";
 import { motion, AnimatePresence } from "framer-motion";
 import Logo from "./assets/Logo_Gestionale_PETTI.svg";
+import ProductDetailWrapper from "./routes/ProductDetailWrapper";
 
 
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
 const SyncPage = lazy(() => import("./routes/Sync"));
 const LoginPage = lazy(() => import("./routes/LoginPage"));
-const ProductDetail = lazy(() => import("./routes/ProductDetail"));
 const Ordini = lazy(() => import("./routes/Ordini"));
 const OrdineDetail = lazy(() => import("./routes/OrdineDetail"));
 const Movimenti = lazy(() => import("./routes/Movimenti"));
@@ -232,7 +232,7 @@ function AppContent() {
                 <Route path="/ordini" element={<Ordini />} />
                 <Route path="/ordini/:id" element={<OrdineDetail />} />
                 <Route path="/sync" element={<SyncPage />} />
-                <Route path="/prodotti/:id" element={<ProductDetail />} />
+                <Route path="/prodotti/:id" element={<ProductDetailWrapper />} />
                 <Route path="/movimenti" element={<Movimenti />} />
               </Routes>
             </Suspense>
