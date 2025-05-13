@@ -1,42 +1,51 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
 import { supabase } from "../lib/supabase";
 
 export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
-  let scanner: Html5Qrcode | null = null;
+  const scannerRef = useRef<Html5Qrcode | null>(null);
 
   useEffect(() => {
     if (!open) return;
 
-    scanner = new Html5Qrcode("barcode-reader");
+    const scanner = new Html5Qrcode("barcode-reader");
+    scannerRef.current = scanner;
 
     scanner.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: 250 },
       async (decodedText) => {
-        const { data } = await supabase
+        console.log("✅ Codice letto:", decodedText);
+
+        const { data, error } = await supabase
           .from("products")
           .select("id")
           .eq("ean", decodedText)
           .single();
 
+        if (error) {
+          console.warn("❌ Errore Supabase:", error.message);
+        }
+
         if (data?.id) {
-          await scanner?.stop();
+          await scanner.stop();
           onClose();
           navigate(`/prodotti/${data.id}`);
+        } else {
+          alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
         }
       },
-      (error) => {
-        console.warn("Errore scan:", error);
+      (scanError) => {
+        // opzionale: console.warn("Errore durante scan:", scanError);
       }
     );
 
     return () => {
-      scanner?.stop().catch(console.error);
+      scanner.stop().catch(console.error);
     };
-  }, [open]);
+  }, [open, navigate, onClose]);
 
   if (!open) return null;
 
@@ -48,7 +57,10 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           className="absolute top-2 right-3 text-xl"
         >×</button>
         <h2 className="text-lg font-bold">Scannerizza codice a barre</h2>
-        <div id="barcode-reader" className="w-full h-64 rounded border" />
+        <div
+          id="barcode-reader"
+          className="w-full h-64 rounded border overflow-hidden flex justify-center items-center"
+        />
         <p className="text-center text-sm text-gray-600">
           Inquadra il codice a barre del prodotto.
         </p>
