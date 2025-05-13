@@ -6,17 +6,22 @@ import { supabase } from "../lib/supabase";
 export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const navigate = useNavigate();
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scanningRef = useRef(false); // 🔒 blocco per evitare multiple letture
 
   useEffect(() => {
     if (!open) return;
 
     const scanner = new Html5Qrcode("barcode-reader");
     scannerRef.current = scanner;
+    scanningRef.current = false;
 
     scanner.start(
       { facingMode: "environment" },
       { fps: 10, qrbox: 250 },
       async (decodedText) => {
+        if (scanningRef.current) return;
+        scanningRef.current = true;
+
         console.log("✅ Codice letto:", decodedText);
 
         const { data, error } = await supabase
@@ -25,17 +30,16 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           .eq("ean", decodedText)
           .single();
 
-        if (error) {
-          console.warn("❌ Errore Supabase:", error.message);
+        if (error || !data?.id) {
+          console.warn("❌ Prodotto non trovato o errore Supabase:", error?.message);
+          alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
+          scanningRef.current = false;
+          return;
         }
 
-        if (data?.id) {
-          await scanner.stop();
-          onClose();
-            window.location.href = `/prodotti/${data.id}`; // ✅ Forza reload completo
-        } else {
-          alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
-        }
+        await scanner.stop();
+        onClose();
+        window.location.href = `/prodotti/${data.id}`; // ✅ Forza reload completo
       },
       (error) => {
         console.warn("Errore durante scan:", error);
