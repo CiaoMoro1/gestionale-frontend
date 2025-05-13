@@ -37,8 +37,8 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
         }
       },
-      (scanError) => {
-        // opzionale: console.warn("Errore durante scan:", scanError);
+      (error) => {
+        console.warn("Errore durante scan:", error);
       }
     );
 
