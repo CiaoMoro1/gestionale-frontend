@@ -32,7 +32,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         if (data?.id) {
           await scanner.stop();
           onClose();
-          navigate(`/prodotti/${data.id}`);
+            window.location.href = `/prodotti/${data.id}`; // ✅ Forza reload completo
         } else {
           alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
         }
