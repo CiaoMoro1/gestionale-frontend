@@ -57,7 +57,9 @@ export default function ProductDetail() {
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["product", id],
+    enabled: typeof id === "string" && id.length > 0, // ✅ attiva solo quando ID valido
     queryFn: async () => {
+      console.log("📦 Carico prodotto con ID:", id); // 🔍 per debug
       const { data, error } = await supabase
         .from("products")
         .select("*, inventory(inventario, disponibile, in_produzione, riservato_sito)")
@@ -65,9 +67,9 @@ export default function ProductDetail() {
         .single();
       if (error) throw error;
       return data;
-    },
-    enabled: !!id,
+    }
   });
+
 
   const mutation = useMutation({
     mutationFn: async ({ field, value, mode }: { field: string; value: any; mode?: "delta" | "replace" }) => {
