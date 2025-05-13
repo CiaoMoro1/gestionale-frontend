@@ -39,11 +39,8 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
         await scanner.stop();
         onClose();
-
-        // piccola attesa per far chiudere bene il modal
-        setTimeout(() => {
-          navigate(`/prodotti/${data.id}`);
-        }, 100);
+        window.location.href = `/prodotti/${data.id}`; // ✅ Forza reload completo
+        
       },
       (error) => {
         console.warn("Errore durante scan:", error);
