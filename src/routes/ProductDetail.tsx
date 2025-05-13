@@ -1,8 +1,7 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { useState } from "react";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -12,7 +11,6 @@ export default function ProductDetail() {
     ? location.state.originOrder
     : null;
 
-  const queryClient = useQueryClient();
   const [modalState, setModalState] = useState<{
     label: string;
     value: string;
@@ -21,6 +19,10 @@ export default function ProductDetail() {
     type?: "text" | "checkbox";
   } | null>(null);
   const [manualValue, setManualValue] = useState<string>("0");
+
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -35,7 +37,7 @@ export default function ProductDetail() {
           table: 'products',
           filter: `id=eq.${id}`
         },
-        () => queryClient.invalidateQueries({ queryKey: ['product', id] })
+        () => fetchProduct()
       )
       .on(
         'postgres_changes',
@@ -45,31 +47,37 @@ export default function ProductDetail() {
           table: 'inventory',
           filter: `product_id=eq.${id}`
         },
-        () => queryClient.invalidateQueries({ queryKey: ['product', id] })
+        () => fetchProduct()
       )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [id, queryClient]);
+  }, [id]);
 
+  useEffect(() => {
+    fetchProduct();
+  }, [id]);
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ["product", id],
-    enabled: typeof id === "string" && id.length > 0, // ✅ attiva solo quando ID valido
-    queryFn: async () => {
-      console.log("📦 Carico prodotto con ID:", id); // 🔍 per debug
-      const { data, error } = await supabase
-        .from("products")
-        .select("*, inventory(inventario, disponibile, in_produzione, riservato_sito)")
-        .eq("id", id)
-        .single();
-      if (error) throw error;
-      return data;
+  const fetchProduct = async () => {
+    if (!id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, inventory(inventario, disponibile, in_produzione, riservato_sito)")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      setError(error.message);
+      setData(null);
+    } else {
+      setData(data);
+      setError(null);
     }
-  });
-
+    setLoading(false);
+  };
 
   const mutation = useMutation({
     mutationFn: async ({ field, value, mode }: { field: string; value: any; mode?: "delta" | "replace" }) => {
@@ -89,14 +97,14 @@ export default function ProductDetail() {
       return supabase.from("inventory").update({ [field]: value }).eq("product_id", id);
     },
     onSuccess: () => {
-      if (id) queryClient.invalidateQueries({ queryKey: ["product", id] });
+      fetchProduct();
       setModalState(null);
       setManualValue("0");
     },
   });
 
-  if (isLoading) return <div className="p-6 text-center text-gray-500">Caricamento...</div>;
-  if (error) return <div className="p-6 text-center text-red-500">Errore: {error.message}</div>;
+  if (loading) return <div className="p-6 text-center text-gray-500">Caricamento prodotto...</div>;
+  if (error) return <div className="p-6 text-center text-red-500">Errore: {error}</div>;
 
   return (
     <div className="p-4 rounded-3xl border space-y-6 bg-gradient-to-b from-white to-gray-100 min-h-screen text-black">
