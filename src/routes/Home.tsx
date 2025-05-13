@@ -44,6 +44,7 @@ export default function HomePage() {
       </div>
 
       <SearchProductModal open={searchOpen} onClose={() => setSearchOpen(false)} />
+
     </>
   );
 }

@@ -39,7 +39,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
         await scanner.stop();
         onClose();
-        window.location.href = `/prodotti/${data.id}`; // ✅ Forza reload completo
+        navigate(`/prodotti/${data.id}`);
       },
       (error) => {
         console.warn("Errore durante scan:", error);
