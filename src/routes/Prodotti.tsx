@@ -12,6 +12,7 @@ import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
 import SearchInput from "../components/SearchInput";
 import { ArrowUp } from "lucide-react";
+import { QuantityInput } from "../components/QuantityInput";
 
 interface Product {
   id: string;
@@ -30,13 +31,11 @@ export default function Prodotti() {
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const queryClient = useQueryClient();
 
-  // debounce effettivo
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(timeout);
   }, [search]);
 
-  // Realtime su Supabase
   useEffect(() => {
     const channel = supabase
       .channel("realtime:products+inventory")
@@ -53,7 +52,6 @@ export default function Prodotti() {
     };
   }, [queryClient]);
 
-  // Bottone "scroll to top"
   useEffect(() => {
     const handleScroll = () => {
       setShowScrollToTop(window.scrollY > 100);
@@ -62,7 +60,6 @@ export default function Prodotti() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Query prodotti + inventario
   const { data, isLoading, error } = useQuery<Product[]>({
     queryKey: ["products"],
     queryFn: async () => {
@@ -86,33 +83,34 @@ export default function Prodotti() {
     },
   });
 
-  // Filtro su SKU + nome + EAN
-  const filtered = useMemo(() => {
-    const normalize = (str: string) =>
-      str.toLowerCase().replace(/[^a-z0-9]/gi, " ").split(/\s+/).join(" ");
-    const tokens = normalize(deferredSearch).split(" ");
+  const normalize = (str: string) =>
+    str.toLowerCase().replace(/[^a-z0-9]/gi, " ").split(/\s+/).join(" ");
 
+  const normalizedSearch = normalize(deferredSearch);
+  const tokens = normalizedSearch.split(" ");
+  const isSearching = debouncedSearch !== deferredSearch;
+
+  const filtered = useMemo(() => {
     return (data ?? [])
       .filter((p) => {
         const full = normalize(`${p.sku ?? ""} ${p.product_title ?? ""} ${p.ean ?? ""}`);
         return tokens.every((token) => full.includes(token));
       })
       .sort((a, b) => (a.product_title ?? "").localeCompare(b.product_title ?? ""));
-  }, [data, deferredSearch]);
+  }, [data, normalizedSearch]);
 
   const visibleItems = deferredSearch
     ? filtered
     : filtered.slice(0, visibleCount);
 
   if (isLoading)
-    return <div className="p-6 text-black text-center text-[clamp(1rem,2vw,1.2rem)]">Caricamento prodotti...</div>;
+    return <div className="p-6 text-black text-center">Caricamento prodotti...</div>;
 
   if (error)
-    return <div className="p-6 text-red-500 text-center text-[clamp(1rem,2vw,1.2rem)]">Errore: {(error as Error).message}</div>;
+    return <div className="p-6 text-red-500 text-center">Errore: {(error as Error).message}</div>;
 
   return (
     <div className="text-black/70 px-2 pb-10 max-w-6xl mx-auto">
-      {/* Header */}
       <div className="text-center mb-4">
         <h1 className="text-[clamp(1.5rem,4vw,2.2rem)] font-bold text-black mb-1">Prodotti</h1>
         <p className="text-[clamp(0.85rem,2vw,1.1rem)] text-black/60">
@@ -120,63 +118,72 @@ export default function Prodotti() {
         </p>
       </div>
 
-      {/* Campo ricerca */}
-      <SearchInput
-        value={search}
-        onChange={(val) => {
-          setSearch(val);
-          setVisibleCount(10);
-        }}
-        placeholder=" Cerca per SKU, nome o EAN..."
-      />
+      <div className="flex items-center justify-between mb-2 px-1">
+        <SearchInput className="w-full max-w-xl" 
+          value={search}
+          onChange={(val) => {
+            setSearch(val);
+            setVisibleCount(10);
+          }}
+          placeholder=" Cerca per SKU, nome o EAN..."
+        />
+        {isSearching && (
+          <div className="text-xs text-gray-400 animate-pulse ml-2">⏳ Cercando...</div>
+        )}
+      </div>
 
-      {/* Lista prodotti */}
       {filtered.length === 0 ? (
-        <p className="text-gray-500 text-center italic text-[clamp(0.85rem,2vw,1rem)]">
+        <p className="text-gray-500 text-center italic">
           🔍 Nessun prodotto trovato per "{deferredSearch}"
         </p>
       ) : (
-        <ul className="space-y-3">
+        <ul className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
           {visibleItems.map((product) => (
             <li
               key={product.id}
-              className="bg-white rounded-xl border border-gray-100 p-4 shadow hover:ring-2 hover:ring-gray-400 transition"
+              className="bg-white rounded-xl border border-gray-100 p-4 shadow transition"
             >
-              <Link to={`/prodotti/${product.id}`} className="block space-y-1">
-                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-600 font-semibold">
+              <div className="space-y-1">
+                <div className="text-gray-800">
+                  <Link to={`/prodotti/${product.id}`} className="hover:underline text-[clamp(0.85rem,2vw,1.05rem)]">
+                    {product.product_title || "(Nessun titolo prodotto)"}
+                  </Link>
+                </div>
+                <div className="text-sm text-gray-600 font-semibold">
                   SKU: {product.sku || "—"}
                 </div>
-                <div className="text-[clamp(0.85rem,2vw,1.05rem)] text-gray-800">
-                  {product.product_title || "(Nessun titolo prodotto)"}
-                </div>
-                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-500 italic">
+                <div className="text-sm text-gray-500 italic">
                   EAN: {product.ean || "—"}
                 </div>
-                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-700">
+                <div className="text-sm text-gray-700">
                   Prezzo: €{Number(product.price ?? 0).toFixed(2)}
                 </div>
-                <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-800 font-bold">
-                  Inventario: {product.inventario}
+                <div className="text-sm text-gray-800 font-bold mt-2">
+                  Quantità:
+                  <div className="mt-1">
+                    <QuantityInput
+                      productId={product.id}
+                      initialQuantity={product.inventario ?? 0}
+                    />
+                  </div>
                 </div>
-              </Link>
+              </div>
             </li>
           ))}
         </ul>
       )}
 
-      {/* Bottone mostra altri */}
       {!deferredSearch && filtered.length > visibleItems.length && (
         <div className="text-center">
           <button
             onClick={() => setVisibleCount((prev) => prev + 10)}
-            className="text-gray-600 text-[clamp(0.8rem,2vw,1rem)] mt-4 hover:underline"
+            className="text-gray-600 mt-4 hover:underline"
           >
             Mostra altri 10 prodotti
           </button>
         </div>
       )}
 
-      {/* Bottone scroll to top */}
       {showScrollToTop && (
         <button
           onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}

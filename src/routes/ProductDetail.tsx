@@ -2,6 +2,7 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { useState } from "react";
+import { useEffect } from "react";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -19,7 +20,40 @@ export default function ProductDetail() {
     editable?: boolean;
     type?: "text" | "checkbox";
   } | null>(null);
-  const [modalInput, setModalInput] = useState<string>("");
+  const [manualValue, setManualValue] = useState<string>("0");
+
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`product-${id}-realtime`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'products',
+          filter: `id=eq.${id}`
+        },
+        () => queryClient.invalidateQueries({ queryKey: ['product', id] })
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'inventory',
+          filter: `product_id=eq.${id}`
+        },
+        () => queryClient.invalidateQueries({ queryKey: ['product', id] })
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id, queryClient]);
+
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["product", id],
@@ -36,11 +70,18 @@ export default function ProductDetail() {
   });
 
   const mutation = useMutation({
-    mutationFn: async ({ field, value }: { field: string; value: any }) => {
+    mutationFn: async ({ field, value, mode }: { field: string; value: any; mode?: "delta" | "replace" }) => {
       if (!id) throw new Error("ID mancante");
 
       if (["price", "inventory_policy", "status", "ean"].includes(field)) {
         return supabase.from("products").update({ [field]: value }).eq("id", id);
+      }
+
+      if (field === "inventario" && mode === "delta") {
+        return supabase.rpc("adjust_inventory_quantity", {
+          pid: id,
+          delta: value,
+        });
       }
 
       return supabase.from("inventory").update({ [field]: value }).eq("product_id", id);
@@ -48,7 +89,7 @@ export default function ProductDetail() {
     onSuccess: () => {
       if (id) queryClient.invalidateQueries({ queryKey: ["product", id] });
       setModalState(null);
-      setModalInput("");
+      setManualValue("0");
     },
   });
 
@@ -96,20 +137,27 @@ export default function ProductDetail() {
 
       <div className="space-y-2">
         <GlassField label="SKU" value={data.sku} />
-        <GlassField label="EAN" value={data.ean} editable field="ean" />
+        <GlassField label="EAN" value={data.ean} />
         <GlassField label="ASIN" value={"—"} />
       </div>
 
       <Section label="Quantità & Magazzino" cols={2}>
-        <GlassField label="Inventario" value={data.inventory?.inventario} editable field="inventario" />
-        <GlassField label="Costo" value={`€ ${Number(data.cost ?? 0).toFixed(2)}`} />
         <GlassField
-          label="Disponibile"
-          value={data.inventory?.disponibile}
-          extra={data.inventory?.in_produzione > 0 ? ` (${data.inventory.in_produzione} in arrivo)` : ""}
+          label="Inventario"
+          value={data.inventory?.inventario}
+          editable
+          field="inventario"
+          extra={
+            data.inventory?.in_produzione > 0
+              ? ` (${data.inventory.in_produzione} in arrivo)`
+              : ""
+          }
         />
+        <GlassField label="Costo" value={`€ ${Number(data.cost ?? 0).toFixed(2)}`} />
+        <GlassField label="Disponibile" value={data.inventory?.disponibile} />
         <GlassField label="In Produzione" value={data.inventory?.in_produzione} />
       </Section>
+
 
       <Section label="Riservato" cols={3}>
         <GlassField label="Sito" value={data.inventory?.riservato_sito} />
@@ -145,7 +193,36 @@ export default function ProductDetail() {
 
             <h2 className="text-xl font-bold mb-4">{modalState.label}</h2>
 
-            {modalState.editable && modalState.field ? (
+            {modalState.editable && modalState.field === "inventario" ? (
+              <>
+                <div className="text-sm mb-2">
+                  Valore attuale: <strong>{modalState.value}</strong>
+                </div>
+                <div className="text-sm mb-2">
+                  Dopo modifica: <strong>{parseInt(modalState.value) + parseInt(manualValue || "0")}</strong>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <button
+                    onClick={() => setManualValue((parseInt(manualValue) - 1).toString())}
+                    className="px-2 py-1 bg-gray-200 rounded"
+                  >−</button>
+                  <input
+                    type="text"
+                    value={manualValue}
+                    onChange={(e) => setManualValue(e.target.value)}
+                    className="w-16 text-center border rounded"
+                  />
+                  <button
+                    onClick={() => setManualValue((parseInt(manualValue) + 1).toString())}
+                    className="px-2 py-1 bg-gray-200 rounded"
+                  >+</button>
+                  <button
+                    onClick={() => mutation.mutate({ field: modalState.field!, value: parseInt(manualValue), mode: "delta" })}
+                    className="ml-2 px-3 py-1 bg-blue-600 text-white text-xs rounded shadow"
+                  >Salva</button>
+                </div>
+              </>
+            ) : modalState.editable && modalState.field ? (
               modalState.type === "checkbox" ? (
                 <div className="flex items-center gap-3">
                   <input
@@ -166,13 +243,13 @@ export default function ProductDetail() {
               ) : (
                 <>
                   <input
-                    value={modalInput ?? modalState.value}
-                    onChange={(e) => setModalInput(e.target.value)}
+                    value={manualValue ?? modalState.value}
+                    onChange={(e) => setManualValue(e.target.value)}
                     className="w-full p-3 rounded text-black bg-white/70"
                   />
                   <div className="flex justify-end mt-4">
                     <button
-                      onClick={() => mutation.mutate({ field: modalState.field!, value: modalInput })}
+                      onClick={() => mutation.mutate({ field: modalState.field!, value: manualValue })}
                       className="bg-black text-white font-semibold px-4 py-2 rounded-xl hover:bg-gray-800"
                     >Salva</button>
                   </div>
@@ -195,25 +272,28 @@ export default function ProductDetail() {
     type?: "text" | "checkbox";
     extra?: string;
   }) {
+    const openModal = () => {
+      setManualValue("0");
+      setModalState({ label, value: String(value ?? ""), field, editable, type });
+    };
+
     const isCheckbox = type === "checkbox";
     const displayValue =
       isCheckbox && typeof value === "string"
         ? value.toLowerCase() === "continue" ? "Sì" : "No"
         : value;
 
-        const openModal = () => {
-          setModalInput(String(value ?? ""));
-          setModalState({ label, value: String(value ?? ""), field, editable, type });
-        };
-
     return (
       <div
-        className="p-4 rounded-xl border bg-white/60 shadow-sm backdrop-blur-md transition hover:shadow-md cursor-pointer"
+        className="p-4 rounded-xl border bg-white/60 shadow-sm backdrop-blur-md transition hover:shadow-md cursor-pointer text-center"
         onClick={openModal}
+        role="button"
+        tabIndex={0}
+        onKeyDown={(e) => e.key === "Enter" && openModal()}
         title={String(displayValue)}
       >
-        <div className="text-xs font-semibold text-black/60 mb-1 truncate">{label}</div>
-        <div className="text-sm font-bold text-black truncate">
+        <div className="text-xs font-semibold text-black/60 mb-1 text-center">{label}</div>
+        <div className="text-sm font-bold text-black text-center truncate">
           {displayValue || "—"}{extra}
         </div>
       </div>
@@ -221,10 +301,17 @@ export default function ProductDetail() {
   }
 
   function Section({ label, children, cols = 2 }: { label: string; children: React.ReactNode; cols?: number }) {
+    const gridCols = {
+      1: "grid-cols-1",
+      2: "grid-cols-2",
+      3: "grid-cols-3",
+      4: "grid-cols-4",
+    }[cols] ?? "grid-cols-2";
+
     return (
       <div className="space-y-2">
         <h3 className="text-xs font-bold uppercase tracking-wider text-black/50">{label}</h3>
-        <div className={`grid grid-cols-${cols} gap-2`}>{children}</div>
+        <div className={`grid ${gridCols} gap-2`}>{children}</div>
       </div>
     );
   }
