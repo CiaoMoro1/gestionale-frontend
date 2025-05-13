@@ -103,8 +103,9 @@ export default function ProductDetail() {
     },
   });
 
-  if (loading) return <div className="p-6 text-center text-gray-500">Caricamento prodotto...</div>;
+  if (loading || !data) return <div className="p-6 text-center text-gray-500">Caricamento prodotto...</div>;
   if (error) return <div className="p-6 text-center text-red-500">Errore: {error}</div>;
+
 
   return (
     <div className="p-4 rounded-3xl border space-y-6 bg-gradient-to-b from-white to-gray-100 min-h-screen text-black">
