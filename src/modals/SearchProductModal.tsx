@@ -39,7 +39,11 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
         await scanner.stop();
         onClose();
-        navigate(`/prodotti/${data.id}`);
+
+        // piccola attesa per far chiudere bene il modal
+        setTimeout(() => {
+          navigate(`/prodotti/${data.id}`);
+        }, 100);
       },
       (error) => {
         console.warn("Errore durante scan:", error);
@@ -57,9 +61,9 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white p-4 rounded-2xl shadow-lg w-full max-w-md space-y-4 relative">
         <button
-          onClick={onClose}
-          className="absolute top-2 right-3 text-xl"
-        >×</button>
+        onClick={onClose}
+        className="absolute top-2 right-3 text-xl"
+      >×</button>
         <h2 className="text-lg font-bold">Scannerizza codice a barre</h2>
         <div
           id="barcode-reader"
