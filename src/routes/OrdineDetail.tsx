@@ -116,6 +116,14 @@ export default function OrdineDetail() {
   return (
     <div className="p-4 space-y-6 rounded-3xl border text-white bg-gradient-to-b from-white to-gray-200 min-h-screen">
       <h1 className="font-bold text-center text-black text-[clamp(1.2rem,4vw,2rem)]">Ordine {ordine.number}</h1>
+          <div className="flex justify-center">
+            <button
+              onClick={() => navigate("/ordini")}
+              className="px-4 py-2 mb-2 rounded-full border border-gray-400 text-gray-800 bg-white hover:bg-gray-100 transition font-medium shadow-sm"
+            >
+              ⬅️ Torna alla lista ordini
+            </button>
+          </div>
 
       {originOrder && originOrder.id !== id && (
         <div className="flex justify-center mb-4">

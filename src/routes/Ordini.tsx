@@ -7,16 +7,43 @@ import { useOrderStatusMap } from "../hooks/useOrderStatusMap";
 import { useSelectedOrders } from "../state/useSelectedOrders";
 import { ToggleSelector } from "../components/ToggleSelector";
 
+type OrdiniFilters = {
+  search: string;
+  payment: string;
+  startDate: string;
+  endDate: string;
+  evadibiliOnly: boolean;
+};
+
 export default function Ordini() {
   const [orders, setOrders] = useState<any[]>([]);
   const [orderItems, setOrderItems] = useState<any[]>([]);
-  const [filters, setFilters] = useState({
-    search: "",
-    payment: "",
-    startDate: "",
-    endDate: "",
-    evadibiliOnly: false,
+  const [filters, setFilters] = useState<OrdiniFilters>(() => {
+    try {
+      const saved = sessionStorage.getItem("ordine_filters");
+      return saved ? JSON.parse(saved) : {
+        search: "",
+        payment: "",
+        startDate: "",
+        endDate: "",
+        evadibiliOnly: false,
+      };
+    } catch {
+      return {
+        search: "",
+        payment: "",
+        startDate: "",
+        endDate: "",
+        evadibiliOnly: false,
+      };
+    }
+
+
   });
+
+  useEffect(() => {
+    sessionStorage.setItem("ordine_filters", JSON.stringify(filters));
+  }, [filters]);
 
   const { selected, selectMany, clear } = useSelectedOrders();
 
@@ -30,7 +57,7 @@ export default function Ordini() {
           .order("created_at", { ascending: false }),
         supabase
           .from("order_items")
-          .select("order_id, quantity, products:product_id(product_title, inventory(inventario, disponibile))"),
+          .select("order_id, quantity, products:product_id(sku, product_title, inventory(inventario, disponibile))"),
       ]);
       if (ordersRes.data) setOrders(ordersRes.data);
       if (itemsRes.data) setOrderItems(itemsRes.data);
@@ -40,21 +67,28 @@ export default function Ordini() {
 
   const statusMap = useOrderStatusMap(orderItems);
 
+  const skuMap = useMemo(() => {
+    const map: Record<string, string[]> = {};
+    for (const item of orderItems) {
+      if (!map[item.order_id]) map[item.order_id] = [];
+      if (item.products?.sku) map[item.order_id].push(item.products.sku.toLowerCase());
+    }
+    return map;
+  }, [orderItems]);
+
   const filteredOrders = useMemo(() => {
     return orders.filter((o) => {
       const t = (x: string) => x.toLowerCase().replace(/[^a-z0-9]/gi, " ");
       const text = `${t(o.number)} ${t(o.customer_name)} ${t(o.channel)} ${t(o.payment_status)}`;
-      const tokens = t(filters.search).split(" ");
-      const matches = tokens.every((k) => text.includes(k));
-      const date = new Date(o.created_at);
-      return (
-        matches &&
+      const skus = skuMap[o.id]?.join(" ") || "";
+      const tokens = t(filters.search).split(" ").filter(Boolean);
+
+      return tokens.every((k) => text.includes(k) || skus.includes(k)) &&
         (!filters.payment || o.payment_status === filters.payment) &&
-        (!filters.startDate || date >= new Date(filters.startDate)) &&
-        (!filters.endDate || date <= new Date(filters.endDate))
-      );
+        (!filters.startDate || new Date(o.created_at) >= new Date(filters.startDate)) &&
+        (!filters.endDate || new Date(o.created_at) <= new Date(filters.endDate));
     });
-  }, [orders, filters]);
+  }, [orders, filters, skuMap]);
 
   const visibleOrders = useMemo(() => {
     return filteredOrders.filter(
@@ -76,7 +110,7 @@ export default function Ordini() {
 
       <div className="flex flex-wrap justify-center gap-2 mb-4">
         <button
-          onClick={() => setFilters((f) => ({ ...f, evadibiliOnly: !f.evadibiliOnly }))}
+          onClick={() => setFilters((f: OrdiniFilters) => ({ ...f, evadibiliOnly: !f.evadibiliOnly }))}
           className={`text-[clamp(1rem,2vw,1.2rem)] px-4 py-2 rounded-full ${
             filters.evadibiliOnly
               ? "bg-green-100 text-green-800 border border-green-400 shadow"
@@ -89,8 +123,8 @@ export default function Ordini() {
 
       <SearchInput
         value={filters.search}
-        onChange={(val: string) => setFilters((f) => ({ ...f, search: val }))}
-        placeholder=" Cerca per nome, numero, canale..."
+        onChange={(val: string) => setFilters((f: OrdiniFilters) => ({ ...f, search: val }))}
+        placeholder=" Cerca per nome, numero, canale o SKU..."
       />
 
       <p className="text-[clamp(1rem,1.8vw,1.2rem)] text-center italic mt-2 text-gray-500">
@@ -128,7 +162,6 @@ export default function Ordini() {
       <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 transform transition-all duration-300 ${selected.length > 0 ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"} bg-green-600/80 text-white px-6 py-3 text-[clamp(1rem,2vw,1.2rem)] rounded-full shadow-lg z-[999] whitespace-nowrap`}>
         {selected.length} ordini selezionati — <button className="underline">Procedi</button>
       </div>
-
     </div>
   );
 }
