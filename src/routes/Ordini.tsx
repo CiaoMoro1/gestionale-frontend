@@ -6,6 +6,7 @@ import { OrdineRow } from "../components/OrdineRow";
 import { useOrderStatusMap } from "../hooks/useOrderStatusMap";
 import { useSelectedOrders } from "../state/useSelectedOrders";
 import { ToggleSelector } from "../components/ToggleSelector";
+import { useNavigate } from "react-router-dom";
 
 type OrdiniFilters = {
   search: string;
@@ -37,9 +38,9 @@ export default function Ordini() {
         evadibiliOnly: false,
       };
     }
-
-
   });
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     sessionStorage.setItem("ordine_filters", JSON.stringify(filters));
@@ -53,11 +54,12 @@ export default function Ordini() {
         supabase
           .from("orders")
           .select("*")
+          .in("stato_ordine", ["nuovo", null])
           .neq("fulfillment_status", "annullato")
           .order("created_at", { ascending: false }),
         supabase
           .from("order_items")
-          .select("order_id, quantity, products:product_id(sku, product_title, inventory(inventario, disponibile))"),
+          .select("order_id, quantity, products:product_id(sku, product_title, inventory(inventario, disponibile, riservato_sito))"),
       ]);
       if (ordersRes.data) setOrders(ordersRes.data);
       if (itemsRes.data) setOrderItems(itemsRes.data);
@@ -65,7 +67,8 @@ export default function Ordini() {
     })();
   }, [clear]);
 
-  const statusMap = useOrderStatusMap(orderItems);
+  const { statusMap } = useOrderStatusMap(orderItems);
+
 
   const skuMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -160,7 +163,25 @@ export default function Ordini() {
       </div>
 
       <div className={`fixed bottom-24 left-1/2 -translate-x-1/2 transform transition-all duration-300 ${selected.length > 0 ? "opacity-100 scale-100" : "opacity-0 scale-95 pointer-events-none"} bg-green-600/80 text-white px-6 py-3 text-[clamp(1rem,2vw,1.2rem)] rounded-full shadow-lg z-[999] whitespace-nowrap`}>
-        {selected.length} ordini selezionati — <button className="underline">Procedi</button>
+        {selected.length} ordini selezionati —
+        <button
+          className="underline ml-2"
+          onClick={async () => {
+            if (selected.length === 0) return;
+
+            // Aggiorna lo stato degli ordini selezionati
+            await supabase
+              .from("orders")
+              .update({ stato_ordine: "prelievo" })
+              .in("id", selected);
+
+            // Naviga verso /prelievo
+            navigate("/prelievo", { state: { orderIds: selected } });
+          }}
+        >
+          Procedi
+        </button>
+
       </div>
     </div>
   );

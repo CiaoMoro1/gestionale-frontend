@@ -172,12 +172,18 @@ export default function OrdineDetail() {
 
             const inv = item.products?.inventory;
             const qty = item.quantity;
-            const invDisponibile = inv?.disponibile ?? 0;
             const invFisico = inv?.inventario ?? 0;
+            const riservatoSito = inv?.riservato_sito ?? 0;
 
             let stato = "bg-red-500";
-            if (invFisico >= qty && invDisponibile >= qty) stato = "bg-green-500";
-            else if (invFisico >= qty && invDisponibile < qty) stato = "bg-yellow-500";
+            if (invFisico < qty) {
+              stato = "bg-red-500";
+            } else if (invFisico >= qty && riservatoSito > invFisico) {
+              stato = "bg-yellow-500";
+            } else {
+              stato = "bg-green-500";
+            }
+
 
             const parziale = Math.min(invFisico, qty);
 

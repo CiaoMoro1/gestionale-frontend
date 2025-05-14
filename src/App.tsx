@@ -30,7 +30,7 @@ const Ordini = lazy(() => import("./routes/Ordini"));
 const OrdineDetail = lazy(() => import("./routes/OrdineDetail"));
 const Movimenti = lazy(() => import("./routes/Movimenti"));
 const ProductDetailWrapper = lazy(() => import("./routes/ProductDetailWrapper"));
-
+const Prelievo = lazy(() => import("./routes/Prelievo"));
 
 function AppContent() {
   const location = useLocation();
@@ -60,6 +60,7 @@ function AppContent() {
   const navItems = [
     { label: "Home", icon: <Home size={24} />, path: "/" },
     { label: "Ordini", icon: <ClipboardList size={24} />, path: "/ordini" },
+    { label: "Prelievo", icon: <ClipboardList size={24} />, path: "/prelievo" },
     { label: "Prodotti", icon: <Package size={24} />, path: "/prodotti" },
     { label: "Movimenti", icon: <ArrowLeftRight size={24} />, path: "/movimenti" },
     { label: "Imp/Exp", icon: <ArrowDown size={24} />, path: "/import" },
@@ -234,6 +235,7 @@ function AppContent() {
                 <Route path="/sync" element={<SyncPage />} />
                 <Route path="/prodotti/:id" element={<ProductDetailWrapper />} />
                 <Route path="/movimenti" element={<Movimenti />} />
+                <Route path="/prelievo" element={<Prelievo />} />
               </Routes>
             </Suspense>
         </section>

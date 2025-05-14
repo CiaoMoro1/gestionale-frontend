@@ -1,11 +1,11 @@
-// src/hooks/useOrderStatusMap.ts
 import { useMemo } from "react";
 
 type StatusType = "green" | "yellow" | "red";
 
 export function useOrderStatusMap(orderItems: any[]) {
   return useMemo(() => {
-    const map: Record<string, { stato: StatusType; tot: number; disponibili: number }> = {};
+    const statusMap: Record<string, { stato: StatusType; tot: number; disponibili: number }> = {};
+    const problematicItems: any[] = [];
 
     const grouped = orderItems.reduce((acc: Record<string, any[]>, item) => {
       if (!acc[item.order_id]) acc[item.order_id] = [];
@@ -15,7 +15,12 @@ export function useOrderStatusMap(orderItems: any[]) {
 
     for (const orderId in grouped) {
       const items = grouped[orderId];
-      const validItems = items.filter((i) => i.products?.product_title?.trim() !== "—");
+
+      // Escludi gli articoli senza prodotto valido (es. "—")
+      const validItems = items.filter((i) => {
+        const titolo = i.products?.product_title?.trim();
+        return titolo && titolo !== "—";
+      });
 
       const tot = validItems.reduce((sum, i) => sum + i.quantity, 0);
       const disponibili = validItems.reduce((sum, i) => {
@@ -27,17 +32,21 @@ export function useOrderStatusMap(orderItems: any[]) {
       for (const i of validItems) {
         const q = i.quantity;
         const inv = i.products?.inventory;
-        if (inv?.inventario < q) {
+        const invFisico = inv?.inventario ?? 0;
+        const riservato = inv?.riservato_sito ?? 0;
+
+        if (invFisico < q) {
           stato = "red";
           break;
-        } else if (inv?.disponibile < q) {
+        } else if (riservato > invFisico) {
           stato = "yellow";
+          problematicItems.push(i);
         }
       }
 
-      map[orderId] = { stato, tot, disponibili };
+      statusMap[orderId] = { stato, tot, disponibili };
     }
 
-    return map;
+    return { statusMap, problematicItems };
   }, [orderItems]);
 }
