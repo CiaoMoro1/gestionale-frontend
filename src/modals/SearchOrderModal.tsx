@@ -48,7 +48,7 @@ export default function SearchOrderModal({
         onClose();
         window.location.href = `/prelievo/${order.id}`;
       },
-      (error) => {
+      () => {
         // opzionale: console.warn("Errore durante scan:", error);
       }
     );
