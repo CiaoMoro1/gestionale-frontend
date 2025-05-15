@@ -113,8 +113,8 @@ export default function ConfermaPrelievo() {
         {items.map((item) => (
           <div key={item.id} className="flex flex-col sm:flex-row sm:items-center justify-between border-b last:border-0 py-3">
             <div>
-              <div className="font-semibold">{item.products?.product_title || "—"}</div>
-              <div className="text-xs text-gray-500">SKU: {item.products?.sku}</div>
+              <div className="text-xs max-w-xs">{item.products?.product_title || "—"}</div>
+              <div className="font-semibold  text-gray-900">SKU: {item.products?.sku}</div>
             </div>
             <div className="flex items-center gap-3 mt-2 sm:mt-0">
               <span className="text-sm font-mono bg-gray-200 rounded px-2 py-1">
