@@ -221,7 +221,7 @@ export default function Prelievo() {
           <Search size={18} /> Cerca Ordine con Barcode
         </button>
       </div>
-              <SearchOrderModal open={searchOrderOpen} onClose={() => setSearchOrderOpen(false)} />
+      <SearchOrderModal open={searchOrderOpen} onClose={() => setSearchOrderOpen(false)} orders={orders}/>
 
       {/* Tabella Ordini */}
       <div className="overflow-x-auto bg-white shadow border rounded-xl">

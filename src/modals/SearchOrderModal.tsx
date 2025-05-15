@@ -1,9 +1,22 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { Html5Qrcode } from "html5-qrcode";
-import { supabase } from "../lib/supabase";
+import { X } from "lucide-react";
 
-export default function SearchOrderModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+type Order = {
+  id: string;
+  number: string;
+};
+
+export default function SearchOrderModal({
+  open,
+  onClose,
+  orders,
+}: {
+  open: boolean;
+  onClose: () => void;
+  orders: Order[];
+}) {
   const navigate = useNavigate();
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanningRef = useRef(false);
@@ -23,24 +36,18 @@ export default function SearchOrderModal({ open, onClose }: { open: boolean; onC
         if (scanningRef.current) return;
         scanningRef.current = true;
 
-        console.log("✅ Barcode letto:", decodedText);
+        // CERCA TRA GLI ORDINI IN PRELIEVO GIA' CARICATI!
+        const order = orders.find((o) => o.number === decodedText);
 
-        // CERCA L’ORDINE IN BASE AL NUMERO (o codice che metti nel barcode PDF)
-        const { data, error } = await supabase
-          .from("orders")
-          .select("id")
-          .eq("number", decodedText)
-          .single();
-
-        if (error || !data?.id) {
-          console.warn("❌ Ordine non trovato o errore Supabase:", error?.message);
-          alert(`Nessun ordine trovato per codice: ${decodedText}`);
+        if (!order) {
+          alert(`Nessun ordine in prelievo trovato per codice: ${decodedText}`);
           scanningRef.current = false;
           return;
         }
 
         await scanner.stop();
-        navigate(`/prelievo/${data.id}`); // 👈 vai direttamente alla conferma articoli!
+        onClose(); // chiudi la modale
+        navigate(`/prelievo/${order.id}`);
       },
       (error) => {
         console.warn("Errore durante scan:", error);
@@ -50,7 +57,7 @@ export default function SearchOrderModal({ open, onClose }: { open: boolean; onC
     return () => {
       scanner.stop().catch(console.error);
     };
-  }, [open, navigate, onClose, isMobile]);
+  }, [open, navigate, onClose, isMobile, orders]);
 
   if (!open) return null;
 
@@ -60,7 +67,9 @@ export default function SearchOrderModal({ open, onClose }: { open: boolean; onC
         <button
           onClick={onClose}
           className="absolute top-2 right-3 text-xl"
-        >×</button>
+        >
+          <X size={20} />
+        </button>
         <h2 className="text-lg font-bold">Scannerizza barcode ordine</h2>
 
         <div
@@ -77,7 +86,8 @@ export default function SearchOrderModal({ open, onClose }: { open: boolean; onC
         </div>
 
         <p className="text-center text-sm text-gray-600">
-          Inquadra il barcode dell’ordine dalla stampa o PDF.
+          Inquadra il barcode dell’ordine dalla stampa o PDF.<br />
+          Solo gli ordini già in prelievo sono ricercabili!
         </p>
       </div>
     </div>

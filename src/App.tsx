@@ -8,6 +8,8 @@ import BottomNav from "./components/layout/BottomNav";
 import MobileDrawer from "./components/layout/MobileDrawer";
 import SearchProductModal from "./modals/SearchProductModal";
 import HeaderMobile from "./components/layout/HeaderMobile";
+import ConfermaPrelievo from "./routes/ConfermaPrelievo"; // importa la nuova pagina
+
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -74,6 +76,7 @@ function AppContent() {
               <Route path="/prodotti/:id" element={<ProductDetailWrapper />} />
               <Route path="/movimenti" element={<Movimenti />} />
               <Route path="/prelievo" element={<Prelievo />} />
+              <Route path="/prelievo/:id" element={<ConfermaPrelievo />} />
             </Routes>
           </Suspense>
         </section>
