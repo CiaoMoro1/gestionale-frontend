@@ -47,7 +47,7 @@ export default function SearchOrderModal({
 
         await scanner.stop();
         onClose(); // chiudi la modale
-        navigate(`/prelievo/${order.id}`);
+        window.location.href = `/prelievo/${order.id}`;
       },
       (error) => {
         console.warn("Errore durante scan:", error);
