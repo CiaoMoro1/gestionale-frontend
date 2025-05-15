@@ -7,12 +7,29 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JsBarcode from "jsbarcode";
 import logoBase64 from "../assets/logo_base64";
+import SearchOrderModal from "../modals/SearchOrderModal";
+
+import {
+  CheckCircle,
+  Search,
+  Trash2,
+  FileText,
+  Boxes,
+  ClipboardList,
+} from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const formatIt = formatWithOptions({ locale: it });
+
 export default function Prelievo() {
   const [orders, setOrders] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+    const [searchOrderOpen, setSearchOrderOpen] = useState(false);
+
+
+  const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
@@ -29,7 +46,9 @@ export default function Prelievo() {
       const ids = ordersRes.data.map((o) => o.id);
       const itemsRes = await supabase
         .from("order_items")
-        .select("*, products:product_id(sku, product_title, inventory(inventario, riservato_sito))")
+        .select(
+          "*, products:product_id(sku, product_title, inventory(inventario, riservato_sito))"
+        )
         .in("order_id", ids);
 
       setOrders(ordersRes.data);
@@ -151,37 +170,63 @@ export default function Prelievo() {
 
     doc.save("dettaglio-ordini.pdf");
   };
-  if (loading) return <div className="p-6 text-center text-gray-600">Caricamento...</div>;
+   if (loading)
+    return (
+      <div className="p-6 text-center text-gray-600 flex items-center justify-center h-64">
+        <ClipboardList size={28} className="mx-auto mb-2 opacity-60" />
+        <span>Caricamento ordini...</span>
+      </div>
+    );
 
   return (
     <div className="p-4 max-w-6xl mx-auto space-y-8">
-      <h1 className="text-2xl font-bold text-center">📦 Prelievo</h1>
+      <h1 className="text-2xl font-bold text-center flex items-center justify-center gap-2">
+        <Boxes size={28} className="text-black/80" />
+        Prelievo
+      </h1>
 
-      {/* 📥 Export + Rimuovi Tutto */}
+      {/* Export / Ricerca / Rimuovi */}
       <div className="flex flex-wrap justify-center gap-3">
-        <button onClick={exportPicklistPDF} className="px-4 py-2 bg-black text-white rounded shadow">
-          📥 Esporta Lista Prelievo
+        <button
+          onClick={exportPicklistPDF}
+          className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-xl shadow hover:scale-105 transition"
+        >
+          <FileText size={18} /> Esporta Lista Prelievo
         </button>
-        <button onClick={exportOrdersPDF} className="px-4 py-2 bg-blue-600 text-white rounded shadow">
-          📥 Esporta Dettaglio Ordini
+        <button
+          onClick={exportOrdersPDF}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl shadow hover:scale-105 transition"
+        >
+          <FileText size={18} /> Esporta Dettaglio Ordini
         </button>
         <button
           onClick={async () => {
             const ids = orders.map((o) => o.id);
-            await supabase.from("orders").update({ stato_ordine: "nuovo" }).in("id", ids);
+            await supabase
+              .from("orders")
+              .update({ stato_ordine: "nuovo" })
+              .in("id", ids);
             setOrders([]);
             setItems([]);
           }}
-          className="px-4 py-2 bg-red-600 text-white rounded shadow"
+          className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl shadow hover:scale-105 transition"
         >
-          🗑️ Rimuovi Tutto da Prelievo
+          <Trash2 size={18} /> Rimuovi Tutto da Prelievo
+        </button>
+        {/* Ricerca barcode */}
+        <button
+          className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-black rounded-xl shadow hover:bg-gray-300 transition"
+          onClick={() => setSearchOrderOpen(true)} // <-- QUI!
+        >
+          <Search size={18} /> Cerca Ordine con Barcode
         </button>
       </div>
+              <SearchOrderModal open={searchOrderOpen} onClose={() => setSearchOrderOpen(false)} />
 
-      {/* ✅ Ordini Evadibili */}
+      {/* Tabella Ordini */}
       <div className="overflow-x-auto bg-white shadow border rounded-xl">
         <table className="min-w-[700px] w-full text-sm">
-          <thead className="bg-green-700 text-white">
+          <thead className="bg-black/90 text-white">
             <tr>
               <th className="p-3 text-left">Ordine</th>
               <th className="p-3 text-center">Evadi</th>
@@ -193,55 +238,79 @@ export default function Prelievo() {
             </tr>
           </thead>
           <tbody>
-            {orders.filter(o => statusMap[o.id]?.stato === "green").map((order) => {
-              const stat = statusMap[order.id];
-              const evadibili = stat?.disponibili ?? 0;
-              const totali = stat?.tot ?? 0;
+            {orders
+              .filter((o) => statusMap[o.id]?.stato === "green")
+              .map((order) => {
+                const stat = statusMap[order.id];
+                const evadibili = stat?.disponibili ?? 0;
+                const totali = stat?.tot ?? 0;
 
-              return (
-                <tr key={order.id} className="border-b">
-                  <td className="p-3 font-semibold">{order.number}</td>
-                  <td className="p-3 text-center">
-                    <span className="bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold">
-                      {evadibili}/{totali}
-                    </span>
-                  </td>
-                  <td className="p-3">{order.customer_name}</td>
-                  <td className="p-3 text-right">€ {order.total?.toFixed(2)}</td>
-                  <td className="p-3 text-center">{order.payment_status}</td>
-                  <td className="p-3 text-center">
-                    {formatIt("dd/MM/yyyy")(new Date(order.created_at))}
-                  </td>
-                  <td className="p-3 text-center space-y-2">
-                    <button className="px-3 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700">
-                      ✅ Conferma articoli
-                    </button>
-                    <button
-                      className="px-3 py-1 rounded bg-red-600 text-white text-xs hover:bg-red-700"
-                      onClick={async () => {
-                        await supabase.from("orders").update({ stato_ordine: "nuovo" }).eq("id", order.id);
-                        setOrders((prev) => prev.filter((o) => o.id !== order.id));
-                        setItems((prev) => prev.filter((i) => i.order_id !== order.id));
-                      }}
-                    >
-                      ❌ Rimuovi da Prelievo
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
+                return (
+                  <tr key={order.id} className="border-b last:border-0">
+                    <td className="p-3 font-semibold">{order.number}</td>
+                    <td className="p-3 text-center">
+                      <span className="bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold">
+                        {evadibili}/{totali}
+                      </span>
+                    </td>
+                    <td className="p-3">{order.customer_name}</td>
+                    <td className="p-3 text-right">
+                      € {order.total?.toFixed(2)}
+                    </td>
+                    <td className="p-3 text-center">{order.payment_status}</td>
+                    <td className="p-3 text-center">
+                      {formatIt("dd/MM/yyyy")(new Date(order.created_at))}
+                    </td>
+                    <td className="p-3 text-center space-y-2 flex flex-col items-center">
+                      <button
+                        className="flex items-center gap-2 px-3 py-1 rounded-xl bg-blue-600 text-white text-xs hover:bg-blue-700 shadow"
+                        onClick={() => navigate(`/prelievo/${order.id}`)}
+                      >
+                        <CheckCircle size={16} /> Conferma articoli
+                      </button>
+                      <button
+                        className="flex items-center gap-2 px-3 py-1 rounded-xl bg-red-600 text-white text-xs hover:bg-red-700 shadow"
+                        onClick={async () => {
+                          await supabase
+                            .from("orders")
+                            .update({ stato_ordine: "nuovo" })
+                            .eq("id", order.id);
+                          setOrders((prev) =>
+                            prev.filter((o) => o.id !== order.id)
+                          );
+                          setItems((prev) =>
+                            prev.filter((i) => i.order_id !== order.id)
+                          );
+                        }}
+                      >
+                        <Trash2 size={16} /> Rimuovi da Prelievo
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
           </tbody>
         </table>
       </div>
-      {/* ⚠️ Articoli con problemi (SKU + ordini coinvolti) */}
+
+      {/* Articoli problematici */}
       {problematicItems.length > 0 && (
         <div className="bg-yellow-50 border border-yellow-300 rounded-xl shadow p-4">
-          <h2 className="text-lg font-bold text-yellow-800 mb-4">
-            ⚠️ Articoli con scorte insufficienti
+          <h2 className="text-lg font-bold text-yellow-800 mb-4 flex items-center gap-2">
+            <Boxes size={20} className="text-yellow-600" />
+            Articoli con scorte insufficienti
           </h2>
-
           {(() => {
-            const skuMap: Record<string, { sku: string; title: string; inv: number; ris: number; ordini: any[] }> = {};
+            const skuMap: Record<
+              string,
+              {
+                sku: string;
+                title: string;
+                inv: number;
+                ris: number;
+                ordini: any[];
+              }
+            > = {};
 
             for (const item of problematicItems) {
               const sku = item.products?.sku || item.sku;
@@ -254,7 +323,10 @@ export default function Prelievo() {
               }
 
               const ordine = orders.find((o) => o.id === item.order_id);
-              if (ordine && !skuMap[sku].ordini.some((o) => o.id === ordine.id)) {
+              if (
+                ordine &&
+                !skuMap[sku].ordini.some((o) => o.id === ordine.id)
+              ) {
                 skuMap[sku].ordini.push(ordine);
               }
             }
@@ -285,12 +357,20 @@ export default function Prelievo() {
 
                         return (
                           <tr key={order.id} className="border-b">
-                            <td className="p-2 font-semibold">#{order.number}</td>
+                            <td className="p-2 font-semibold">
+                              #{order.number}
+                            </td>
                             <td className="p-2">{order.customer_name}</td>
-                            <td className="p-2 text-right">€ {order.total?.toFixed(2)}</td>
-                            <td className="p-2 text-center">{order.payment_status}</td>
+                            <td className="p-2 text-right">
+                              € {order.total?.toFixed(2)}
+                            </td>
                             <td className="p-2 text-center">
-                              {formatIt("dd/MM/yyyy")(new Date(order.created_at))}
+                              {order.payment_status}
+                            </td>
+                            <td className="p-2 text-center">
+                              {formatIt("dd/MM/yyyy")(
+                                new Date(order.created_at)
+                              )}
                             </td>
                             <td className="p-2 text-center">
                               <span className="bg-yellow-400 text-white px-2 py-1 rounded text-xs font-semibold">
@@ -298,18 +378,32 @@ export default function Prelievo() {
                               </span>
                             </td>
                             <td className="p-2 text-center space-y-1">
-                              <button className="px-3 py-1 rounded bg-blue-600 text-white text-xs hover:bg-blue-700">
-                                ✅ Conferma articoli
+                              <button
+                                className="flex items-center gap-2 px-3 py-1 rounded-xl bg-blue-600 text-white text-xs hover:bg-blue-700 shadow"
+                                onClick={() =>
+                                  navigate(`/prelievo/${order.id}`)
+                                }
+                              >
+                                <CheckCircle size={16} /> Conferma articoli
                               </button>
                               <button
-                                className="px-3 py-1 rounded bg-red-600 text-white text-xs hover:bg-red-700"
+                                className="flex items-center gap-2 px-3 py-1 rounded-xl bg-red-600 text-white text-xs hover:bg-red-700 shadow"
                                 onClick={async () => {
-                                  await supabase.from("orders").update({ stato_ordine: "nuovo" }).eq("id", order.id);
-                                  setOrders((prev) => prev.filter((o) => o.id !== order.id));
-                                  setItems((prev) => prev.filter((i) => i.order_id !== order.id));
+                                  await supabase
+                                    .from("orders")
+                                    .update({ stato_ordine: "nuovo" })
+                                    .eq("id", order.id);
+                                  setOrders((prev) =>
+                                    prev.filter((o) => o.id !== order.id)
+                                  );
+                                  setItems((prev) =>
+                                    prev.filter(
+                                      (i) => i.order_id !== order.id
+                                    )
+                                  );
                                 }}
                               >
-                                ❌ Rimuovi da Prelievo
+                                <Trash2 size={16} /> Rimuovi da Prelievo
                               </button>
                             </td>
                           </tr>
