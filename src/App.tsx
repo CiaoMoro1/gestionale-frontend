@@ -6,9 +6,10 @@ import { supabase } from "./lib/supabase";
 import Sidebar from "./components/layout/Sidebar";
 import BottomNav from "./components/layout/BottomNav";
 import MobileDrawer from "./components/layout/MobileDrawer";
-import UniversalBarcodeScannerModal from "./modals/UniversalBarcodeScannerModal"; // <-- NOTA: ./modals/ (non ../)
+import SearchProductModal from "./modals/SearchProductModal";
 import HeaderMobile from "./components/layout/HeaderMobile";
-import ConfermaPrelievo from "./routes/ConfermaPrelievo";
+import ConfermaPrelievo from "./routes/ConfermaPrelievo"; // importa la nuova pagina
+
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -28,8 +29,7 @@ function AppContent() {
   const location = useLocation();
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [openOrderScanner, setOpenOrderScanner] = useState(false);
-  const [ordersInPrelievo, setOrdersInPrelievo] = useState<any[]>([]);
+  const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -38,18 +38,6 @@ function AppContent() {
     );
     return () => listener?.subscription?.unsubscribe();
   }, []);
-
-  // Carica ordini in prelievo ogni volta che serve (esempio: puoi mettere in un context globale)
-  useEffect(() => {
-    if (!session) return;
-    (async () => {
-      const { data, } = await supabase
-        .from("orders")
-        .select("id, number, stato_ordine")
-        .eq("stato_ordine", "prelievo");
-      if (data) setOrdersInPrelievo(data);
-    })();
-  }, [session]);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -95,17 +83,10 @@ function AppContent() {
       </main>
 
       {/* Bottom Navigation Mobile */}
-      <BottomNav onSearch={() => setOpenOrderScanner(true)} />
+      <BottomNav onSearch={() => setSearchOpen(true)} />
 
-      {/* Modal di ricerca ordine con scanner */}
-      <UniversalBarcodeScannerModal
-        open={openOrderScanner}
-        onClose={() => setOpenOrderScanner(false)}
-        mode="order"
-        data={ordersInPrelievo}
-        getCode={(order: any) => order.number}
-        goTo={(order: any) => window.location.href = `/prelievo/${order.id}`}
-      />
+      {/* Modal di ricerca prodotto */}
+      <SearchProductModal open={searchOpen} onClose={() => setSearchOpen(false)} />
     </div>
   );
 }
