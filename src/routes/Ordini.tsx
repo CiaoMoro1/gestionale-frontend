@@ -7,6 +7,7 @@ import { useOrderStatusMap } from "../hooks/useOrderStatusMap";
 import { useSelectedOrders } from "../state/useSelectedOrders";
 import { ToggleSelector } from "../components/ToggleSelector";
 import { useNavigate } from "react-router-dom";
+import { trackFrontendEvent } from "../utils/trackFrontendEvent";
 
 type OrdiniFilters = {
   search: string;
@@ -175,12 +176,27 @@ export default function Ordini() {
               .update({ stato_ordine: "prelievo" })
               .in("id", selected);
 
+            // Audit log per ciascun ordine
+            for (const id of selected) {
+              const ordine = orders.find(o => o.id === id);
+              if (ordine) {
+                await trackFrontendEvent(
+                  "SET_PRELIEVO",
+                  "order",
+                  ordine.id,
+                  { number: ordine.number, from: "nuovo", to: "prelevato" }
+                );
+              }
+            }
+
+
             // Naviga verso /prelievo
             navigate("/prelievo", { state: { orderIds: selected } });
           }}
         >
           Procedi
         </button>
+
 
       </div>
     </div>

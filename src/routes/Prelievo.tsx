@@ -7,8 +7,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import JsBarcode from "jsbarcode";
 import logoBase64 from "../assets/logo_base64";
-import SearchOrderModal from "../modals/SearchOrderModal";
-
+import UniversalBarcodeScannerModal from "../modals/UniversalBarcodeScannerModal";
 import {
   CheckCircle,
   Search,
@@ -25,9 +24,7 @@ export default function Prelievo() {
   const [orders, setOrders] = useState<any[]>([]);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-
-    const [searchOrderOpen, setSearchOrderOpen] = useState(false);
-
+  const [openOrderScanner, setOpenOrderScanner] = useState(false);
 
   const navigate = useNavigate();
 
@@ -170,7 +167,7 @@ export default function Prelievo() {
 
     doc.save("dettaglio-ordini.pdf");
   };
-   if (loading)
+    if (loading)
     return (
       <div className="p-6 text-center text-gray-600 flex items-center justify-center h-64">
         <ClipboardList size={28} className="mx-auto mb-2 opacity-60" />
@@ -213,15 +210,24 @@ export default function Prelievo() {
         >
           <Trash2 size={18} /> Rimuovi Tutto da Prelievo
         </button>
-        {/* Ricerca barcode */}
+        {/* Scanner barcode per ordini */}
         <button
           className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-black rounded-xl shadow hover:bg-gray-300 transition"
-          onClick={() => setSearchOrderOpen(true)} // <-- QUI!
+          onClick={() => setOpenOrderScanner(true)}
         >
           <Search size={18} /> Cerca Ordine con Barcode
         </button>
       </div>
-      <SearchOrderModal open={searchOrderOpen} onClose={() => setSearchOrderOpen(false)} orders={orders}/>
+
+      {/* MODALE UNIVERSALE SCANNER */}
+      <UniversalBarcodeScannerModal
+        open={openOrderScanner}
+        onClose={() => setOpenOrderScanner(false)}
+        mode="order"
+        data={orders}
+        getCode={(order: any) => order.number}
+        goTo={(order: any) => window.location.href = `/prelievo/${order.id}`}
+      />
 
       {/* Tabella Ordini */}
       <div className="overflow-x-auto bg-white shadow border rounded-xl">
