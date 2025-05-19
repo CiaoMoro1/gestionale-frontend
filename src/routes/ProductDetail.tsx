@@ -1,7 +1,31 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+
+// 1. INTERFACCIA PER IL PRODOTTO
+interface ProductInventory {
+  inventario?: number;
+  disponibile?: number;
+  in_produzione?: number;
+  riservato_sito?: number;
+}
+
+interface ProductDetail {
+  id: string;
+  product_title?: string | null;
+  variant_title?: string | null;
+  sku?: string | null;
+  ean?: string | null;
+  image_url?: string | null;
+  price?: number | null;
+  cost?: number | null;
+  inventory_policy?: string | null;
+  status?: string | null;
+  updated_at?: string | null;
+  inventory?: ProductInventory | null;
+  [key: string]: unknown;
+}
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -20,9 +44,30 @@ export default function ProductDetail() {
   } | null>(null);
   const [manualValue, setManualValue] = useState<string>("0");
 
-  const [data, setData] = useState<any>(null);
+  // 2. STATO TIPIZZATO!
+  const [data, setData] = useState<ProductDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // 3. fetchProduct PRIMA degli useEffect che lo usano
+  const fetchProduct = useCallback(async () => {
+    if (!id) return;
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("products")
+      .select("*, inventory(inventario, disponibile, in_produzione, riservato_sito)")
+      .eq("id", id)
+      .single();
+
+    if (error) {
+      setError(error.message);
+      setData(null);
+    } else {
+      setData(data as ProductDetail);
+      setError(null);
+    }
+    setLoading(false);
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
@@ -54,33 +99,14 @@ export default function ProductDetail() {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [id]);
+  }, [id, fetchProduct]);
 
   useEffect(() => {
     fetchProduct();
-  }, [id]);
-
-  const fetchProduct = async () => {
-    if (!id) return;
-    setLoading(true);
-    const { data, error } = await supabase
-      .from("products")
-      .select("*, inventory(inventario, disponibile, in_produzione, riservato_sito)")
-      .eq("id", id)
-      .single();
-
-    if (error) {
-      setError(error.message);
-      setData(null);
-    } else {
-      setData(data);
-      setError(null);
-    }
-    setLoading(false);
-  };
+  }, [id, fetchProduct]);
 
   const mutation = useMutation({
-    mutationFn: async ({ field, value, mode }: { field: string; value: any; mode?: "delta" | "replace" }) => {
+    mutationFn: async ({ field, value, mode }: { field: string; value: unknown; mode?: "delta" | "replace" }) => {
       if (!id) throw new Error("ID mancante");
 
       if (["price", "inventory_policy", "status", "ean"].includes(field)) {
@@ -106,7 +132,6 @@ export default function ProductDetail() {
   if (loading || !data) return <div className="p-6 text-center text-gray-500">Caricamento prodotto...</div>;
   if (error) return <div className="p-6 text-center text-red-500">Errore: {error}</div>;
 
-
   return (
     <div className="p-4 rounded-3xl border space-y-6 bg-gradient-to-b from-white to-gray-100 min-h-screen text-black">
       {originOrder && (
@@ -127,19 +152,19 @@ export default function ProductDetail() {
 
       <div className="text-center">
         <h1 className="text-[clamp(1.4rem,4vw,2.2rem)] font-bold text-black">
-          {data.product_title}
+          {typeof data.product_title === "string" ? data.product_title : ""}
         </h1>
         <p className="text-[clamp(0.9rem,2vw,1.2rem)] text-black/60">
-          {data.variant_title}
+          {typeof data.variant_title === "string" ? data.variant_title : ""}
         </p>
       </div>
 
-      {data.image_url && (
+      {typeof data.image_url === "string" && data.image_url && (
         <div className="flex justify-center">
           <div className="rounded-3xl border border-gray-200 shadow-xl bg-white/30 backdrop-blur-md p-2">
             <img
               src={data.image_url}
-              alt={data.sku}
+              alt={typeof data.sku === "string" ? data.sku : undefined}
               className="max-h-[300px] rounded-2xl object-contain"
             />
           </div>
@@ -159,7 +184,7 @@ export default function ProductDetail() {
           editable
           field="inventario"
           extra={
-            data.inventory?.in_produzione > 0
+            data.inventory?.in_produzione && data.inventory.in_produzione > 0
               ? ` (${data.inventory.in_produzione} in arrivo)`
               : ""
           }
@@ -168,7 +193,6 @@ export default function ProductDetail() {
         <GlassField label="Disponibile" value={data.inventory?.disponibile} />
         <GlassField label="In Produzione" value={data.inventory?.in_produzione} />
       </Section>
-
 
       <Section label="Riservato" cols={3}>
         <GlassField label="Sito" value={data.inventory?.riservato_sito} />
@@ -185,7 +209,10 @@ export default function ProductDetail() {
       <Section label="Impostazioni" cols={2}>
         <GlassField label="Vendi Sempre" value={data.inventory_policy} editable field="inventory_policy" type="checkbox" />
         <GlassField label="Status" value={data.status} />
-        <GlassField label="Ultima Modifica" value={formatDate(data.updated_at)} />
+        <GlassField
+          label="Ultima Modifica"
+          value={data.updated_at ? formatDate(data.updated_at) : "—"}
+        />
       </Section>
 
       {modalState && (
@@ -275,9 +302,11 @@ export default function ProductDetail() {
     </div>
   );
 
+  // --- COMPONENTI INTERNI ---
+
   function GlassField({ label, value, editable, field, type = "text", extra = "" }: {
     label: string;
-    value: any;
+    value: string | number | boolean | null | undefined;
     editable?: boolean;
     field?: string;
     type?: "text" | "checkbox";
@@ -305,7 +334,7 @@ export default function ProductDetail() {
       >
         <div className="text-xs font-semibold text-black/60 mb-1 text-center">{label}</div>
         <div className="text-sm font-bold text-black text-center truncate">
-          {displayValue || "—"}{extra}
+          {displayValue ?? "—"}{extra}
         </div>
       </div>
     );

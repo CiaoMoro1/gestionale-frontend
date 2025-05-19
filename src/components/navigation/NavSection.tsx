@@ -24,7 +24,7 @@ export default function NavSection({
     if (items.some((i) => i.path === location.pathname)) {
       setOpen(true);
     }
-  }, [location.pathname]);
+  }, [location.pathname, items]);
 
   return (
     <div className="w-full">

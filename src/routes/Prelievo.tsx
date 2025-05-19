@@ -8,7 +8,7 @@ import autoTable from "jspdf-autotable";
 import JsBarcode from "jsbarcode";
 import logoBase64 from "../assets/logo_base64";
 import SearchOrderModal from "../modals/SearchOrderModal";
-
+import type { Ordine, OrderItem } from "../types/ordini";
 import {
   CheckCircle,
   Search,
@@ -22,13 +22,10 @@ import { useNavigate } from "react-router-dom";
 const formatIt = formatWithOptions({ locale: it });
 
 export default function Prelievo() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Ordine[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
-
-    const [searchOrderOpen, setSearchOrderOpen] = useState(false);
-
-
+  const [searchOrderOpen, setSearchOrderOpen] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -46,9 +43,7 @@ export default function Prelievo() {
       const ids = ordersRes.data.map((o) => o.id);
       const itemsRes = await supabase
         .from("order_items")
-        .select(
-          "*, products:product_id(sku, product_title, inventory(inventario, riservato_sito))"
-        )
+        .select("*, products:product_id(sku, product_title, inventory(inventario, riservato_sito))")
         .in("order_id", ids);
 
       setOrders(ordersRes.data);
@@ -59,6 +54,7 @@ export default function Prelievo() {
 
   const { statusMap, problematicItems } = useOrderStatusMap(items);
 
+  // Esportazione lista prelievo PDF
   const exportPicklistPDF = () => {
     const doc = new jsPDF();
     doc.addImage(logoBase64, "PNG", 150, 10, 40, 10);
@@ -72,9 +68,10 @@ export default function Prelievo() {
     });
     doc.text(`Lista di Prelievo — ${now}`, 14, 20);
 
+    // Raggruppa per SKU
     const picklist: Record<string, { sku: string; title: string; qty: number; inventario: number }> = {};
     for (const item of items) {
-      const sku = item.products?.sku || item.sku;
+      const sku = item.products?.sku || item.sku || "—";
       const title = item.products?.product_title || "—";
       const inv = item.products?.inventory?.inventario ?? 0;
       if (!picklist[sku]) {
@@ -83,6 +80,7 @@ export default function Prelievo() {
       picklist[sku].qty += item.quantity;
     }
 
+    // Raggruppa per prefisso SKU
     const grouped: Record<string, { sku: string; title: string; qty: number; inventario: number }[]> = {};
     Object.values(picklist).forEach((item) => {
       const root = item.sku.split("-")[0].toUpperCase();
@@ -109,11 +107,13 @@ export default function Prelievo() {
         margin: { left: 14, right: 14 },
       });
 
-      y = (doc as any).lastAutoTable.finalY + 10;
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
     }
 
     doc.save("lista-prelievo.pdf");
   };
+
+  // Esportazione dettaglio ordini PDF
   const exportOrdersPDF = () => {
     const doc = new jsPDF();
     doc.addImage(logoBase64, "PNG", 150, 10, 40, 10);
@@ -146,9 +146,9 @@ export default function Prelievo() {
       y += 20;
 
       doc.setFontSize(9);
-      doc.text(`${order.shipping_address}, ${order.shipping_zip} ${order.shipping_city} (${order.shipping_province}) — ${order.shipping_country}`, 14, y);
+      doc.text(`${order.shipping_address ?? ""}, ${order.shipping_zip ?? ""} ${order.shipping_city ?? ""} (${order.shipping_province ?? ""}) — ${order.shipping_country ?? ""}`, 14, y);
       y += 5;
-      doc.text(`Email: ${order.customer_email} — Tel: ${order.customer_phone}`, 14, y);
+      doc.text(`Email: ${order.customer_email ?? ""} — Tel: ${order.customer_phone ?? ""}`, 14, y);
       y += 6;
 
       const relatedItems = items.filter((i) => i.order_id === order.id);
@@ -156,7 +156,7 @@ export default function Prelievo() {
         startY: y,
         head: [["SKU", "Prodotto", "Quantità"]],
         body: relatedItems.map((item) => [
-          item.products?.sku || item.sku,
+          item.products?.sku || item.sku || "—",
           item.products?.product_title || "—",
           item.quantity.toString(),
         ]),
@@ -165,12 +165,13 @@ export default function Prelievo() {
         margin: { top: 10, left: 14, right: 14 },
       });
 
-      y = (doc as any).lastAutoTable.finalY + 10;
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
     }
 
     doc.save("dettaglio-ordini.pdf");
   };
-   if (loading)
+
+  if (loading)
     return (
       <div className="p-6 text-center text-gray-600 flex items-center justify-center h-64">
         <ClipboardList size={28} className="mx-auto mb-2 opacity-60" />
@@ -216,7 +217,7 @@ export default function Prelievo() {
         {/* Ricerca barcode */}
         <button
           className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-black rounded-xl shadow hover:bg-gray-300 transition"
-          onClick={() => setSearchOrderOpen(true)} // <-- QUI!
+          onClick={() => setSearchOrderOpen(true)}
         >
           <Search size={18} /> Cerca Ordine con Barcode
         </button>
@@ -308,12 +309,12 @@ export default function Prelievo() {
                 title: string;
                 inv: number;
                 ris: number;
-                ordini: any[];
+                ordini: Ordine[];
               }
             > = {};
 
             for (const item of problematicItems) {
-              const sku = item.products?.sku || item.sku;
+              const sku = item.products?.sku || item.sku || "—";
               const title = item.products?.product_title || "—";
               const inv = item.products?.inventory?.inventario ?? 0;
               const ris = item.products?.inventory?.riservato_sito ?? 0;

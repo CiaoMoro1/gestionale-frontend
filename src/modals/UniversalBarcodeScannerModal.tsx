@@ -6,23 +6,23 @@ import { X } from "lucide-react";
 // Facoltativo: beep audio
 const beepSrc = "https://assets.mixkit.co/sfx/preview/mixkit-confirmation-tone-2867.mp3";
 
-type UniversalBarcodeScannerModalProps = {
+type UniversalBarcodeScannerModalProps<T> = {
   open: boolean;
   onClose: () => void;
   mode: "product" | "order";
-  data: any[]; // [{ id, ean } | { id, number }]
-  getCode: (item: any) => string; // es: item => item.ean (per prodotto), item => item.number (per ordine)
-  goTo: (item: any) => void; // es: (item) => navigate(`/prodotti/${item.id}`)
+  data: T[];
+  getCode: (item: T) => string;
+  goTo: (item: T) => void;
 };
 
-export default function UniversalBarcodeScannerModal({
+export default function UniversalBarcodeScannerModal<T>({
   open,
   onClose,
   mode,
   data,
   getCode,
   goTo,
-}: UniversalBarcodeScannerModalProps) {
+}: UniversalBarcodeScannerModalProps<T>) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanningRef = useRef(false);
   const isMobile = /Mobi|Android/i.test(navigator.userAgent);
@@ -58,7 +58,9 @@ export default function UniversalBarcodeScannerModal({
         // Suono beep
         try {
           new Audio(beepSrc).play();
-        } catch {}
+        } catch (err) {
+          console.error(err);
+        }
 
         await scanner.stop();
         onClose();
@@ -70,7 +72,7 @@ export default function UniversalBarcodeScannerModal({
     );
 
     return () => {
-      scanner.stop().catch(() => {});
+      scanner.stop().catch((err) => console.error(err));
     };
   }, [open, onClose, isMobile, data, getCode, goTo, navigate, mode]);
 

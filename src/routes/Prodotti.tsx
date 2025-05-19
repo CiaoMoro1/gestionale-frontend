@@ -14,13 +14,22 @@ import SearchInput from "../components/SearchInput";
 import { ArrowUp } from "lucide-react";
 import { QuantityInput } from "../components/QuantityInput";
 
-interface Product {
+
+interface Inventory {
+  inventario: number | null;
+}
+
+interface ProductRaw {
   id: string;
   sku: string | null;
   ean: string | null;
   product_title: string | null;
   price: number | null;
-  inventario: number | null;
+  inventory_product_id_fkey?: Inventory | Inventory[] | null;
+}
+
+interface Product extends ProductRaw {
+  inventario: number;
 }
 
 export default function Prodotti() {
@@ -60,7 +69,7 @@ export default function Prodotti() {
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  const { data, isLoading, error } = useQuery<Product[]>({
+    const { data, isLoading, error } = useQuery<Product[]>({
     queryKey: ["products"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -76,9 +85,12 @@ export default function Prodotti() {
 
       if (error) throw error;
 
-      return data?.map((p: any) => ({
+      // Typizza la mappa!
+      return (data as ProductRaw[] | null)?.map((p) => ({
         ...p,
-        inventario: p.inventory_product_id_fkey?.inventario ?? 0,
+        inventario: Array.isArray(p.inventory_product_id_fkey)
+          ? p.inventory_product_id_fkey[0]?.inventario ?? 0
+          : (p.inventory_product_id_fkey?.inventario ?? 0),
       })) ?? [];
     },
   });
@@ -97,7 +109,7 @@ export default function Prodotti() {
         return tokens.every((token) => full.includes(token));
       })
       .sort((a, b) => (a.product_title ?? "").localeCompare(b.product_title ?? ""));
-  }, [data, normalizedSearch]);
+  }, [data, tokens]);
 
   const visibleItems = deferredSearch
     ? filtered

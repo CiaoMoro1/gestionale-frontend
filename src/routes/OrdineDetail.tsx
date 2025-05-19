@@ -2,35 +2,46 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { useState, useEffect } from "react";
+import type { Ordine, OrderItem } from "../types/ordini";
 
-type Ordine = {
-  id: string;
-  number: string;
-  customer_name: string;
-  channel: string;
-  total: number;
-  payment_status: string;
-  fulfillment_status: string;
-  created_at: string;
+type SupabaseProduct = {
+  sku?: string | null;
+  product_title?: string | null;
+  variant_title?: string | null;
+  inventory?:
+    | { inventario?: number; disponibile?: number; riservato_sito?: number }[]
+    | { inventario?: number; disponibile?: number; riservato_sito?: number }
+    | null;
+  [key: string]: unknown;
 };
 
-type OrderItem = {
-  sku: string;
-  quantity: number;
-  shopify_variant_id: string | null;
-  product_id: string | null;
-  products?: {
-    product_title: string;
-    variant_title: string;
-    inventory?: {
-      inventario: number;
-      disponibile: number;
-      riservato_sito?: number;
-    };
-  } | null;
-};
+type SupabaseInventory =
+  | { inventario?: number; disponibile?: number; riservato_sito?: number }
+  | null;
 
-// ...import e tipi invariati
+
+
+// --- helpers ---
+function formatDate(dateString: string = "") {
+  return new Date(dateString).toLocaleString("it-IT", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function Glass({ label, value }: { label: string; value: string | number | null | undefined }) {
+  return (
+    <div className="p-3 sm:p-4 rounded-xl border border-white/90 backdrop-blur bg-white/50 shadow">
+      <div className="text-[clamp(0.75rem,2vw,1rem)] font-semibold text-gray-600 mb-1">{label}</div>
+      <div className="text-[clamp(0.9rem,2.5vw,1.2rem)] font-medium text-black">
+        {value !== undefined && value !== null && value !== "" ? value : "—"}
+      </div>
+    </div>
+  );
+}
 
 export default function OrdineDetail() {
   const { id } = useParams();
@@ -66,41 +77,82 @@ export default function OrdineDetail() {
         .single();
       if (err1) throw err1;
 
+      // SELECT relazionale: products e inventory possono essere array!
       const { data: rawItems, error: err2 } = await supabase
         .from("order_items")
-        .select(`sku, quantity, shopify_variant_id, product_id, products:product_id(product_title, variant_title, inventory(inventario, disponibile, riservato_sito))`)
+        .select(
+          `id, order_id, sku, quantity, shopify_variant_id, product_id,
+          products:product_id(product_title, variant_title, inventory(inventario, disponibile, riservato_sito))`
+        )
         .eq("order_id", id);
       if (err2) throw err2;
 
-      const items: OrderItem[] = (rawItems ?? []).map((item: any) => ({
-        ...item,
-        products: Array.isArray(item.products) ? item.products[0] : item.products
-      }));
+      const items: OrderItem[] = (rawItems ?? []).map((item) => {
+        let prod: SupabaseProduct | null = null;
+        if (Array.isArray(item.products)) {
+          prod = item.products.length > 0 ? item.products[0] : null;
+        } else {
+          prod = item.products ?? null;
+        }
+
+        let inventory: SupabaseInventory = null;
+        if (prod) {
+          const rawInv = prod.inventory;
+          if (Array.isArray(rawInv)) {
+            inventory = rawInv.length > 0 ? rawInv[0] : null;
+          } else if (rawInv) {
+            inventory = rawInv;
+          }
+        }
+
+        return {
+          ...item,
+          products: prod
+            ? {
+                ...prod,
+                inventory: inventory,
+              }
+            : null,
+        };
+      });
+
 
       return { ordine, items };
     },
   });
 
-  const fetchRelatedOrders = async (productId: string, orderNumber: string, sku: string) => {
-    const { data, error } = await supabase
-      .from("order_items")
-      .select("order_id, quantity, orders(id, number, customer_name, created_at)")
-      .eq("product_id", productId);
+    const fetchRelatedOrders = async (productId: string, orderNumber: string, sku: string) => {
+      const { data, error } = await supabase
+        .from("order_items")
+        .select("order_id, quantity, orders(id, number, customer_name, channel, total, payment_status, fulfillment_status, created_at)")
+        .eq("product_id", productId);
 
-    if (!error && data) {
-      const ordini = data
-        .filter((item: any) => item.orders && item.orders.id !== id)
-        .map((item: any) => ({ orders: item.orders, quantity: item.quantity }));
+      if (!error && data) {
+        type RelatedOrderResult = {
+          orders: Ordine | Ordine[] | null;
+          quantity: number;
+        };
 
-      setRelatedOrders(ordini);
-      setRelatedSku(sku);
+        const ordini = data
+          .filter((item: RelatedOrderResult) =>
+            item.orders && (Array.isArray(item.orders) ? item.orders[0]?.id !== id : item.orders.id !== id)
+          )
+          .map((item: RelatedOrderResult) => ({
+            orders: Array.isArray(item.orders) ? item.orders[0] : item.orders!,
+            quantity: item.quantity,
+          }));
 
-      if (!originSet) {
-        setOriginOrder({ id: id!, number: orderNumber });
-        setOriginSet(true);
+        setRelatedOrders(ordini);
+        setRelatedSku(sku);
+
+        if (!originSet) {
+          setOriginOrder({ id: id!, number: orderNumber });
+          setOriginSet(true);
+        }
       }
-    }
-  };
+    };
+
+
 
   if (isLoading) return <div className="p-6 text-blue-500 text-center">Caricamento...</div>;
   if (error) return <div className="p-6 text-red-500">Errore: {error.message}</div>;
@@ -115,20 +167,24 @@ export default function OrdineDetail() {
 
   return (
     <div className="p-4 space-y-6 rounded-3xl border text-white bg-gradient-to-b from-white to-gray-200 min-h-screen">
-      <h1 className="font-bold text-center text-black text-[clamp(1.2rem,4vw,2rem)]">Ordine {ordine.number}</h1>
-          <div className="flex justify-center">
-            <button
-              onClick={() => navigate("/ordini")}
-              className="px-4 py-2 mb-2 rounded-full border border-gray-400 text-gray-800 bg-white hover:bg-gray-100 transition font-medium shadow-sm"
-            >
-              ⬅️ Torna alla lista ordini
-            </button>
-          </div>
+      <h1 className="font-bold text-center text-black text-[clamp(1.2rem,4vw,2rem)]">
+        Ordine {ordine.number}
+      </h1>
+      <div className="flex justify-center">
+        <button
+          onClick={() => navigate("/ordini")}
+          className="px-4 py-2 mb-2 rounded-full border border-gray-400 text-gray-800 bg-white hover:bg-gray-100 transition font-medium shadow-sm"
+        >
+          ⬅️ Torna alla lista ordini
+        </button>
+      </div>
 
       {originOrder && originOrder.id !== id && (
         <div className="flex justify-center mb-4">
           <div className="flex items-center gap-4 px-4 py-3 bg-white/60 backdrop-blur border border-white/90 rounded-2xl shadow text-[clamp(0.8rem,2vw,1rem)] text-black">
-            <span className="font-medium">Ordine di partenza: <strong>{originOrder.number}</strong></span>
+            <span className="font-medium">
+              Ordine di partenza: <strong>{originOrder.number}</strong>
+            </span>
             <button
               onClick={() => navigate(`/ordini/${originOrder.id}`)}
               className="px-3 py-1 rounded-xl border border-black/20 bg-black/80 hover:bg-white/90 transition text-white/80 shadow-sm font-semibold"
@@ -145,7 +201,7 @@ export default function OrdineDetail() {
         <Glass label="Totale" value={`${ordine.total?.toFixed(2)} €`} />
         <Glass label="Pagamento" value={ordine.payment_status} />
         <Glass label="Evasione" value={ordine.fulfillment_status} />
-        <Glass label="Data" value={formatDate(ordine.created_at)} />
+        <Glass label="Data" value={formatDate(ordine.created_at ?? "")} />
       </div>
 
       <div>
@@ -184,7 +240,6 @@ export default function OrdineDetail() {
               stato = "bg-green-500";
             }
 
-
             const parziale = Math.min(invFisico, qty);
 
             return (
@@ -222,7 +277,7 @@ export default function OrdineDetail() {
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        fetchRelatedOrders(item.product_id!, ordine.number, item.sku);
+                        fetchRelatedOrders(item.product_id!, ordine.number, item.sku ?? "");
                       }}
                       className="ml-auto text-[clamp(0.85rem,2vw,1.1rem)] px-2 py-1 rounded bg-black text-white hover:bg-gray-800 transition"
                     >
@@ -282,7 +337,7 @@ export default function OrdineDetail() {
                   >
                     <div className="text-[clamp(0.9rem,2vw,1.1rem)] font-semibold">{orders.number}</div>
                     <div className="text-[clamp(0.8rem,2vw,1rem)] text-gray-600">
-                      {orders.customer_name} — {formatDate(orders.created_at)}
+                      {orders.customer_name} — {formatDate(orders.created_at ?? "")}
                     </div>
                     <div className="text-[clamp(0.9rem,2vw,1.1rem)] font-medium text-black/80 mt-1">
                       quantità: {quantity}
@@ -296,25 +351,4 @@ export default function OrdineDetail() {
       )}
     </div>
   );
-}
-
-function Glass({ label, value }: { label: string; value: any }) {
-  return (
-    <div className="p-3 sm:p-4 rounded-xl border border-white/90 backdrop-blur bg-white/50 shadow">
-      <div className="text-[clamp(0.75rem,2vw,1rem)] font-semibold text-gray-600 mb-1">{label}</div>
-      <div className="text-[clamp(0.9rem,2.5vw,1.2rem)] font-medium text-black">
-        {value !== undefined && value !== null && value !== "" ? value : "—"}
-      </div>
-    </div>
-  );
-}
-
-function formatDate(dateString: string = "") {
-  return new Date(dateString).toLocaleString("it-IT", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
 }

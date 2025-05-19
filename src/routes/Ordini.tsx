@@ -1,4 +1,3 @@
-// src/routes/Ordini.tsx
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import SearchInput from "../components/SearchInput";
@@ -8,6 +7,7 @@ import { useSelectedOrders } from "../state/useSelectedOrders";
 import { ToggleSelector } from "../components/ToggleSelector";
 import { useNavigate } from "react-router-dom";
 import { trackFrontendEvent } from "../utils/trackFrontendEvent";
+import type { Ordine, OrderItem } from "../types/ordini";
 
 type OrdiniFilters = {
   search: string;
@@ -17,9 +17,19 @@ type OrdiniFilters = {
   evadibiliOnly: boolean;
 };
 
+type SupabaseProduct = {
+  sku?: string | null;
+  product_title?: string | null;
+  inventory?:
+    | { inventario?: number; disponibile?: number; riservato_sito?: number }[]
+    | { inventario?: number; disponibile?: number; riservato_sito?: number }
+    | null;
+  [key: string]: unknown;
+};
+
 export default function Ordini() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [orderItems, setOrderItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Ordine[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [filters, setFilters] = useState<OrdiniFilters>(() => {
     try {
       const saved = sessionStorage.getItem("ordine_filters");
@@ -60,16 +70,51 @@ export default function Ordini() {
           .order("created_at", { ascending: false }),
         supabase
           .from("order_items")
-          .select("order_id, quantity, products:product_id(sku, product_title, inventory(inventario, disponibile, riservato_sito))"),
+          .select(
+            "id, order_id, product_id, sku, quantity, products:product_id(sku, product_title, inventory(inventario, disponibile, riservato_sito))"
+          ),
       ]);
+
       if (ordersRes.data) setOrders(ordersRes.data);
-      if (itemsRes.data) setOrderItems(itemsRes.data);
+      if (itemsRes.data) {
+        const mapped: OrderItem[] = itemsRes.data.map((item) => {
+          let prod: SupabaseProduct | null = null;
+          if (Array.isArray(item.products)) {
+            prod = item.products.length > 0 ? item.products[0] : null;
+          } else {
+            prod = item.products ?? null;
+          }
+
+          let inventory:
+            | { inventario?: number; disponibile?: number; riservato_sito?: number }
+            | null = null;
+          if (prod && Array.isArray(prod.inventory)) {
+            inventory = prod.inventory.length > 0 ? prod.inventory[0] : null;
+          } else if (prod && prod.inventory) {
+            inventory = prod.inventory as {
+              inventario?: number;
+              disponibile?: number;
+              riservato_sito?: number;
+            };
+          }
+
+          return {
+            ...item,
+            products: prod
+              ? {
+                  ...prod,
+                  inventory: inventory ?? null,
+                }
+              : null,
+          };
+        });
+        setOrderItems(mapped);
+      }
       clear();
     })();
   }, [clear]);
 
   const { statusMap } = useOrderStatusMap(orderItems);
-
 
   const skuMap = useMemo(() => {
     const map: Record<string, string[]> = {};
@@ -189,15 +234,12 @@ export default function Ordini() {
               }
             }
 
-
             // Naviga verso /prelievo
             navigate("/prelievo", { state: { orderIds: selected } });
           }}
         >
           Procedi
         </button>
-
-
       </div>
     </div>
   );

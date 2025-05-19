@@ -3,12 +3,13 @@ import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import { Loader2, CheckCircle, ScanBarcode } from "lucide-react";
 import BarcodeScannerModal from "../modals/BarcodeScannerModal"; // Puoi riutilizzare uno scanner già fatto o lo adatti
+import type { Ordine, OrderItem } from "../types/ordini";
 
 export default function ConfermaPrelievo() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [order, setOrder] = useState<any>(null);
-  const [items, setItems] = useState<any[]>([]);
+  const [order, setOrder] = useState<Ordine | null>(null);
+  const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Stato di conferma per ogni articolo (idArticolo: pezzi confermati)
