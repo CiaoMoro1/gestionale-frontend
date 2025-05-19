@@ -2,33 +2,9 @@ import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
 import { useState, useEffect } from "react";
+import type { Ordine, OrderItem } from "../types/ordini";
 
-type Ordine = {
-  id: string;
-  number: string;
-  customer_name: string;
-  channel: string;
-  total: number;
-  payment_status: string;
-  fulfillment_status: string;
-  created_at: string;
-};
 
-type OrderItem = {
-  sku: string;
-  quantity: number;
-  shopify_variant_id: string | null;
-  product_id: string | null;
-  products?: {
-    product_title: string;
-    variant_title: string;
-    inventory?: {
-      inventario: number;
-      disponibile: number;
-      riservato_sito?: number;
-    };
-  } | null;
-};
 
 // ...import e tipi invariati
 
@@ -72,10 +48,10 @@ export default function OrdineDetail() {
         .eq("order_id", id);
       if (err2) throw err2;
 
-      const items: OrderItem[] = (rawItems ?? []).map((item: any) => ({
+      const items: OrderItem[] = (rawItems ?? []).map((item) => ({
         ...item,
         products: Array.isArray(item.products) ? item.products[0] : item.products
-      }));
+      } as OrderItem));
 
       return { ordine, items };
     },
@@ -89,8 +65,8 @@ export default function OrdineDetail() {
 
     if (!error && data) {
       const ordini = data
-        .filter((item: any) => item.orders && item.orders.id !== id)
-        .map((item: any) => ({ orders: item.orders, quantity: item.quantity }));
+        .filter((item) => item.orders && item.orders.id !== id)
+        .map((item) => ({ orders: item.orders, quantity: item.quantity }));
 
       setRelatedOrders(ordini);
       setRelatedSku(sku);
@@ -298,7 +274,7 @@ export default function OrdineDetail() {
   );
 }
 
-function Glass({ label, value }: { label: string; value: any }) {
+function Glass({ label, value }: { label: string; value: string | number | null | undefined }) {
   return (
     <div className="p-3 sm:p-4 rounded-xl border border-white/90 backdrop-blur bg-white/50 shadow">
       <div className="text-[clamp(0.75rem,2vw,1rem)] font-semibold text-gray-600 mb-1">{label}</div>

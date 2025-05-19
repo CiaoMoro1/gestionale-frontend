@@ -8,6 +8,7 @@ import { useSelectedOrders } from "../state/useSelectedOrders";
 import { ToggleSelector } from "../components/ToggleSelector";
 import { useNavigate } from "react-router-dom";
 import { trackFrontendEvent } from "../utils/trackFrontendEvent";
+import type { Ordine, OrderItem } from "../types/ordini";
 
 type OrdiniFilters = {
   search: string;
@@ -18,8 +19,8 @@ type OrdiniFilters = {
 };
 
 export default function Ordini() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [orderItems, setOrderItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Ordine[]>([]);
+  const [orderItems, setOrderItems] = useState<OrderItem[]>([]);
   const [filters, setFilters] = useState<OrdiniFilters>(() => {
     try {
       const saved = sessionStorage.getItem("ordine_filters");

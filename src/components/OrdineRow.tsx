@@ -4,12 +4,13 @@ import { memo } from "react";
 import { ToggleSelector } from "./ToggleSelector";
 import { EvadiStatus } from "./EvadiStatus";
 import { useSelectedOrders } from "../state/useSelectedOrders";
+import type { Ordine } from "../types/ordini";
 
 export const OrdineRow = memo(function OrdineRow({
   order,
   status,
 }: {
-  order: any;
+  order: Ordine;
   status: { stato: "green" | "yellow" | "red"; tot: number; disponibili: number };
 }) {
   const navigate = useNavigate();

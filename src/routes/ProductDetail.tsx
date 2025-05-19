@@ -1,7 +1,7 @@
 import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { useMutation } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 
 export default function ProductDetail() {
   const { id } = useParams();
@@ -20,7 +20,7 @@ export default function ProductDetail() {
   } | null>(null);
   const [manualValue, setManualValue] = useState<string>("0");
 
-  const [data, setData] = useState<any>(null);
+  const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,9 +58,9 @@ export default function ProductDetail() {
 
   useEffect(() => {
     fetchProduct();
-  }, [id]);
+  }, [id, fetchProduct]);
 
-  const fetchProduct = async () => {
+  const fetchProduct = useCallback(async () => {
     if (!id) return;
     setLoading(true);
     const { data, error } = await supabase
@@ -77,10 +77,10 @@ export default function ProductDetail() {
       setError(null);
     }
     setLoading(false);
-  };
+  }, [id]);
 
   const mutation = useMutation({
-    mutationFn: async ({ field, value, mode }: { field: string; value: any; mode?: "delta" | "replace" }) => {
+    mutationFn: async ({ field, value, mode }: { field: string; value: unknown; mode?: "delta" | "replace" }) => {
       if (!id) throw new Error("ID mancante");
 
       if (["price", "inventory_policy", "status", "ean"].includes(field)) {
@@ -277,7 +277,7 @@ export default function ProductDetail() {
 
   function GlassField({ label, value, editable, field, type = "text", extra = "" }: {
     label: string;
-    value: any;
+    value: string | number | boolean | null | undefined;
     editable?: boolean;
     field?: string;
     type?: "text" | "checkbox";

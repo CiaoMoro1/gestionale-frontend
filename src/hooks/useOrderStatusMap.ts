@@ -1,13 +1,14 @@
 import { useMemo } from "react";
+import type { OrderItem } from "../types/ordini";
 
 type StatusType = "green" | "yellow" | "red";
 
-export function useOrderStatusMap(orderItems: any[]) {
+export function useOrderStatusMap(orderItems: OrderItem[]) {
   return useMemo(() => {
     const statusMap: Record<string, { stato: StatusType; tot: number; disponibili: number }> = {};
-    const problematicItems: any[] = [];
+    const problematicItems: OrderItem[] = [];
 
-    const grouped = orderItems.reduce((acc: Record<string, any[]>, item) => {
+    const grouped = orderItems.reduce((acc: Record<string, OrderItem[]>, item) => {
       if (!acc[item.order_id]) acc[item.order_id] = [];
       acc[item.order_id].push(item);
       return acc;

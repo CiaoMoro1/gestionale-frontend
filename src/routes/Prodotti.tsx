@@ -76,7 +76,7 @@ export default function Prodotti() {
 
       if (error) throw error;
 
-      return data?.map((p: any) => ({
+      return data?.map((p) => ({
         ...p,
         inventario: p.inventory_product_id_fkey?.inventario ?? 0,
       })) ?? [];
@@ -97,7 +97,7 @@ export default function Prodotti() {
         return tokens.every((token) => full.includes(token));
       })
       .sort((a, b) => (a.product_title ?? "").localeCompare(b.product_title ?? ""));
-  }, [data, normalizedSearch]);
+  }, [data, normalizedSearch, tokens]);
 
   const visibleItems = deferredSearch
     ? filtered

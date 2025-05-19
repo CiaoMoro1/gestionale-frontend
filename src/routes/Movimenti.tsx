@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabase";
+import type { AuditDetails } from "../types/audit";
 
 type AuditLog = {
   id: string;
@@ -8,7 +9,7 @@ type AuditLog = {
   entity_type: string;
   entity_id: string;
   full_name?: string;
-  details: any;
+  details: AuditDetails;
   created_at: string;
   user_id: string;
   undone?: boolean; // 👈 AGGIUNGI QUESTA RIGA

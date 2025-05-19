@@ -8,6 +8,7 @@ import autoTable from "jspdf-autotable";
 import JsBarcode from "jsbarcode";
 import logoBase64 from "../assets/logo_base64";
 import SearchOrderModal from "../modals/SearchOrderModal";
+import type { Ordine, OrderItem } from "../types/ordini";
 
 import {
   CheckCircle,
@@ -22,8 +23,8 @@ import { useNavigate } from "react-router-dom";
 const formatIt = formatWithOptions({ locale: it });
 
 export default function Prelievo() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Ordine[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
 
     const [searchOrderOpen, setSearchOrderOpen] = useState(false);
@@ -109,7 +110,7 @@ export default function Prelievo() {
         margin: { left: 14, right: 14 },
       });
 
-      y = (doc as any).lastAutoTable.finalY + 10;
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
     }
 
     doc.save("lista-prelievo.pdf");
@@ -165,7 +166,7 @@ export default function Prelievo() {
         margin: { top: 10, left: 14, right: 14 },
       });
 
-      y = (doc as any).lastAutoTable.finalY + 10;
+      y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
     }
 
     doc.save("dettaglio-ordini.pdf");
@@ -308,7 +309,7 @@ export default function Prelievo() {
                 title: string;
                 inv: number;
                 ris: number;
-                ordini: any[];
+                ordini: Ordine[];
               }
             > = {};
 
