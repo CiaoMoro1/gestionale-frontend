@@ -23,7 +23,6 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         if (scanningRef.current) return;
         scanningRef.current = true;
 
-        console.log("✅ Codice letto:", decodedText);
 
         const { data, error } = await supabase
           .from("products")

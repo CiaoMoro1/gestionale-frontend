@@ -17,7 +17,6 @@ export default function ConfermaPrelievo() {
 
   useEffect(() => {
     if (!id) return;
-    console.log("Fetching ordine/pezzi per id:", id);
     (async () => {
       setLoading(true);
       const { data: orderData } = await supabase
