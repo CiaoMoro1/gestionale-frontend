@@ -72,7 +72,10 @@ export default function OrdineDetail() {
         .eq("order_id", id);
       if (err2) throw err2;
 
-      const items: OrderItem[] = (rawItems ?? []).map((item: any) => ({
+      type RawItem = OrderItem & {
+        products: OrderItem["products"] | OrderItem["products"][];
+      };
+      const items: OrderItem[] = (rawItems ?? []).map((item: RawItem) => ({
         ...item,
         products: Array.isArray(item.products) ? item.products[0] : item.products
       }));
@@ -89,8 +92,8 @@ export default function OrdineDetail() {
 
     if (!error && data) {
       const ordini = data
-        .filter((item: any) => item.orders && item.orders.id !== id)
-        .map((item: any) => ({ orders: item.orders, quantity: item.quantity }));
+        .filter((item) => item.orders && item.orders.id !== id)
+        .map((item) => ({ orders: item.orders, quantity: item.quantity }));
 
       setRelatedOrders(ordini);
       setRelatedSku(sku);
@@ -298,7 +301,7 @@ export default function OrdineDetail() {
   );
 }
 
-function Glass({ label, value }: { label: string; value: any }) {
+function Glass({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="p-3 sm:p-4 rounded-xl border border-white/90 backdrop-blur bg-white/50 shadow">
       <div className="text-[clamp(0.75rem,2vw,1rem)] font-semibold text-gray-600 mb-1">{label}</div>

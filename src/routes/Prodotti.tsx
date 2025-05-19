@@ -13,15 +13,7 @@ import { Link } from "react-router-dom";
 import SearchInput from "../components/SearchInput";
 import { ArrowUp } from "lucide-react";
 import { QuantityInput } from "../components/QuantityInput";
-
-interface Product {
-  id: string;
-  sku: string | null;
-  ean: string | null;
-  product_title: string | null;
-  price: number | null;
-  inventario: number | null;
-}
+import type { Product } from "../types";
 
 export default function Prodotti() {
   const [search, setSearch] = useState("");
@@ -76,10 +68,13 @@ export default function Prodotti() {
 
       if (error) throw error;
 
-      return data?.map((p: any) => ({
-        ...p,
-        inventario: p.inventory_product_id_fkey?.inventario ?? 0,
-      })) ?? [];
+      type Row = Product & { inventory_product_id_fkey?: { inventario: number | null } | null };
+      return (
+        data?.map((p: Row) => ({
+          ...p,
+          inventario: p.inventory_product_id_fkey?.inventario ?? 0,
+        })) ?? []
+      );
     },
   });
 

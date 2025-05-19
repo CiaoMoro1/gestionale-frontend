@@ -8,7 +8,7 @@ type AuditLog = {
   entity_type: string;
   entity_id: string;
   full_name?: string;
-  details: any;
+  details: Record<string, unknown>;
   created_at: string;
   user_id: string;
   undone?: boolean; // 👈 AGGIUNGI QUESTA RIGA

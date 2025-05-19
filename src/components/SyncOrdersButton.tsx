@@ -40,8 +40,8 @@ export default function SyncOrdersButton({
       setStatus("success");
       setMessage(msg);
       onSyncStatus?.("success", msg);
-    } catch (err: any) {
-      const msg = err.message || "Errore sconosciuto";
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Errore sconosciuto";
       console.error("Errore:", msg);
       setStatus("error");
       setMessage(msg);

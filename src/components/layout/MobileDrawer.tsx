@@ -5,6 +5,7 @@ import NavSection from "../navigation/NavSection";
 import { navSections } from "../../constants/navSections";
 import { supabase } from "../../lib/supabase";
 import { ReactNode } from "react";
+import type { Session } from "@supabase/supabase-js";
 
 type NavItem = {
   label: string;
@@ -21,7 +22,7 @@ type NavSectionType = {
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  session: any; // puoi specificare `Session | null` se importi da supabase
+  session: Session | null;
 }
 
 export default function MobileDrawer({ isOpen, onClose, session }: Props) {

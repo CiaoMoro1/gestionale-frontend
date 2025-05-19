@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import { useOrderStatusMap } from "../hooks/useOrderStatusMap";
+import type { Order, OrderItem } from "../types";
 import { formatWithOptions } from "date-fns/fp";
 import { it } from "date-fns/locale";
 import jsPDF from "jspdf";
@@ -22,8 +23,8 @@ import { useNavigate } from "react-router-dom";
 const formatIt = formatWithOptions({ locale: it });
 
 export default function Prelievo() {
-  const [orders, setOrders] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
 
     const [searchOrderOpen, setSearchOrderOpen] = useState(false);
@@ -308,7 +309,7 @@ export default function Prelievo() {
                 title: string;
                 inv: number;
                 ris: number;
-                ordini: any[];
+                ordini: Order[];
               }
             > = {};
 

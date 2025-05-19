@@ -4,7 +4,7 @@ export async function trackFrontendEvent(
   action: string,
   entityType: string,
   entityId: string,
-  details: Record<string, any> = {}
+  details: Record<string, unknown> = {}
 ) {
   // Recupera utente loggato
   const { data: { user } } = await supabase.auth.getUser();

@@ -92,9 +92,10 @@ export default function SyncButton() {
 
       setStatus("success");
       showToast(importData.message || "✅ Importazione completata!");
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Errore sconosciuto";
       console.error("❌ Errore sync bulk:", err);
-      showToast(err.message || "Errore sconosciuto");
+      showToast(message);
       setStatus("error");
     } finally {
       setLoading(false);
