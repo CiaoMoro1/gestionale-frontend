@@ -1,6 +1,11 @@
 import { useState, useEffect, Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  QueryCache,
+  MutationCache,
+} from "@tanstack/react-query";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
 import Sidebar from "./components/layout/Sidebar";
@@ -8,8 +13,9 @@ import BottomNav from "./components/layout/BottomNav";
 import MobileDrawer from "./components/layout/MobileDrawer";
 import SearchProductModal from "./modals/SearchProductModal";
 import HeaderMobile from "./components/layout/HeaderMobile";
-import ConfermaPrelievo from "./routes/ConfermaPrelievo"; // importa la nuova pagina
-
+import ConfermaPrelievo from "./routes/ConfermaPrelievo";
+import { Toaster } from "react-hot-toast";
+import toast from "react-hot-toast";
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -22,8 +28,33 @@ const Movimenti = lazy(() => import("./routes/Movimenti"));
 const ProductDetailWrapper = lazy(() => import("./routes/ProductDetailWrapper"));
 const Prelievo = lazy(() => import("./routes/Prelievo"));
 
-// ⚡ CREA IL CLIENT UNA SOLA VOLTA FUORI DALLA FUNZIONE!
-const queryClient = new QueryClient();
+// ⚡ QueryClient React Query v5+ (con error handler globale)
+const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError: (err) => {
+      toast.error(
+        "Errore: " +
+          (err instanceof Error
+            ? err.message
+            : typeof err === "string"
+            ? err
+            : "Errore sconosciuto")
+      );
+    },
+  }),
+  mutationCache: new MutationCache({
+    onError: (err) => {
+      toast.error(
+        "Errore: " +
+          (err instanceof Error
+            ? err.message
+            : typeof err === "string"
+            ? err
+            : "Errore sconosciuto")
+      );
+    },
+  }),
+});
 
 function AppContent() {
   const location = useLocation();
@@ -53,6 +84,8 @@ function AppContent() {
 
   return (
     <div className="min-h-screen flex flex-col sm:flex-row bg-gray-200 relative">
+      <Toaster position="top-center" /> {/* Provider toast globale */}
+
       {/* Header Mobile */}
       <HeaderMobile onMenuToggle={() => setIsMenuOpen(true)} />
 
