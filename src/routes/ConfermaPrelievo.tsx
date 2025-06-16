@@ -6,7 +6,6 @@ import ModalPDFLabel from "../components/ModalPDFLabel";
 import type { Ordine, OrderItem } from "../types/ordini";
 import { mergePdfBase64Array } from "../utils/mergePdf";
 
-// Import dei componenti modulari
 import OrderAddressForm from "../components/confermaordine/OrderAddressForm";
 import OrderItemsList from "../components/confermaordine/OrderItemsList";
 import LabelActions from "../components/confermaordine/LabelActions";
@@ -31,16 +30,13 @@ async function buildApiHeaders(): Promise<HeadersInit> {
   }
   const headers: HeadersInit = {
     "Content-Type": "application/json",
-    "Authorization": `Bearer ${token}`,
+    Authorization: `Bearer ${token}`,
   };
   if (import.meta.env.DEV) {
-    // Qui solo in sviluppo locale
     headers["X-User-Id"] = "testuser123";
   }
   return headers;
 }
-
-
 
 export default function ConfermaPrelievo() {
   const { id } = useParams<{ id: string }>();
@@ -54,7 +50,7 @@ export default function ConfermaPrelievo() {
   const [etichetta, setEtichetta] = useState<{ labels: string[] }>({ labels: [] });
   const [, setSelectedLabelIdx] = useState(0);
 
-  const [badge, setBadge] = useState<{ type: "success" | "error", message: string } | null>(null);
+  const [badge, setBadge] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const [badgeTimeout, setBadgeTimeout] = useState<NodeJS.Timeout | null>(null);
   const [apiLoading, setApiLoading] = useState(false);
 
@@ -129,7 +125,9 @@ export default function ConfermaPrelievo() {
 
   useEffect(() => {
     loadOrder();
-    return () => { if (badgeTimeout) clearTimeout(badgeTimeout); };
+    return () => {
+      if (badgeTimeout) clearTimeout(badgeTimeout);
+    };
   }, [id, loadOrder]);
 
   // --- GEOCODING GOOGLE ---
@@ -146,7 +144,7 @@ export default function ConfermaPrelievo() {
         locality: formData.shipping_city,
         administrativeArea: formData.shipping_province,
         regionCode: formData.shipping_country,
-      }
+      },
     };
 
     fetch(`${import.meta.env.VITE_API_URL}/api/validate-address`, {
@@ -154,8 +152,8 @@ export default function ConfermaPrelievo() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
-      .then(r => r.json())
-      .then(data => {
+      .then((r) => r.json())
+      .then((data) => {
         setGeoSuggestion(data && !data.error ? data : null);
       })
       .catch(() => {
@@ -174,7 +172,10 @@ export default function ConfermaPrelievo() {
   const confirmOne = (itemId: string) => {
     setConfirmed((prev) => ({
       ...prev,
-      [itemId]: Math.min((prev[itemId] || 0) + 1, items.find(i => i.id === itemId)?.quantity ?? 1),
+      [itemId]: Math.min(
+        (prev[itemId] || 0) + 1,
+        items.find((i) => i.id === itemId)?.quantity ?? 1
+      ),
     }));
   };
 
@@ -192,8 +193,13 @@ export default function ConfermaPrelievo() {
   const allConfirmed =
     items.length > 0 &&
     items
-      .filter(item => !(item.products?.sku?.toLowerCase().includes("commissione pagamento") ||
-        item.products?.product_title?.toLowerCase().includes("commissione pagamento")))
+      .filter(
+        (item) =>
+          !(
+            item.products?.sku?.toLowerCase().includes("commissione pagamento") ||
+            item.products?.product_title?.toLowerCase().includes("commissione pagamento")
+          )
+      )
       .every((item) => confirmed[item.id] >= item.quantity);
 
   const handleGeneraEtichetta = async () => {
@@ -211,7 +217,7 @@ export default function ConfermaPrelievo() {
           shipping_province: formData.shipping_province,
           shipping_country: formData.shipping_country,
           parcel_count: parcelCount,
-        })
+        }),
       });
       const data = await res.json();
       let labels: string[] = [];
@@ -224,7 +230,10 @@ export default function ConfermaPrelievo() {
       setSelectedLabelIdx(0);
 
       if (!res.ok || labels.length === 0) {
-        setBadge({ type: "error", message: data?.error || "Errore generazione etichetta!" });
+        setBadge({
+          type: "error",
+          message: data?.error || "Errore generazione etichetta!",
+        });
         setApiLoading(false);
         return;
       }
@@ -239,87 +248,79 @@ export default function ConfermaPrelievo() {
   };
 
   const handleEliminaEtichetta = async () => {
-  if (etichetta.labels.length === 0 && !order?.numeric_sender_reference) {
-    setBadge({ type: "error", message: "Nessun riferimento spedizione trovato." });
-    if (badgeTimeout) clearTimeout(badgeTimeout);
-    setBadgeTimeout(setTimeout(() => setBadge(null), 2000));
-    return;
-  }
-  setApiLoading(true);
-  try {
-    const headers = await buildApiHeaders();
-    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/brt/delete-shipment`, {
-      method: "PUT",
-      headers,
-      body: JSON.stringify({
-        numericSenderReference: order?.numeric_sender_reference
-      })
-    });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      setBadge({ type: "success", message: "Etichetta eliminata." });
-      setEtichetta({ labels: [] });
-      setSelectedLabelIdx(0);
-      await loadOrder();
-    } else {
-      // *** QUI il badge di errore dettagliato ***
-      setBadge({ type: "error", message: data?.error || "Errore eliminazione etichetta (verifica backend o connessione)." });
-    }
-    if (badgeTimeout) clearTimeout(badgeTimeout);
-    setBadgeTimeout(setTimeout(() => setBadge(null), 1500));
-  } catch (err) {
-    // *** QUI badge errore su eccezione/fetch ***
-    setBadge({ type: "error", message: "Errore chiamata API eliminazione (controlla la connessione o riprova più tardi)." });
-    if (badgeTimeout) clearTimeout(badgeTimeout);
-    setBadgeTimeout(setTimeout(() => setBadge(null), 2000));
-  }
-  setApiLoading(false);
-};
-
-
-  const handleStampaEtichette = async () => {
-  if (!etichetta.labels.length) {
-    alert("Non ci sono etichette da stampare.");
-    return;
-  }
-  // Aggiorna stato_ordine
-  if (order) {
-    await supabase
-      .from("orders")
-      .update({ stato_ordine: "etichette" })
-      .eq("id", order.id);
-  }
-
-  let pdfToPrint: string | null = null;
-  if (etichetta.labels.length === 1) {
-    pdfToPrint = etichetta.labels[0];
-  } else {
-    try {
-      pdfToPrint = await mergePdfBase64Array(etichetta.labels);
-    } catch {
-      alert("Errore durante il merge dei PDF.");
+    if (etichetta.labels.length === 0 && !order?.numeric_sender_reference) {
+      setBadge({ type: "error", message: "Nessun riferimento spedizione trovato." });
+      if (badgeTimeout) clearTimeout(badgeTimeout);
+      setBadgeTimeout(setTimeout(() => setBadge(null), 2000));
       return;
     }
-  }
-  if (!pdfToPrint) {
-    alert("PDF non trovato!");
-    return;
-  }
+    setApiLoading(true);
+    try {
+      const headers = await buildApiHeaders();
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/brt/delete-shipment`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify({
+          numericSenderReference: order?.numeric_sender_reference,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setBadge({ type: "success", message: "Etichetta eliminata." });
+        setEtichetta({ labels: [] });
+        setSelectedLabelIdx(0);
+        await loadOrder();
+      } else {
+        setBadge({
+          type: "error",
+          message:
+            data?.error || "Errore eliminazione etichetta (verifica backend o connessione).",
+        });
+      }
+      if (badgeTimeout) clearTimeout(badgeTimeout);
+      setBadgeTimeout(setTimeout(() => setBadge(null), 1500));
+    } catch (err) {
+      setBadge({
+        type: "error",
+        message: "Errore chiamata API eliminazione (controlla la connessione o riprova più tardi).",
+      });
+      if (badgeTimeout) clearTimeout(badgeTimeout);
+      setBadgeTimeout(setTimeout(() => setBadge(null), 2000));
+    }
+    setApiLoading(false);
+  };
 
-  // PATCH: crea un blob URL invece di data:
-  const byteArray = Uint8Array.from(atob(pdfToPrint), c => c.charCodeAt(0));
-  const blob = new Blob([byteArray], { type: "application/pdf" });
-  const url = URL.createObjectURL(blob);
+  const handleStampaEtichette = async () => {
+    if (!etichetta.labels.length) {
+      alert("Non ci sono etichette da stampare.");
+      return;
+    }
+    if (order) {
+      await supabase.from("orders").update({ stato_ordine: "etichette" }).eq("id", order.id);
+    }
 
-  // Apre in una nuova tab
-  window.open(url, "_blank");
+    let pdfToPrint: string | null = null;
+    if (etichetta.labels.length === 1) {
+      pdfToPrint = etichetta.labels[0];
+    } else {
+      try {
+        pdfToPrint = await mergePdfBase64Array(etichetta.labels);
+      } catch {
+        alert("Errore durante il merge dei PDF.");
+        return;
+      }
+    }
+    if (!pdfToPrint) {
+      alert("PDF non trovato!");
+      return;
+    }
 
-  // [opzionale] puoi revocare l'URL dopo qualche secondo:
-  setTimeout(() => URL.revokeObjectURL(url), 10000);
-};
-
-
-
+    const byteArray = Uint8Array.from(atob(pdfToPrint), (c) => c.charCodeAt(0));
+    const blob = new Blob([byteArray], { type: "application/pdf" });
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank");
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
 
   const handleSaveAddress = async () => {
     if (!order) return;
@@ -347,14 +348,15 @@ export default function ConfermaPrelievo() {
     setApiLoading(false);
   };
 
-  // --- MAPPA GOOGLE ---
   const mapAddressString = [
     formData.shipping_address,
     formData.shipping_city,
     formData.shipping_province,
     formData.shipping_zip,
     formData.shipping_country,
-  ].filter(Boolean).join(", ");
+  ]
+    .filter(Boolean)
+    .join(", ");
 
   if (loading) {
     return (
@@ -364,25 +366,30 @@ export default function ConfermaPrelievo() {
     );
   }
 
-  if (!order) return <div className="text-center text-red-500 mt-12">Ordine non trovato.</div>;
+  if (!order)
+    return <div className="text-center text-red-500 mt-12">Ordine non trovato.</div>;
 
   return (
-    <div className="max-w-full md:max-w-2xl mx-auto p-2 sm:p-4 space-y-5">
-      <h1 className="flex items-center gap-2 font-bold text-fluid-lg leading-tight mb-3"
-        style={{ fontSize: "clamp(1.4rem, 5vw, 2.2rem)" }}>
+    <div className="w-full max-w-full sm:max-w-2xl mx-auto px-1 py-2 sm:px-3 sm:py-4 flex flex-col gap-5">
+      <h1
+        className="flex items-center gap-2 font-bold text-lg sm:text-2xl leading-tight mb-1 sm:mb-3"
+        style={{ fontSize: "clamp(1.3rem, 5vw, 2rem)" }}
+      >
         Conferma Prelievo Ordine #{order.number}
       </h1>
 
       {/* MAPPA */}
       {mapAddressString && GOOGLE_MAPS_EMBED_KEY && (
-        <div className="rounded-2xl overflow-hidden shadow mb-3">
+        <div className="rounded-xl overflow-hidden shadow mb-2 sm:mb-3 w-full">
           <iframe
             width="100%"
-            height="200"
+            height="160"
             style={{ border: 0 }}
             loading="lazy"
             allowFullScreen
-            src={`https://www.google.com/maps/embed/v1/place?key=${GOOGLE_MAPS_EMBED_KEY}&q=${encodeURIComponent(mapAddressString)}`}
+            src={`https://www.google.com/maps/embed/v1/place?key=${GOOGLE_MAPS_EMBED_KEY}&q=${encodeURIComponent(
+              mapAddressString
+            )}`}
           />
         </div>
       )}
@@ -399,7 +406,7 @@ export default function ConfermaPrelievo() {
         badge={badge}
       />
 
-      {/* SUGGERIMENTO GOOGLE (modulare) */}
+      {/* SUGGERIMENTO GOOGLE */}
       <AddressSuggestion
         formData={formData}
         geoSuggestion={geoSuggestion}
@@ -416,46 +423,57 @@ export default function ConfermaPrelievo() {
         onOpenScanner={() => setScannerOpen(true)}
       />
 
-    {/* Bottone finale - Genera etichetta */}
-    {!etichetta.labels.length ? (
-      <button
-        className="block w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-bold text-fluid-lg mt-6 shadow transition disabled:bg-gray-300 disabled:text-gray-400"
-        style={{ fontSize: "clamp(1.25rem, 4vw, 1.75rem)" }}
-        disabled={!allConfirmed || apiLoading}
-        onClick={handleGeneraEtichetta}
-      >
-        {apiLoading ? <span className="animate-spin mr-2">⏳</span> : null}
-        Genera etichetta
-      </button>
-    ) : (
-      <button
-        className="block w-full bg-gray-300 text-gray-500 py-4 rounded-2xl font-bold text-fluid-lg mt-6 shadow transition cursor-not-allowed"
-        style={{ fontSize: "clamp(1.25rem, 4vw, 1.75rem)" }}
-        disabled
-      >
-        Etichetta generata
-      </button>
-    )}
-
-    {/* QUI SUBITO DOPO! */}
-    {badge && (
-      <div className={`mt-4 rounded-2xl px-4 py-3 font-semibold text-center shadow transition text-fluid-base
-        ${badge.type === "success" ? "bg-green-200 text-green-800" : "bg-red-200 text-red-800"}`}>
-        {badge.message}
+      {/* BOTTONI FINALI */}
+      <div className="flex flex-col gap-2 mt-3">
+        {!etichetta.labels.length ? (
+          <button
+            className="block w-full bg-green-600 hover:bg-green-700 text-white py-4 rounded-2xl font-bold text-lg shadow transition disabled:bg-gray-300 disabled:text-gray-400"
+            style={{ fontSize: "clamp(1.1rem, 4vw, 1.2rem)" }}
+            disabled={!allConfirmed || apiLoading}
+            onClick={handleGeneraEtichetta}
+          >
+            {apiLoading ? <span className="animate-spin mr-2">⏳</span> : null}
+            Genera etichetta
+          </button>
+        ) : (
+          <button
+            className="block w-full bg-gray-300 text-gray-500 py-4 rounded-2xl font-bold text-lg shadow transition cursor-not-allowed"
+            style={{ fontSize: "clamp(1.1rem, 4vw, 1.2rem)" }}
+            disabled
+          >
+            Etichetta generata
+          </button>
+        )}
       </div>
-    )}
 
+      {/* BADGE */}
+      {badge && (
+        <div
+          className={`mt-2 rounded-2xl px-4 py-3 font-semibold text-center shadow text-base transition
+        ${
+          badge.type === "success"
+            ? "bg-green-200 text-green-800"
+            : "bg-red-200 text-red-800"
+        }`}
+        >
+          {badge.message}
+        </div>
+      )}
 
-      {/* GESTIONE ETICHETTE */}
+      {/* AZIONI ETICHETTE */}
       <LabelActions
         etichetta={etichetta}
         isMerging={isMerging}
         setMergedPdf={setMergedPdf}
         setIsMerging={setIsMerging}
         setModalPdfOpen={setModalPdfOpen}
-        onPrint={handleStampaEtichette} // QUI!
+        onPrint={handleStampaEtichette}
         onDelete={handleEliminaEtichetta}
-        stato_ordine={typeof order?.stato_ordine === "string" && order?.stato_ordine ? order.stato_ordine : "prelievo"}
+        stato_ordine={
+          typeof order?.stato_ordine === "string" && order?.stato_ordine
+            ? order.stato_ordine
+            : "prelievo"
+        }
         apiLoading={apiLoading}
         mergePdfBase64Array={mergePdfBase64Array}
       />
