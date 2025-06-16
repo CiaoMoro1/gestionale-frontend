@@ -24,7 +24,9 @@ const initialFormData = {
 
 async function buildApiHeaders(): Promise<HeadersInit> {
   let userId = "";
-  const token = localStorage.getItem("token") || "";
+  // Usa la nuova API di Supabase (consigliato)
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token || localStorage.getItem("token") || "";
   try {
     const { data: { user } } = await supabase.auth.getUser();
     userId = user?.id || "";
@@ -38,6 +40,7 @@ async function buildApiHeaders(): Promise<HeadersInit> {
   }
   return headers;
 }
+
 
 export default function ConfermaPrelievo() {
   const { id } = useParams<{ id: string }>();
