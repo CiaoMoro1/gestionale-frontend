@@ -38,6 +38,11 @@ export default function OrderAddressForm({
     <div className="bg-gray-50 rounded-2xl p-5 shadow space-y-3">
       <div className="text-fluid-base text-gray-800">
         <span className="font-semibold">Cliente:</span> {order.customer_name}
+        {order.customer_phone && (
+          <span className="ml-4 text-gray-500">
+            <span className="font-semibold text-gray-700">Telefono:</span> {order.customer_phone}
+          </span>
+        )}
       </div>
       <div className="flex gap-4">
         <div>
