@@ -23,23 +23,23 @@ const initialFormData = {
 };
 
 async function buildApiHeaders(): Promise<HeadersInit> {
-  let userId = "";
-  // Usa la nuova API di Supabase (consigliato)
   const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token || localStorage.getItem("token") || "";
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    userId = user?.id || "";
-  } catch {}
+  const token = data.session?.access_token || "";
+  if (!token) {
+    alert("Utente non autenticato! Fai login prima di continuare.");
+    throw new Error("Token mancante");
+  }
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     "Authorization": `Bearer ${token}`,
   };
   if (import.meta.env.DEV) {
-    headers["X-User-Id"] = userId || "testuser123";
+    // Qui solo in sviluppo locale
+    headers["X-User-Id"] = "testuser123";
   }
   return headers;
 }
+
 
 
 export default function ConfermaPrelievo() {
