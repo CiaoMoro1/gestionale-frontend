@@ -12,6 +12,7 @@ export const navSections = [
     items: [
       { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/ordini" },
       { label: "Prelievo", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/prelievo" },
+      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/etichettati" }, // 👈 NEW
     ],
   },
   {

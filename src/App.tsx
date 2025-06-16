@@ -26,6 +26,7 @@ const Ordini = lazy(() => import("./routes/Ordini"));
 const OrdineDetail = lazy(() => import("./routes/OrdineDetail"));
 const Movimenti = lazy(() => import("./routes/Movimenti"));
 const ProductDetailWrapper = lazy(() => import("./routes/ProductDetailWrapper"));
+const Etichettati = lazy(() => import("./routes/Etichettati"));
 const Prelievo = lazy(() => import("./routes/Prelievo"));
 
 // ⚡ QueryClient React Query v5+ (con error handler globale)
@@ -110,6 +111,7 @@ function AppContent() {
               <Route path="/movimenti" element={<Movimenti />} />
               <Route path="/prelievo" element={<Prelievo />} />
               <Route path="/prelievo/:id" element={<ConfermaPrelievo />} />
+              <Route path="/etichettati" element={<Etichettati />} />
             </Routes>
           </Suspense>
         </section>
