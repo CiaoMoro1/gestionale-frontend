@@ -25,7 +25,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="hidden sm:fixed sm:inset-y-0 sm:left-0 sm:w-48 sm:flex sm:flex-col sm:bg-white sm:shadow-md z-40">
+    <aside className="hidden sm:fixed sm:inset-y-0 sm:left-0 sm:w-54 sm:flex sm:flex-col sm:bg-white sm:shadow-md z-40">
       <div className="flex justify-center items-center h-20 border-b">
         <img src={Logo} alt="Logo" className="h-10" />
       </div>

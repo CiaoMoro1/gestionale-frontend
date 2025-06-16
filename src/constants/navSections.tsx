@@ -7,7 +7,7 @@ import {
 
 export const navSections = [
   {
-    label: "Ordini",
+    label: "Ordini Sito",
     icon: <ClipboardList size={24} strokeWidth={1.5} />,
     items: [
       { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/ordini" },
