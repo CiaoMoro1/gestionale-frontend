@@ -1,4 +1,5 @@
 
+
 import { useEffect, useState } from "react";
 import {
   PackageCheck,
@@ -17,6 +18,7 @@ type BrtEvent = {
   descrizione: string;
   filiale: string;
 };
+import { supabase } from "../../lib/supabase"; // Assicurati che il percorso sia corretto
 
 type BrtTrackingMultiStatusProps = {
   parcelIds: string[]; // uno o più parcelID associati all’ordine
@@ -48,21 +50,33 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!parcelIds || parcelIds.length === 0) return;
-    setLoading(true);
-    setError(null);
+  if (!parcelIds || parcelIds.length === 0) return;
+  setLoading(true);
+  setError(null);
 
-    fetch(`${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${parcelIds.join(",")}`)
-      .then(res => res.json())
-      .then(data => {
-        setResults(Array.isArray(data) ? data : [data]);
-        setLoading(false);
-      })
-      .catch(() => {
-        setError("Errore caricamento tracking BRT.");
-        setLoading(false);
-      });
-  }, [parcelIds]);
+  (async () => {
+    try {
+      // Ottieni il token di Supabase per l'utente loggato
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token || "";
+      const headers = {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`,
+      };
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${parcelIds.join(",")}`,
+        { headers }
+      );
+      if (!res.ok) throw new Error("Errore tracking");
+      const dataJson = await res.json();
+      setResults(Array.isArray(dataJson) ? dataJson : [dataJson]);
+      setLoading(false);
+    } catch (err) {
+      setError("Errore caricamento tracking BRT.");
+      setLoading(false);
+    }
+  })();
+}, [parcelIds]);
 
   if (!parcelIds || parcelIds.length === 0) return null;
   if (loading)
