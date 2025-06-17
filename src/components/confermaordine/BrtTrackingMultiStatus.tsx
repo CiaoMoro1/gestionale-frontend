@@ -1,5 +1,3 @@
-
-
 import { useEffect, useState } from "react";
 import {
   PackageCheck,
@@ -10,6 +8,7 @@ import {
   Boxes,
   PackageSearch,
 } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 
 type BrtEvent = {
   data: string;
@@ -18,10 +17,9 @@ type BrtEvent = {
   descrizione: string;
   filiale: string;
 };
-import { supabase } from "../../lib/supabase"; // Assicurati che il percorso sia corretto
 
 type BrtTrackingMultiStatusProps = {
-  parcelIds: string[]; // uno o più parcelID associati all’ordine
+  parcelIds: string[];
   orderNumber?: string | number;
 };
 
@@ -44,39 +42,48 @@ function getStatusColor(stato: string) {
   return STATUS_COLORS[key] || "bg-gray-100 text-gray-700 border-gray-200";
 }
 
-export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTrackingMultiStatusProps) {
+export default function BrtTrackingMultiStatus({
+  parcelIds,
+  orderNumber,
+}: BrtTrackingMultiStatusProps) {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<any[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-  if (!parcelIds || parcelIds.length === 0) return;
-  setLoading(true);
-  setError(null);
+    if (!parcelIds || parcelIds.length === 0) return;
+    setLoading(true);
+    setError(null);
 
-  (async () => {
-    try {
-      // Ottieni il token di Supabase per l'utente loggato
-      const { data } = await supabase.auth.getSession();
-      const token = data.session?.access_token || "";
-      const headers = {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`,
-      };
-      const res = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${parcelIds.join(",")}`,
-        { headers }
-      );
-      if (!res.ok) throw new Error("Errore tracking");
-      const dataJson = await res.json();
-      setResults(Array.isArray(dataJson) ? dataJson : [dataJson]);
-      setLoading(false);
-    } catch (err) {
-      setError("Errore caricamento tracking BRT.");
-      setLoading(false);
-    }
-  })();
-}, [parcelIds]);
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const token = data.session?.access_token || "";
+        const headers = {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        };
+        const res = await fetch(
+          `${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${parcelIds.join(",")}`,
+          { headers }
+        );
+        if (!res.ok) throw new Error("Errore tracking");
+        const dataJson = await res.json();
+        // accetta sia .results sia array puro (per compatibilità)
+        const normalized =
+          Array.isArray(dataJson.results) && dataJson.results.length > 0
+            ? dataJson.results
+            : Array.isArray(dataJson)
+            ? dataJson
+            : [dataJson];
+        setResults(normalized);
+        setLoading(false);
+      } catch (err) {
+        setError("Errore caricamento tracking BRT.");
+        setLoading(false);
+      }
+    })();
+  }, [parcelIds]);
 
   if (!parcelIds || parcelIds.length === 0) return null;
   if (loading)
@@ -123,7 +130,13 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
 
         <div className="flex flex-col gap-6">
           {results.map((tracking, i) => {
-            const brtData = tracking?.ttParcelIdResponse ?? tracking;
+            // Adatta robustamente al backend: estrai i dati reali
+            const brtData =
+              tracking.tracking?.ttParcelIdResponse ??
+              tracking.tracking ??
+              tracking.ttParcelIdResponse ??
+              tracking;
+
             const stato =
               brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
               brtData?.bolla?.dati_spedizione?.stato_sped_parte1 ||
@@ -133,8 +146,8 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
               brtData?.bolla?.dati_spedizione?.spedizione_id || parcelIds[i] || "-";
             const consegnata = stato.toUpperCase().includes("CONSEGNATA");
             const terminale =
-              tracking?.bolla?.dati_spedizione?.filiale_arrivo ||
-              tracking?.bolla?.dati_spedizione?.filiale ||
+              brtData?.bolla?.dati_spedizione?.filiale_arrivo ||
+              brtData?.bolla?.dati_spedizione?.filiale ||
               "";
             const statoBadge = getStatusColor(stato);
 
@@ -142,8 +155,12 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
               <div key={parcelId} className="mb-2 rounded-xl border shadow-inner bg-white p-2">
                 <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    {EVENT_ICON[stato.toUpperCase()] || <Loader className="text-gray-400" size={20} />}
-                    <span className={`px-2 py-1 rounded-lg border font-bold text-sm sm:text-base ${statoBadge}`}>
+                    {EVENT_ICON[stato.toUpperCase()] || (
+                      <Loader className="text-gray-400" size={20} />
+                    )}
+                    <span
+                      className={`px-2 py-1 rounded-lg border font-bold text-sm sm:text-base ${statoBadge}`}
+                    >
                       {stato}
                     </span>
                     {consegnata && (
@@ -169,7 +186,7 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
                       </li>
                     ) : (
                       events
-                        .filter(ev => ev.descrizione?.trim() !== "")
+                        .filter((ev) => ev.descrizione?.trim() !== "")
                         .reverse()
                         .map((ev, idx) => (
                           <li key={idx} className="flex items-center gap-2 px-1 py-1">
@@ -180,11 +197,19 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
                             <span className="text-xs text-gray-700 w-20 flex-shrink-0">
                               {ev.data} {ev.ora}
                             </span>
-                            <span className={`text-xs font-semibold ${ev.descrizione === stato ? "text-blue-700" : "text-gray-800"}`}>
+                            <span
+                              className={`text-xs font-semibold ${
+                                ev.descrizione === stato
+                                  ? "text-blue-700"
+                                  : "text-gray-800"
+                              }`}
+                            >
                               {ev.descrizione}
                             </span>
                             {ev.filiale && (
-                              <span className="text-[10px] text-gray-400 ml-2">{ev.filiale}</span>
+                              <span className="text-[10px] text-gray-400 ml-2">
+                                {ev.filiale}
+                              </span>
                             )}
                           </li>
                         ))
