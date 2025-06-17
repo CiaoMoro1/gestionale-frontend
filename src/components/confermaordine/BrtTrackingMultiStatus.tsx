@@ -69,7 +69,6 @@ export default function BrtTrackingMultiStatus({
         );
         if (!res.ok) throw new Error("Errore tracking");
         const dataJson = await res.json();
-        // accetta sia .results sia array puro (per compatibilità)
         const normalized =
           Array.isArray(dataJson.results) && dataJson.results.length > 0
             ? dataJson.results
@@ -101,6 +100,24 @@ export default function BrtTrackingMultiStatus({
       </div>
     );
 
+  // Mostra SOLO la prima spedizione, ignora i duplicati
+  const tracking = results[0];
+  const brtData =
+    tracking.tracking?.ttParcelIdResponse ??
+    tracking.tracking ??
+    tracking.ttParcelIdResponse ??
+    tracking;
+
+  const stato =
+    brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
+    brtData?.bolla?.dati_spedizione?.stato_sped_parte1 ||
+    "Stato non disponibile";
+  const events = (brtData?.lista_eventi || []).map((e: any) => e.evento) as BrtEvent[];
+  const spedizioneId = brtData?.bolla?.dati_spedizione?.spedizione_id || "-";
+  const terminale = brtData?.bolla?.dati_spedizione?.filiale_arrivo || "";
+  const statoBadge = getStatusColor(stato);
+  const consegnata = stato.toUpperCase().includes("CONSEGNATA");
+
   return (
     <section className="w-full max-w-md mx-auto mt-3 mb-6 px-1">
       <div className="rounded-2xl shadow bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 p-3 sm:p-4">
@@ -116,109 +133,58 @@ export default function BrtTrackingMultiStatus({
           </div>
           <div className="font-mono text-xs text-blue-700 truncate flex items-center gap-1">
             <PackageSearch size={16} className="text-blue-500" />
-            {parcelIds.length === 1 ? (
-              <>
-                ParcelID: <span className="font-semibold">{parcelIds[0]}</span>
-              </>
-            ) : (
-              <>
-                {parcelIds.length} colli
-              </>
-            )}
+            {parcelIds.length} colli
           </div>
         </div>
-
-        <div className="flex flex-col gap-6">
-          {results.map((tracking, i) => {
-            // Adatta robustamente al backend: estrai i dati reali
-            const brtData =
-              tracking.tracking?.ttParcelIdResponse ??
-              tracking.tracking ??
-              tracking.ttParcelIdResponse ??
-              tracking;
-
-            const stato =
-              brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
-              brtData?.bolla?.dati_spedizione?.stato_sped_parte1 ||
-              "Stato non disponibile";
-            const events = (brtData?.lista_eventi || []).map((e: any) => e.evento) as BrtEvent[];
-            const parcelId =
-              brtData?.bolla?.dati_spedizione?.spedizione_id || parcelIds[i] || "-";
-            const consegnata = stato.toUpperCase().includes("CONSEGNATA");
-            const terminale =
-              brtData?.bolla?.dati_spedizione?.filiale_arrivo ||
-              brtData?.bolla?.dati_spedizione?.filiale ||
-              "";
-            const statoBadge = getStatusColor(stato);
-
-            return (
-              <div key={parcelId} className="mb-2 rounded-xl border shadow-inner bg-white p-2">
-                <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-2">
-                  <div className="flex items-center gap-2">
-                    {EVENT_ICON[stato.toUpperCase()] || (
-                      <Loader className="text-gray-400" size={20} />
-                    )}
-                    <span
-                      className={`px-2 py-1 rounded-lg border font-bold text-sm sm:text-base ${statoBadge}`}
-                    >
-                      {stato}
+        <div className="mb-2 flex items-center gap-2">
+          <span className={`px-2 py-1 rounded-lg border font-bold text-sm sm:text-base ${statoBadge}`}>
+            {stato}
+          </span>
+          {consegnata && (
+            <span className="ml-2 px-2 py-1 text-xs rounded bg-green-100 text-green-700 font-bold border border-green-200">
+              CONSEGNATA
+            </span>
+          )}
+        </div>
+        <div className="text-xs text-blue-700 mb-1">
+          Spedizione ID: <span className="font-semibold">{spedizioneId}</span>
+        </div>
+        {terminale && (
+          <div className="text-xs text-blue-700 mb-2">
+            Filiale arrivo: <span className="font-semibold">{terminale}</span>
+          </div>
+        )}
+        <div className="overflow-x-auto">
+          <ol className="flex flex-col gap-0.5 mt-1">
+            {events.length === 0 ? (
+              <li className="text-gray-400 text-xs py-2">Nessun evento disponibile.</li>
+            ) : (
+              events
+                .filter(ev => ev.descrizione?.trim() !== "")
+                .reverse()
+                .map((ev, idx) => (
+                  <li key={idx} className="flex items-center gap-2 px-1 py-1">
+                    <span className="flex-shrink-0 w-5">
+                      {EVENT_ICON[ev.descrizione.toUpperCase()] ||
+                        <Loader className="text-gray-400" size={16} />}
                     </span>
-                    {consegnata && (
-                      <span className="ml-2 px-2 py-1 text-xs rounded bg-green-100 text-green-700 font-bold border border-green-200">
-                        CONSEGNATA
-                      </span>
+                    <span className="text-xs text-gray-700 w-20 flex-shrink-0">
+                      {ev.data} {ev.ora}
+                    </span>
+                    <span
+                      className={`text-xs font-semibold ${
+                        ev.descrizione === stato ? "text-blue-700" : "text-gray-800"
+                      }`}
+                    >
+                      {ev.descrizione}
+                    </span>
+                    {ev.filiale && (
+                      <span className="text-[10px] text-gray-400 ml-2">{ev.filiale}</span>
                     )}
-                  </div>
-                  <div className="font-mono text-xs text-blue-700 mt-1 sm:mt-0">
-                    ParcelID: <span className="font-semibold">{parcelId}</span>
-                  </div>
-                </div>
-                {terminale && (
-                  <div className="text-xs text-blue-700 mb-2">
-                    Filiale arrivo: <span className="font-semibold">{terminale}</span>
-                  </div>
-                )}
-                <div className="overflow-x-auto">
-                  <ol className="flex flex-col gap-0.5 mt-1">
-                    {events.length === 0 ? (
-                      <li className="text-gray-400 text-xs py-2">
-                        Nessun evento disponibile.
-                      </li>
-                    ) : (
-                      events
-                        .filter((ev) => ev.descrizione?.trim() !== "")
-                        .reverse()
-                        .map((ev, idx) => (
-                          <li key={idx} className="flex items-center gap-2 px-1 py-1">
-                            <span className="flex-shrink-0 w-5">
-                              {EVENT_ICON[ev.descrizione.toUpperCase()] ||
-                                <Loader className="text-gray-400" size={16} />}
-                            </span>
-                            <span className="text-xs text-gray-700 w-20 flex-shrink-0">
-                              {ev.data} {ev.ora}
-                            </span>
-                            <span
-                              className={`text-xs font-semibold ${
-                                ev.descrizione === stato
-                                  ? "text-blue-700"
-                                  : "text-gray-800"
-                              }`}
-                            >
-                              {ev.descrizione}
-                            </span>
-                            {ev.filiale && (
-                              <span className="text-[10px] text-gray-400 ml-2">
-                                {ev.filiale}
-                              </span>
-                            )}
-                          </li>
-                        ))
-                    )}
-                  </ol>
-                </div>
-              </div>
-            );
-          })}
+                  </li>
+                ))
+            )}
+          </ol>
         </div>
       </div>
     </section>

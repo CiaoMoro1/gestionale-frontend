@@ -448,13 +448,6 @@ export default function ConfermaPrelievo() {
         </div>
       )}
 
-      {/* WIDGET TRACKING MULTI-BRT (dopo la generazione etichetta) */}
-      {etichetta.labels.length > 0 && parcelIds.length > 0 && (
-        <div className="mb-4">
-          <BrtTrackingMultiStatus parcelIds={parcelIds} orderNumber={order.number} />
-        </div>
-      )}
-
       {/* FORM DATI INDIRIZZO */}
       <OrderAddressForm
         order={order}
@@ -505,6 +498,8 @@ export default function ConfermaPrelievo() {
             Etichetta generata
           </button>
         )}
+
+        
       </div>
 
       {/* BADGE */}
@@ -520,6 +515,8 @@ export default function ConfermaPrelievo() {
           {badge.message}
         </div>
       )}
+
+
 
       {/* AZIONI ETICHETTE */}
       <LabelActions
@@ -563,6 +560,15 @@ export default function ConfermaPrelievo() {
           onClose={() => setScannerOpen(false)}
         />
       )}
+
+            {/* WIDGET TRACKING MULTI-BRT (dopo la generazione etichetta) */}
+      {etichetta.labels.length > 0 && parcelIds.length > 0 && (
+        <div className="mb-4">
+          <BrtTrackingMultiStatus parcelIds={parcelIds} orderNumber={order.number} />
+        </div>
+      )}
     </div>
+
+    
   );
 }
