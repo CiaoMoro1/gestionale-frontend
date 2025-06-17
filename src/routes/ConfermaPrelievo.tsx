@@ -1,11 +1,12 @@
-import { useEffect, useState, useCallback } from "react";
-import { useParams } from "react-router-dom";
+import { useEffect, useState, useCallback, useMemo } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabase";
 import BarcodeScannerModal from "../modals/BarcodeScannerModal";
 import ModalPDFLabel from "../components/ModalPDFLabel";
 import type { Ordine, OrderItem } from "../types/ordini";
 import { mergePdfBase64Array } from "../utils/mergePdf";
 
+import BrtTrackingMultiStatus from "../components/confermaordine/BrtTrackingMultiStatus";
 import OrderAddressForm from "../components/confermaordine/OrderAddressForm";
 import OrderItemsList from "../components/confermaordine/OrderItemsList";
 import LabelActions from "../components/confermaordine/LabelActions";
@@ -43,6 +44,7 @@ export default function ConfermaPrelievo() {
   const [order, setOrder] = useState<Ordine | null>(null);
   const [items, setItems] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   const [confirmed, setConfirmed] = useState<Record<string, number>>({});
   const [scannerOpen, setScannerOpen] = useState(false);
@@ -64,7 +66,7 @@ export default function ConfermaPrelievo() {
   const [mergedPdf, setMergedPdf] = useState<string | null>(null);
   const [isMerging, setIsMerging] = useState(false);
 
-  // --- LOAD DATA ---
+  // Caricamento ordine e articoli
   const loadOrder = useCallback(async () => {
     if (!id) return;
     setLoading(true);
@@ -130,7 +132,7 @@ export default function ConfermaPrelievo() {
     };
   }, [id, loadOrder]);
 
-  // --- GEOCODING GOOGLE ---
+  // Google geocoding suggerimento indirizzo
   useEffect(() => {
     if (!formData.shipping_address || !formData.shipping_city) {
       setGeoSuggestion(null);
@@ -168,7 +170,7 @@ export default function ConfermaPrelievo() {
     formData.shipping_country,
   ]);
 
-  // --- LOGICA DI CONFERMA ARTICOLO ---
+  // Logica conferma articoli
   const confirmOne = (itemId: string) => {
     setConfirmed((prev) => ({
       ...prev,
@@ -190,18 +192,25 @@ export default function ConfermaPrelievo() {
     confirmOne(item.id);
   };
 
-  const allConfirmed =
-    items.length > 0 &&
-    items
-      .filter(
-        (item) =>
-          !(
-            item.products?.sku?.toLowerCase().includes("commissione pagamento") ||
-            item.products?.product_title?.toLowerCase().includes("commissione pagamento")
-          )
-      )
-      .every((item) => confirmed[item.id] >= item.quantity);
+  // Filtro articoli da prelevare (esclude solo "commissione pagamento alla consegna")
+  const isItemPickable = useCallback((item: OrderItem) => {
+    const sku = (item.products?.sku || item.sku || "").toLowerCase().trim();
+    const title = (item.products?.product_title || "").toLowerCase().trim();
+    return (
+      sku !== "commissione pagamento alla consegna" &&
+      title !== "commissione pagamento alla consegna"
+    );
+  }, []);
 
+  const itemsToPick = useMemo(() => items.filter(isItemPickable), [items, isItemPickable]);
+  const allConfirmed = useMemo(
+    () =>
+      itemsToPick.length > 0 &&
+      itemsToPick.every((item) => confirmed[item.id] >= item.quantity),
+    [itemsToPick, confirmed]
+  );
+
+  // Gestione generazione/eliminazione/stampa etichette
   const handleGeneraEtichetta = async () => {
     setApiLoading(true);
     try {
@@ -348,20 +357,53 @@ export default function ConfermaPrelievo() {
     setApiLoading(false);
   };
 
-  const mapAddressString = [
-    formData.shipping_address,
-    formData.shipping_city,
-    formData.shipping_province,
-    formData.shipping_zip,
-    formData.shipping_country,
-  ]
-    .filter(Boolean)
-    .join(", ");
+  // Calcolo ParcelIDs multi-collo, ottimizzato con useMemo
+  const parcelIds: string[] = useMemo(() => {
+    const raw = order?.parcel_id;
+    if (!raw) return [];
+
+    // Caso 1: già array
+    if (Array.isArray(raw)) return raw.filter(Boolean);
+
+    // Caso 2: stringa singola
+    if (typeof raw === "string") {
+      // Se sembra un JSON array: ["id1","id2"]
+      if (raw.trim().startsWith("[") && raw.trim().endsWith("]")) {
+        try {
+          const arr = JSON.parse(raw);
+          return Array.isArray(arr) ? arr.filter(Boolean) : [raw];
+        } catch {
+          return [raw];
+        }
+      }
+      // Stringa normale: "id1"
+      return [raw];
+    }
+
+    // Caso 3: oggetto vuoto o altro
+    if (typeof raw === "object") {
+      // se oggetto vuoto: {}
+      if (Object.keys(raw).length === 0) return [];
+      // se oggetto tipo {0: "id1", 1: "id2"}
+      return Object.values(raw).filter(v => typeof v === "string" && v.length > 0);
+    }
+
+    return [];
+  }, [order?.parcel_id]);
+
+  // Indirizzo per la mappa
+  const mapAddressString = useMemo(
+    () =>
+      [formData.shipping_address, formData.shipping_city, formData.shipping_province, formData.shipping_zip, formData.shipping_country]
+        .filter(Boolean)
+        .join(", "),
+    [formData]
+  );
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-gray-600">
-        <span className="animate-spin mb-2">⏳</span> Caricamento...
+        <span className="animate-spin mb-2"></span>
       </div>
     );
   }
@@ -378,19 +420,38 @@ export default function ConfermaPrelievo() {
         Conferma Prelievo Ordine #{order.number}
       </h1>
 
-      {/* MAPPA */}
+      <div className="flex justify-center">
+        <button
+          onClick={() => navigate("/prelievo")}
+          className="px-4 py-2 mb-2 rounded-full border border-gray-400 text-gray-800 bg-white hover:bg-gray-100 transition font-medium shadow-sm"
+        >
+          ⬅️ Torna alla lista prelievo
+        </button>
+      </div>
+
+      {/* MAPPA + suggerimento Google */}
       {mapAddressString && GOOGLE_MAPS_EMBED_KEY && (
-        <div className="rounded-xl overflow-hidden shadow mb-2 sm:mb-3 w-full">
+        <div className="rounded-xl overflow-hidden shadow mb-2 sm:mb-3 w-full bg-white">
           <iframe
             width="100%"
             height="160"
             style={{ border: 0 }}
             loading="lazy"
             allowFullScreen
-            src={`https://www.google.com/maps/embed/v1/place?key=${GOOGLE_MAPS_EMBED_KEY}&q=${encodeURIComponent(
-              mapAddressString
-            )}`}
+            src={`https://www.google.com/maps/embed/v1/place?key=${GOOGLE_MAPS_EMBED_KEY}&q=${encodeURIComponent(mapAddressString)}`}
           />
+          {geoSuggestion?.formatted_address && (
+            <div className="p-2 text-center text-sm font-semibold text-cyan-800 border-t bg-white">
+              {geoSuggestion.formatted_address}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* WIDGET TRACKING MULTI-BRT (dopo la generazione etichetta) */}
+      {etichetta.labels.length > 0 && parcelIds.length > 0 && (
+        <div className="mb-4">
+          <BrtTrackingMultiStatus parcelIds={parcelIds} orderNumber={order.number} />
         </div>
       )}
 

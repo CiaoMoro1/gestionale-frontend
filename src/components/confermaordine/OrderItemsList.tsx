@@ -15,11 +15,21 @@ export default function OrderItemsList({
   onOpenScanner,
 }: OrderItemsListProps) {
   // Escludi articoli "commissione pagamento"
-  const itemsToPick = items.filter(
-    item =>
-      !(item.products?.sku?.toLowerCase().includes("commissione pagamento") ||
-        item.products?.product_title?.toLowerCase().includes("commissione pagamento"))
-  );
+  const itemsToPick = items.filter(item => {
+    const sku = (item.products?.sku || item.sku || "").toLowerCase();
+    const title = (item.products?.product_title || "").toLowerCase();
+
+    // Nascondi SOLO le voci che contengono "commissione pagamento" sia in SKU che in titolo
+    if (
+      sku.includes("commissione pagamento") ||
+      title.includes("commissione pagamento")
+    ) {
+      return false;
+    }
+
+    // Tutto il resto (compresi item manuali con SKU valorizzato) viene sempre mostrato
+    return true;
+  });
 
   return (
     <div className="bg-white rounded-2xl shadow p-5 space-y-4">
@@ -33,11 +43,12 @@ export default function OrderItemsList({
           className="flex flex-col sm:flex-row sm:items-center justify-between border-b last:border-0 py-3"
         >
           <div>
+            
+            <div className="font-semibold text-gray-900">
+              SKU: {item.products?.sku || item.sku || "—"}
+            </div>
             <div className="text-fluid-sm max-w-xs">
               {item.products?.product_title || "—"}
-            </div>
-            <div className="font-semibold text-gray-900">
-              SKU: {item.products?.sku}
             </div>
           </div>
           <div className="flex items-center gap-3 mt-2 sm:mt-0">

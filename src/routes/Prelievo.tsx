@@ -33,7 +33,7 @@ export default function Prelievo() {
       const ordersRes = await supabase
         .from("orders")
         .select("*")
-        .eq("stato_ordine", "prelievo");
+        .in("stato_ordine", ["prelievo", "etichetta_generata"])
 
       if (!ordersRes.data) {
         setLoading(false);
@@ -230,6 +230,7 @@ export default function Prelievo() {
           <thead className="bg-black/90 text-white">
             <tr>
               <th className="p-3 text-left">Ordine</th>
+              <th className="p-3 text-center">Etichetta</th>
               <th className="p-3 text-center">Evadi</th>
               <th className="p-3 text-left">Cliente</th>
               <th className="p-3 text-right">Totale</th>
@@ -249,6 +250,15 @@ export default function Prelievo() {
                 return (
                   <tr key={order.id} className="border-b last:border-0">
                     <td className="p-3 font-semibold">{order.number}</td>
+                    <td className="p-3 text-center">
+            {order.stato_ordine === "etichetta_generata" ? (
+              <span title="Etichetta generata, non ancora stampata">
+                <FileText size={18} className="text-cyan-500 inline" />
+              </span>
+            ) : (
+              <span className="text-xs text-gray-300">—</span>
+            )}
+          </td>
                     <td className="p-3 text-center">
                       <span className="bg-green-600 text-white px-2 py-1 rounded text-xs font-semibold">
                         {evadibili}/{totali}
