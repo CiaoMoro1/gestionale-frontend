@@ -123,13 +123,14 @@ export default function BrtTrackingMultiStatus({ parcelIds, orderNumber }: BrtTr
 
         <div className="flex flex-col gap-6">
           {results.map((tracking, i) => {
+            const brtData = tracking?.ttParcelIdResponse ?? tracking;
             const stato =
-              tracking?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
-              tracking?.bolla?.dati_spedizione?.stato_sped_parte1 ||
+              brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
+              brtData?.bolla?.dati_spedizione?.stato_sped_parte1 ||
               "Stato non disponibile";
-            const events = (tracking?.lista_eventi || []).map((e: any) => e.evento) as BrtEvent[];
+            const events = (brtData?.lista_eventi || []).map((e: any) => e.evento) as BrtEvent[];
             const parcelId =
-              tracking?.bolla?.dati_spedizione?.parcelID || parcelIds[i] || "-";
+              brtData?.bolla?.dati_spedizione?.spedizione_id || parcelIds[i] || "-";
             const consegnata = stato.toUpperCase().includes("CONSEGNATA");
             const terminale =
               tracking?.bolla?.dati_spedizione?.filiale_arrivo ||
