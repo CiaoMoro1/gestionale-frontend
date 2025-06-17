@@ -101,12 +101,21 @@ export default function BrtTrackingMultiStatus({
     );
 
   // Mostra SOLO la prima spedizione, ignora i duplicati
-  const tracking = results[0];
-  const brtData =
-    tracking.tracking?.ttParcelIdResponse ??
-    tracking.tracking ??
-    tracking.ttParcelIdResponse ??
-    tracking;
+  if (!results[0]) {
+  return (
+    <div className="my-4 flex items-center gap-2 justify-center text-gray-600">
+      <AlertTriangle size={18} />
+      Nessun dato di tracking disponibile.
+    </div>
+  );
+}
+
+const tracking = results[0];
+const brtData =
+  tracking?.tracking?.ttParcelIdResponse ??
+  tracking?.tracking ??
+  tracking?.ttParcelIdResponse ??
+  tracking;
 
   const stato =
     brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
