@@ -3,6 +3,7 @@ import {
   Package,
   ArrowLeftRight,
   ArrowDown,
+  Boxes,
 } from "lucide-react";
 
 export const navSections = [
@@ -12,7 +13,17 @@ export const navSections = [
     items: [
       { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/ordini" },
       { label: "Prelievo", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/prelievo" },
-      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/etichettati" }, // 👈 NEW
+      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/etichettati" },
+    ],
+  },
+  {
+    label: "Ordini Vendor",
+    icon: <Boxes size={24} strokeWidth={1.5} />,
+    items: [
+      { label: "Dashboard", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/dashboard" },
+      { label: "Nuovi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/nuovi" },
+      { label: "Parziali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/parziali" },
+      { label: "Completi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/completi" },
     ],
   },
   {
