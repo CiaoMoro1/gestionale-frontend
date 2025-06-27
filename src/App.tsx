@@ -16,6 +16,7 @@ import HeaderMobile from "./components/layout/HeaderMobile";
 import ConfermaPrelievo from "./routes/ConfermaPrelievo";
 import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
+import RiepilogoNuovi from "./routes/ordini-amazon/nuovi";
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -114,6 +115,7 @@ function AppContent() {
               <Route path="/prelievo/:id" element={<ConfermaPrelievo />} />
               <Route path="/ordini-amazon/dashboard" element={<OrdiniAmazonDashboard />} />
               <Route path="/etichettati" element={<Etichettati />} />
+              <Route path="/ordini-amazon/nuovi" element={<RiepilogoNuovi />} />
             </Routes>
           </Suspense>
         </section>

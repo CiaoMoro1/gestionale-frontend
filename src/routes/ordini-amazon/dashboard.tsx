@@ -30,10 +30,10 @@ const DashboardAmazonVendor: React.FC = () => {
 
     try {
       // ATTENZIONE: Modifica l'URL in base al tuo endpoint
-    const res = await fetch("/api/amazon/vendor/orders/upload", {
-        method: "POST",
-        body: formData,
-      });
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/upload`, {
+    method: "POST",
+    body: formData,
+    });
 
       if (!res.ok) {
         setLog([`Errore HTTP: ${res.status}`]);
@@ -44,10 +44,11 @@ const DashboardAmazonVendor: React.FC = () => {
       const data = await res.json();
       if (data.status === "ok") {
         setLog([
-            `✅ Importazione completata!`,
-            `${data.importati} ordini importati correttamente.`,
-            ...(data.warnings?.length ? ["⚠️ Warning:", ...data.warnings] : []),
-            ...(data.errors?.length ? ["❌ Errori:", ...data.errors] : []),
+        `✅ Importazione completata!`,
+        `${data.importati} articoli importati correttamente.`,
+        `(${data.po_unici} PO/ordini unici importati)`,
+        ...(data.doppioni?.length ? ["⚠️ Doppioni saltati:", ...data.doppioni] : []),
+        ...(data.errors?.length ? ["❌ Errori:", ...data.errors] : []),
         ]);
       } else {
         setLog([`❌ Errore: ${data.errors?.join(", ") || "Errore sconosciuto"}`]);
