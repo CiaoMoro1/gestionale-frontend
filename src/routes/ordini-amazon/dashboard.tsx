@@ -30,7 +30,7 @@ const DashboardAmazonVendor: React.FC = () => {
 
     try {
       // ATTENZIONE: Modifica l'URL in base al tuo endpoint
-      const res = await fetch("/api/amazon/vendor/import-xls", {
+    const res = await fetch("/api/amazon/vendor/orders/upload", {
         method: "POST",
         body: formData,
       });
@@ -44,10 +44,10 @@ const DashboardAmazonVendor: React.FC = () => {
       const data = await res.json();
       if (data.status === "ok") {
         setLog([
-          `✅ Importazione completata!`,
-          `${data.imported} ordini importati correttamente.`,
-          ...(data.warnings?.length ? ["⚠️ Warning:", ...data.warnings] : []),
-          ...(data.errors?.length ? ["❌ Errori:", ...data.errors] : []),
+            `✅ Importazione completata!`,
+            `${data.importati} ordini importati correttamente.`,
+            ...(data.warnings?.length ? ["⚠️ Warning:", ...data.warnings] : []),
+            ...(data.errors?.length ? ["❌ Errori:", ...data.errors] : []),
         ]);
       } else {
         setLog([`❌ Errore: ${data.errors?.join(", ") || "Errore sconosciuto"}`]);
