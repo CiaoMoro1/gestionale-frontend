@@ -25,64 +25,63 @@ export default function RiepilogoNuovi() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-[750px] p-2 sm:p-4 md:p-8">
+    <div className="mx-auto max-w-2xl p-4 bg-gradient-to-br from-blue-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-950 min-h-screen">
       {dati.length === 0 ? (
-        <div className="text-center text-muted-foreground py-12 animate-pulse">Caricamento...</div>
+        <div className="text-center text-neutral-400 py-12 animate-pulse">Caricamento...</div>
       ) : (
         dati.map((group, idx) => (
           <div
             key={idx}
-            className="mb-8 rounded-2xl shadow-sm border bg-white dark:bg-neutral-950 flex flex-col gap-2"
+            className="mb-8 rounded-3xl shadow-xl border border-white/50 dark:border-neutral-800/60
+              bg-white/60 dark:bg-neutral-900/60 backdrop-blur-md transition-all overflow-hidden"
+            style={{ boxShadow: "0 12px 40px 0 rgba(0,0,0,0.09)" }}
           >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 px-4 pt-4 pb-2">
-              <div className="flex items-center gap-2 flex-1">
-                <Package className="text-blue-600 shrink-0" size={30} />
-                <span className="text-xl sm:text-2xl font-bold uppercase tracking-wide">{group.fulfillment_center}</span>
-                <span className="ml-2 px-2 py-1 text-xs rounded bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-200 font-semibold">
-                  {group.stato_ordine}
-                </span>
+            <div className="flex items-center gap-3 px-6 pt-6 pb-3">
+              <div className="shrink-0 flex items-center justify-center rounded-2xl bg-blue-100/70 dark:bg-blue-900/30 w-12 h-12 shadow">
+                <Package className="text-blue-600" size={28} />
               </div>
-              <span className="text-base sm:text-lg text-neutral-500 font-medium">
-                {group.start_delivery}
+              <div className="flex flex-col flex-1">
+                <span className="font-[600] text-2xl sm:text-3xl tracking-wide text-neutral-900 dark:text-neutral-100 leading-tight uppercase">
+                  {group.fulfillment_center}
+                </span>
+                <span className="text-sm text-neutral-500 font-medium pt-1">{group.start_delivery}</span>
+              </div>
+              <span className="px-4 py-1.5 rounded-full bg-blue-200/70 dark:bg-blue-800/60 text-blue-800 dark:text-blue-200 font-semibold text-xs shadow border border-white/30">
+                {group.stato_ordine}
               </span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm sm:text-base min-w-[320px] md:min-w-[500px]">
+            <div className="overflow-x-auto pb-3">
+              <table className="w-full text-base min-w-[320px]">
                 <thead>
-                  <tr className="border-b">
-                    <th className="py-2 pl-4 text-left font-medium text-neutral-500">PO</th>
-                    <th className="py-2 text-left font-medium text-neutral-500">Numero Articoli</th>
-                    <th className="py-2 text-left font-medium text-neutral-500 min-w-[80px]">Stato</th>
+                  <tr>
+                    <th className="py-3 pl-6 text-left font-medium text-neutral-600 dark:text-neutral-300 tracking-wide">PO</th>
+                    <th className="py-3 text-left font-medium text-neutral-600 dark:text-neutral-300">Articoli</th>
                   </tr>
                 </thead>
                 <tbody>
                   {group.po_list.map((po, i) => (
                     <tr
                       key={i}
-                      className="hover:bg-neutral-50 dark:hover:bg-neutral-900 transition"
+                      className="hover:bg-white/30 dark:hover:bg-neutral-800/40 transition-all"
                     >
-                      <td className="pl-4 py-2 font-mono text-[15px] sm:text-base">
+                      <td className="pl-6 py-2 font-mono text-lg text-neutral-800 dark:text-neutral-100">
                         {po.po_number}
                       </td>
-                      <td className="py-2 font-semibold text-base text-blue-800 dark:text-blue-300">
-                        <span className="inline-block px-2 py-0.5 rounded bg-neutral-100 dark:bg-neutral-800">
-                          {po.numero_articoli}
-                        </span>
-                        <ChevronRight size={16} className="inline ml-1 text-neutral-300 dark:text-neutral-600" />
-                      </td>
                       <td className="py-2">
-                        <span className="px-2 py-0.5 rounded bg-blue-50 dark:bg-blue-900 text-blue-800 dark:text-blue-200 text-xs uppercase">
-                          {group.stato_ordine}
+                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-neutral-100/70 dark:bg-neutral-800/80 text-blue-900 dark:text-blue-200 font-semibold shadow text-lg">
+                          {po.numero_articoli}
+                          <ChevronRight size={16} className="text-neutral-300 dark:text-neutral-600" />
                         </span>
                       </td>
                     </tr>
                   ))}
-                  <tr className="border-t bg-neutral-50 dark:bg-neutral-900">
-                    <td className="pl-4 py-2 font-bold text-right uppercase text-neutral-500">Totale</td>
-                    <td className="py-2 font-extrabold text-black dark:text-blue-400 text-lg sm:text-xl">
+                  <tr className="bg-white/50 dark:bg-neutral-900/60 border-t border-white/30 dark:border-neutral-800/40">
+                    <td className="pl-6 py-2 font-bold text-right text-neutral-500 text-lg uppercase tracking-wide">
+                      Totale
+                    </td>
+                    <td className="py-2 font-extrabold text-blue-700 dark:text-blue-400 text-xl">
                       {group.totale_articoli}
                     </td>
-                    <td />
                   </tr>
                 </tbody>
               </table>
@@ -91,7 +90,7 @@ export default function RiepilogoNuovi() {
         ))
       )}
       {dati.length === 0 ? null : (
-        <div className="text-xs text-center text-neutral-400 pb-8">
+        <div className="text-xs text-center text-neutral-400 pb-8 mt-6">
           Ultimo aggiornamento: {new Date().toLocaleString()}
         </div>
       )}
