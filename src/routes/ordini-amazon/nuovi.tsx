@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Package, ChevronRight } from "lucide-react";
+import { Package } from "lucide-react";
 
 type PO = {
   po_number: string;
@@ -25,64 +25,67 @@ export default function RiepilogoNuovi() {
   }, []);
 
   return (
-    <div className="mx-auto max-w-2xl p-4 bg-gradient-to-br from-blue-50 to-neutral-100 dark:from-neutral-900 dark:to-neutral-950 min-h-screen">
+    <div>
       {dati.length === 0 ? (
         <div className="text-center text-neutral-400 py-12 animate-pulse">Caricamento...</div>
       ) : (
         dati.map((group, idx) => (
           <div
             key={idx}
-            className="mb-8 rounded-3xl shadow-xl border border-white/50 dark:border-neutral-800/60
-              bg-white/60 dark:bg-neutral-900/60 backdrop-blur-md transition-all overflow-hidden"
-            style={{ boxShadow: "0 12px 40px 0 rgba(0,0,0,0.09)" }}
+            className="mb-10 rounded-[2rem] shadow-xl border border-white/40 bg-white/60 backdrop-blur-lg
+              transition-all overflow-hidden px-4 py-4"
+            style={{
+              boxShadow: "0 8px 36px 0 rgba(40,55,90,0.08)",
+              maxWidth: "100%",
+              minWidth: 0
+            }}
           >
-            <div className="flex items-center gap-3 px-6 pt-6 pb-3">
-              <div className="shrink-0 flex items-center justify-center rounded-2xl bg-blue-100/70 dark:bg-blue-900/30 w-12 h-12 shadow">
-                <Package className="text-blue-600" size={28} />
+            <div className="flex items-center gap-4 pb-2">
+              <div className="shrink-0 flex items-center justify-center rounded-xl bg-gray-100 w-14 h-14 shadow">
+                <Package className="text-gray-700" size={32} />
               </div>
               <div className="flex flex-col flex-1">
-                <span className="font-[600] text-2xl sm:text-3xl tracking-wide text-neutral-900 dark:text-neutral-100 leading-tight uppercase">
+                <span className="font-bold text-2xl tracking-wide text-neutral-900 uppercase">
                   {group.fulfillment_center}
                 </span>
-                <span className="text-sm text-neutral-500 font-medium pt-1">{group.start_delivery}</span>
+                <span className="text-sm text-neutral-500 font-medium pt-0.5">
+                  {group.start_delivery}
+                </span>
               </div>
-              <span className="px-4 py-1.5 rounded-full bg-blue-200/70 dark:bg-blue-800/60 text-blue-800 dark:text-blue-200 font-semibold text-xs shadow border border-white/30">
+              <span className="px-4 py-1.5 rounded-full bg-gray-100 text-gray-700 font-semibold text-xs shadow border border-white/20">
                 {group.stato_ordine}
               </span>
             </div>
-            <div className="overflow-x-auto pb-3">
-              <table className="w-full text-base min-w-[320px]">
+            <div className="w-full overflow-x-hidden">
+              <table className="w-full text-lg min-w-[300px]">
                 <thead>
                   <tr>
-                    <th className="py-3 pl-6 text-left font-medium text-neutral-600 dark:text-neutral-300 tracking-wide">PO</th>
-                    <th className="py-3 text-left font-medium text-neutral-600 dark:text-neutral-300">Articoli</th>
+                    <th className="py-3 pl-2 text-left font-medium text-neutral-500">PO</th>
+                    <th className="py-3 text-left font-medium text-neutral-500">Articoli</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {group.po_list.map((po, i) => (
-                    <tr
-                      key={i}
-                      className="hover:bg-white/30 dark:hover:bg-neutral-800/40 transition-all"
-                    >
-                      <td className="pl-6 py-2 font-mono text-lg text-neutral-800 dark:text-neutral-100">
-                        {po.po_number}
-                      </td>
-                      <td className="py-2">
-                        <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-neutral-100/70 dark:bg-neutral-800/80 text-blue-900 dark:text-blue-200 font-semibold shadow text-lg">
-                          {po.numero_articoli}
-                          <ChevronRight size={16} className="text-neutral-300 dark:text-neutral-600" />
+                {group.po_list.map((po, i) => (
+                    <tr key={i} className="hover:bg-gray-50 transition-all">
+                    <td className="pl-2 py-2 font-mono text-neutral-800">{po.po_number}</td>
+                    <td className="py-2">
+                        <span className="inline-block px-3 py-1 rounded-full bg-white/90 text-gray-800 font-semibold shadow-sm text-lg">
+                        {po.numero_articoli}
                         </span>
-                      </td>
+                    </td>
                     </tr>
-                  ))}
-                  <tr className="bg-white/50 dark:bg-neutral-900/60 border-t border-white/30 dark:border-neutral-800/40">
-                    <td className="pl-6 py-2 font-bold text-right text-neutral-500 text-lg uppercase tracking-wide">
-                      Totale
+                ))}
+                {/* Riga totale perfettamente sotto */}
+                <tr>
+                    <td className="pl-2 pt-6 font-bold text-left text-neutral-500 uppercase tracking-wide align-top">
+                    Totale
                     </td>
-                    <td className="py-2 font-extrabold text-blue-700 dark:text-blue-400 text-xl">
-                      {group.totale_articoli}
+                    <td className="pt-6 text-center align-top">
+                    <span className="inline-block px-3 py-1 rounded-full bg-white/90 text-gray-800 font-extrabold shadow-sm text-xl">
+                        {group.totale_articoli}
+                    </span>
                     </td>
-                  </tr>
+                </tr>
                 </tbody>
               </table>
             </div>
