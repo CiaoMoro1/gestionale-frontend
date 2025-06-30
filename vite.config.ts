@@ -27,7 +27,8 @@ export default defineConfig({
           }
         ]
       },
-      workbox: {
+            workbox: {
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB
         runtimeCaching: [
           {
             urlPattern: ({ request }) => request.destination === 'image',
@@ -42,6 +43,7 @@ export default defineConfig({
           }
         ]
       }
+
     })
   ]
 });
