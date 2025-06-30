@@ -207,7 +207,8 @@ export default function ParzialiOrdini() {
                     className="bg-blue-600 text-white rounded-full px-4 py-2 font-semibold shadow hover:bg-blue-800 transition mx-auto flex items-center gap-2 text-base md:text-lg"
                     onClick={() =>
                         navigate(
-                        `/ordini-amazon/dettaglio/${riep.fulfillment_center}/${riep.start_delivery}?numero_parziale=next`
+                            `/ordini-amazon/dettaglio/${riep.fulfillment_center}/${riep.start_delivery}?numero_parziale=next`,
+                            { state: { from: "parziali" } }
                         )
                     }
                     >

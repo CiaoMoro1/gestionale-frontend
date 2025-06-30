@@ -1,9 +1,9 @@
-import { useParams } from "react-router-dom";
-import { useEffect, useState, } from "react";
-import { Package, CheckCircle, ChevronRight, Plus, Minus } from "lucide-react";
+import { useParams, useLocation, useNavigate } from "react-router-dom";
+import { useEffect, useState, useRef } from "react";
+import { Package, CheckCircle, ChevronRight, CircleChevronLeft, Plus, Minus, Search } from "lucide-react";
 import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 import BarcodeScannerModal from "../../components/BarcodeScannerModal";
-// Importa qui la libreria barcode se vuoi generare png in locale
+import SlideToConfirm from "../../components/SlideToConfirm";
 
 type Articolo = {
   model_number: string;
@@ -25,7 +25,6 @@ type ColloRiepilogo = {
   confermato: boolean;
 };
 
-
 export default function DettaglioDestinazione() {
   const { center, data } = useParams();
   const [articoli, setArticoli] = useState<Articolo[]>([]);
@@ -35,18 +34,25 @@ export default function DettaglioDestinazione() {
   const [modaleArticolo, setModaleArticolo] = useState<Articolo | null>(null);
   const [inputs, setInputs] = useState<RigaInput[]>([{ quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
-  const [showScanner, setShowScanner] = useState(false);
   const [showEtichette, setShowEtichette] = useState(false);
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
-function handleEanFound(ean: string) {
-  const found = articoli.find(a => a.vendor_product_id === ean);
-  if (found) {
-    setModaleArticolo(found);
-    setBarcodeModalOpen(false);
-  } else {
-    alert("Articolo non trovato");
-  }
-}
+  const [confirmAction, setConfirmAction] = useState<null | "reset" | "parziale" | "chiudi">(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from === "nuovi" ? "nuovi" : "parziali";
+
+  // Barra ricerca manuale con autocomplete
+  const [skuSearch, setSkuSearch] = useState("");
+  const [skuSearchError, setSkuSearchError] = useState("");
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const filteredSuggestions = skuSearch.length > 0
+    ? articoli.filter(a =>
+        a.model_number.toLowerCase().includes(skuSearch.toLowerCase()) ||
+        a.vendor_product_id.toLowerCase().includes(skuSearch.toLowerCase())
+      ).slice(0, 8)
+    : [];
 
   // Carica dati all'apertura
   useEffect(() => {
@@ -74,7 +80,7 @@ function handleEanFound(ean: string) {
       });
   }, [center, data]);
 
-  // --- Funzioni di utilità
+  // Funzioni di utilità e gestione
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs((prev) => {
       const updated = prev.map((r, i) =>
@@ -84,15 +90,11 @@ function handleEanFound(ean: string) {
               [campo]:
                 campo === "quantita"
                   ? (typeof val === "string" ? val.replace(/\D/g, "") : val)
-                  : Number(val),
+                  : val === "" ? "" : Number(val),
             }
           : r
       );
       salvaParzialiLiveGenerico(modaleArticolo, updated);
-      // Se tutto vuoto, cancella da supabase
-      if (updated.every(x => !x.quantita || Number(x.quantita) === 0)) {
-        resetParzialiWip();
-      }
       return updated;
     });
     if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
@@ -170,12 +172,58 @@ function handleEanFound(ean: string) {
     await salvaParzialiLive(parziali, updated);
   }
 
-  // Ricerca: attiva scanner e apri modale articolo se trovato
-  async function handleBarcodeScan(ean: string) {
-    const found = articoli.find(a => a.vendor_product_id === ean);
-    setShowScanner(false);
-    if (found) setModaleArticolo(found);
-    else alert("Articolo non trovato");
+  // Ricerca tramite scanner
+  const handleScannerFound = async (ean: string, setError: (msg: string) => void) => {
+    const found = articoli.find(a =>
+      a.vendor_product_id === ean || a.model_number === ean
+    );
+    if (found) {
+      setModaleArticolo(found);
+      setBarcodeModalOpen(false);
+      setSkuSearch("");
+      setSkuSearchError("");
+      setShowSuggestions(false);
+    } else {
+      setError("Articolo non trovato! Riprova.");
+    }
+  };
+
+  // Ricerca manuale: submit con invio
+  function handleSkuSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!skuSearch.trim()) {
+      setSkuSearchError("Inserisci SKU o EAN");
+      return;
+    }
+    const found = articoli.find(a =>
+      a.model_number === skuSearch.trim() ||
+      a.vendor_product_id === skuSearch.trim()
+    );
+    if (found) {
+      setModaleArticolo(found);
+      setSkuSearch("");
+      setSkuSearchError("");
+      setShowSuggestions(false);
+    } else {
+      setSkuSearchError("Articolo non trovato");
+    }
+  }
+
+  function handleSkuInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    setSkuSearch(e.target.value);
+    setSkuSearchError("");
+    setShowSuggestions(true);
+  }
+
+  function handleSkuSuggestionClick(a: Articolo) {
+    setModaleArticolo(a);
+    setSkuSearch(a.model_number);
+    setShowSuggestions(false);
+    setSkuSearchError("");
+  }
+
+  function handleSkuBlur() {
+    setTimeout(() => setShowSuggestions(false), 120);
   }
 
   // --------- UI HELPERS
@@ -196,14 +244,12 @@ function handleEanFound(ean: string) {
   }
 
   function getParzialiStorici(model: string) {
-    // Raggruppa per numero_parziale (se presente)
     const storici = parzialiStorici.filter(p => p.model_number === model);
     const perParziale: { [num: number]: number } = {};
     storici.forEach((r: any) => {
       const parz = r.numero_parziale || 1;
       perParziale[parz] = (perParziale[parz] || 0) + r.quantita;
     });
-    // Ritorna [{parziale: 1, quantita: X}, ...]
     return Object.entries(perParziale).map(([parziale, quantita]) => ({ parziale, quantita }));
   }
   function totaleStorici(model: string) {
@@ -227,36 +273,95 @@ function handleEanFound(ean: string) {
   return (
     <div className="w-full max-w-[900px] mx-auto px-2 pb-24 font-sans">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 mb-6">
-        <div className="flex items-center gap-3">
-          <Package className="text-blue-600" size={32} />
-          <div>
-            <span className="block font-bold text-xl sm:text-2xl uppercase">{center}</span>
-            <span className="block text-sm text-neutral-500">Data: {data}</span>
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 mb-3 justify-between w-full">
+        {/* LEFT: Fulfillment center + data */}
+        <div className="flex items-center gap-2 min-w-0">
+          <Package className="text-blue-600 flex-shrink-0" size={26} />
+          <div className="flex flex-col min-w-0">
+            <span className="font-semibold text-base text-blue-900 truncate">{center}</span>
+            <span className="text-xs text-neutral-500 truncate">Data: {data}</span>
           </div>
         </div>
+        {/* RIGHT: Torna alla lista */}
         <button
-          className="ml-auto flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-xl shadow hover:bg-gray-800 transition sm:text-base text-sm"
+          onClick={() => navigate(from === "nuovi" ? "/ordini-amazon/nuovi" : "/ordini-amazon/parziali")}
+          className="flex items-center gap-1 px-3 py-1 rounded-full border border-gray-300 text-gray-700 bg-white hover:bg-gray-100 transition text-xs shadow-sm whitespace-nowrap font-medium"
+          style={{ minWidth: 0, fontWeight: 500 }}
+        >
+          <CircleChevronLeft size={18} />
+          Torna alla lista {from === "nuovi" ? "Nuovi" : "Parziali"} Vendor
+        </button>
+      </div>
+
+      {/* Scanner + ricerca SKU/EAN stessa linea */}
+      <div className="flex items-center gap-2 mb-3 w-full">
+        <form
+          onSubmit={handleSkuSearch}
+          className="flex items-center gap-1 flex-1 relative"
+          autoComplete="off"
+        >
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Cerca per SKU o EAN"
+              value={skuSearch}
+              ref={inputRef}
+              onChange={handleSkuInputChange}
+              onFocus={() => setShowSuggestions(true)}
+              onBlur={handleSkuBlur}
+              className="rounded-lg border border-cyan-400 px-3 py-2 text-[15px] outline-cyan-700 w-full font-medium"
+            />
+            {showSuggestions && filteredSuggestions.length > 0 && (
+              <ul className="absolute z-40 left-0 right-0 mt-1 bg-white border rounded-lg shadow max-h-52 overflow-auto">
+                {filteredSuggestions.map(a => (
+                  <li
+                    key={a.model_number}
+                    className="px-3 py-2 hover:bg-cyan-100 cursor-pointer text-sm flex flex-col"
+                    onMouseDown={() => handleSkuSuggestionClick(a)}
+                  >
+                    <span className="font-mono">{a.model_number}</span>
+                    <span className="text-gray-500">{a.vendor_product_id}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+          <button
+            type="submit"
+            className="bg-cyan-600 text-white rounded-lg p-2 hover:bg-cyan-700 transition flex items-center"
+            title="Cerca"
+          >
+            <Search size={18} />
+          </button>
+        </form>
+        <button
+          className="flex items-center gap-2 px-3 py-2 bg-gray-700 text-white rounded-xl shadow hover:bg-gray-900 transition text-sm font-semibold"
           onClick={() => setBarcodeModalOpen(true)}
           type="button"
         >
-          Cerca Articolo
+          <span className="hidden sm:inline">Scanner</span>
+          <svg className="inline-block sm:hidden" width="20" height="20" fill="none" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2"/><path d="M7 3v4M17 3v4M3 7h4M17 7h4M3 17h4M17 17h4M7 21v-4M17 21v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
         </button>
-        <BarcodeScannerModal
-          open={barcodeModalOpen}
-          onClose={() => setBarcodeModalOpen(false)}
-          onFound={handleEanFound}
-        />
       </div>
+      {skuSearchError && (
+        <div className="text-red-600 text-xs mb-2">{skuSearchError}</div>
+      )}
+
+      {/* Scanner modal */}
+      <BarcodeScannerModal
+        open={barcodeModalOpen}
+        onClose={() => setBarcodeModalOpen(false)}
+        onFound={handleScannerFound}
+      />
 
       {/* Tabella Articoli */}
-      <div className="rounded-2xl shadow border bg-white/70 px-1 sm:px-2 py-2 mb-8 overflow-x-auto">
-        <table className="w-full min-w-[340px] text-[15px]">
+      <div className="rounded-2xl shadow border bg-white/80 px-1 sm:px-2 py-2 mb-8 overflow-x-auto">
+        <table className="w-full min-w-[340px] text-[16px]">
           <thead>
             <tr>
-              <th className="py-2 px-2 text-left text-neutral-700 font-semibold">SKU</th>
-              <th className="py-2 text-center text-neutral-700 font-semibold">Parziali precedenti</th>
-              <th className="py-2 text-center text-neutral-700 font-semibold">Confermata</th>
+              <th className="py-2 px-2 text-left text-neutral-700 font-semibold text-sm">SKU</th>
+              <th className="py-2 text-center text-neutral-700 font-semibold text-sm">Parziali precedenti</th>
+              <th className="py-2 text-center text-neutral-700 font-semibold text-sm">Confermata</th>
               <th></th>
             </tr>
           </thead>
@@ -269,7 +374,6 @@ function handleEanFound(ean: string) {
                 <tr key={art.model_number} className="border-t">
                   <td className="font-mono px-2 py-2">{art.model_number}</td>
                   <td className="px-2 py-2 text-center font-bold text-blue-500">
-                    {/* Parziali precedenti sintesi */}
                     {getParzialiStorici(art.model_number).length === 0 ? (
                       <span className="text-neutral-400 text-xs">Nessuno</span>
                     ) : (
@@ -303,18 +407,22 @@ function handleEanFound(ean: string) {
         </table>
       </div>
 
-      {/* MODALE */}
+      {/* MODALE ARTICOLO */}
       {modaleArticolo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl p-5 shadow-lg min-w-[90vw] sm:min-w-[360px] w-full max-w-sm relative border">
             <button
               className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
-              onClick={() => setModaleArticolo(null)}
+              onClick={() => {
+                setModaleArticolo(null);
+                setSkuSearch("");
+                setSkuSearchError("");
+                setInputs([{ quantita: "", collo: 1 }]);
+              }}
             >×</button>
             <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
             <div className="mb-2 font-mono text-base flex items-center gap-3">
               <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number} - Ordinati : {modaleArticolo.qty_ordered}</span>
-
             </div>
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b>
@@ -377,10 +485,14 @@ function handleEanFound(ean: string) {
                       min={1}
                       value={inp.collo === 0 ? "" : inp.collo}
                       onChange={e => {
-                        let v = Number(e.target.value);
-                        if (isNaN(v)) v = 1;
-                        if (v < 1) v = 1;
-                        aggiornaInput(idx, "collo", v);
+                        let v = e.target.value;
+                        if (v === "" || v === "0") {
+                          aggiornaInput(idx, "collo", "");
+                        } else {
+                          let num = Number(v);
+                          if (isNaN(num) || num < 1) num = 1;
+                          aggiornaInput(idx, "collo", num);
+                        }
                       }}
                       className="w-full border rounded-lg p-2 text-center font-bold outline-blue-400"
                       placeholder="Collo"
@@ -488,55 +600,94 @@ function handleEanFound(ean: string) {
           </div>
         )}
       </div>
-      {/* TASTI FINALI */}
+
+      {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
-        <button
-          className="bg-red-500 text-white font-bold rounded-xl px-6 py-4 text-lg shadow-lg transition hover:bg-red-600 w-full sm:w-auto"
-          onClick={resetParzialiWip}
-          disabled={parziali.length === 0}
-        >
-          Svuota tutto
-        </button>
-        <button
-          className={`bg-yellow-500 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
-            !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-yellow-600"
-          }`}
-          disabled={!tuttiConfermati}
-          onClick={confermaParziale}
-        >
-          Conferma Parziale
-        </button>
-        <button
-          className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
-            !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
-          }`}
-          disabled={!tuttiConfermati}
-          onClick={generaSpedizione}
-        >
-          Chiudi Ordine
-        </button>
+        {confirmAction === "reset" ? (
+          <div className="w-full sm:w-auto">
+            <SlideToConfirm
+              onConfirm={() => { setConfirmAction(null); resetParzialiWip(); }}
+              text="Scorri per svuotare tutto"
+              colorClass="bg-red-500"
+              icon={<Minus />}
+              disabled={parziali.length === 0}
+            />
+            <button
+              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+              type="button"
+              onClick={() => setConfirmAction(null)}
+            >Annulla</button>
+          </div>
+        ) : (
+          <button
+            className="bg-red-500 text-white font-bold rounded-xl px-6 py-4 text-lg shadow-lg transition hover:bg-red-600 w-full sm:w-auto"
+            onClick={() => setConfirmAction("reset")}
+            disabled={parziali.length === 0}
+          >
+            Svuota tutto
+          </button>
+        )}
+        {confirmAction === "parziale" ? (
+          <div className="w-full sm:w-auto">
+            <SlideToConfirm
+              onConfirm={() => { setConfirmAction(null); confermaParziale(); }}
+              text="Scorri per confermare"
+              colorClass="bg-yellow-500"
+              icon={<ChevronRight />}
+              disabled={!tuttiConfermati}
+            />
+            <button
+              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+              type="button"
+              onClick={() => setConfirmAction(null)}
+            >Annulla</button>
+          </div>
+        ) : (
+          <button
+            className={`bg-yellow-500 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
+              !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-yellow-600"
+            }`}
+            disabled={!tuttiConfermati}
+            onClick={() => setConfirmAction("parziale")}
+          >
+            Conferma Parziale
+          </button>
+        )}
+        {confirmAction === "chiudi" ? (
+          <div className="w-full sm:w-auto">
+            <SlideToConfirm
+              onConfirm={() => { setConfirmAction(null); generaSpedizione(); }}
+              text="Scorri per chiudere ordine"
+              colorClass="bg-green-600"
+              icon={<CheckCircle />}
+              disabled={!tuttiConfermati}
+            />
+            <button
+              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+              type="button"
+              onClick={() => setConfirmAction(null)}
+            >Annulla</button>
+          </div>
+        ) : (
+          <button
+            className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
+              !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
+            }`}
+            disabled={!tuttiConfermati}
+            onClick={() => setConfirmAction("chiudi")}
+          >
+            Chiudi Ordine
+          </button>
+        )}
       </div>
 
-      {/* --- MODALE SCANNER --- */}
-      {showScanner && (
-        <BarcodeScannerModal
-          open={showScanner}
-          onClose={() => setShowScanner(false)}
-          onFound={handleBarcodeScan}
-        />
-      )}
-
+      {/* MODALE ETICHETTE */}
       <GeneraEtichetteModal
-  open={showEtichette}
-  onClose={() => setShowEtichette(false)}
-  sku={modaleArticolo?.model_number || ""}
-  ean={modaleArticolo?.vendor_product_id || ""}
-/>
-
-
-
+        open={showEtichette}
+        onClose={() => setShowEtichette(false)}
+        sku={modaleArticolo?.model_number || ""}
+        ean={modaleArticolo?.vendor_product_id || ""}
+      />
     </div>
   );
 }
-
-

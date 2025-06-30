@@ -44,7 +44,8 @@ export default function RiepilogoNuovi() {
             className="mb-6 rounded-2xl shadow border bg-white/70 backdrop-blur-xl transition-all overflow-hidden px-2 py-3 cursor-pointer hover:shadow-lg hover:ring-2 hover:ring-blue-200"
             onClick={() =>
               navigate(
-                `/ordini-amazon/dettaglio/${group.fulfillment_center}/${group.start_delivery}`
+                `/ordini-amazon/dettaglio/${group.fulfillment_center}/${group.start_delivery}`,
+                { state: { from: "nuovi" } }
               )
             }
           >
