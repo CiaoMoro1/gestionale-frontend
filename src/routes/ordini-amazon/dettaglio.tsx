@@ -1,7 +1,8 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState, } from "react";
-import { Package, CheckCircle, ChevronRight, Plus, Minus, Search } from "lucide-react";
+import { Package, CheckCircle, ChevronRight, Plus, Minus } from "lucide-react";
 import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
+import BarcodeScannerModal from "../../components/BarcodeScannerModal";
 // Importa qui la libreria barcode se vuoi generare png in locale
 
 type Articolo = {
@@ -36,6 +37,16 @@ export default function DettaglioDestinazione() {
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [showEtichette, setShowEtichette] = useState(false);
+  const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
+function handleEanFound(ean: string) {
+  const found = articoli.find(a => a.vendor_product_id === ean);
+  if (found) {
+    setModaleArticolo(found);
+    setBarcodeModalOpen(false);
+  } else {
+    alert("Articolo non trovato");
+  }
+}
 
   // Carica dati all'apertura
   useEffect(() => {
@@ -225,11 +236,17 @@ export default function DettaglioDestinazione() {
           </div>
         </div>
         <button
-          className="ml-auto flex items-center gap-2 px-3 py-2 bg-cyan-600 text-white rounded-xl shadow hover:bg-cyan-800 transition sm:text-base text-sm"
-          onClick={() => setShowScanner(true)}
+          className="ml-auto flex items-center gap-2 px-3 py-2 bg-gray-600 text-white rounded-xl shadow hover:bg-gray-800 transition sm:text-base text-sm"
+          onClick={() => setBarcodeModalOpen(true)}
+          type="button"
         >
-          <Search size={18} /> Cerca Articolo
+          Cerca Articolo
         </button>
+        <BarcodeScannerModal
+          open={barcodeModalOpen}
+          onClose={() => setBarcodeModalOpen(false)}
+          onFound={handleEanFound}
+        />
       </div>
 
       {/* Tabella Articoli */}
@@ -259,7 +276,7 @@ export default function DettaglioDestinazione() {
                       <span className="text-xs">
                         {getParzialiStorici(art.model_number).map((r, i) => (
                           <span key={i} className="inline-block mr-1">
-                            {r.parziale}°:{r.quantita}
+                            {r.quantita}
                           </span>
                         ))}
                       </span>
@@ -296,7 +313,7 @@ export default function DettaglioDestinazione() {
             >×</button>
             <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
             <div className="mb-2 font-mono text-base flex items-center gap-3">
-              <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number}</span>
+              <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number} - Ordinati : {modaleArticolo.qty_ordered}</span>
 
             </div>
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
@@ -320,7 +337,7 @@ export default function DettaglioDestinazione() {
                 <span className="flex flex-wrap gap-2 text-xs">
                   {getParzialiStorici(modaleArticolo.model_number).map((r, i) => (
                     <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
-                      {r.parziale}°: {r.quantita}
+                      {r.quantita}
                     </span>
                   ))}
                 </span>
@@ -516,43 +533,10 @@ export default function DettaglioDestinazione() {
   ean={modaleArticolo?.vendor_product_id || ""}
 />
 
+
+
     </div>
   );
 }
 
-// --- Scanner Modal Minimal ---
-function BarcodeScannerModal({ open, onClose, onFound }: { open: boolean; onClose: () => void; onFound: (ean: string) => void }) {
-  useEffect(() => {
-    if (!open) return;
-    let stopped = false;
-    // Simula scanning barcode dopo 2s (mock)
-    const timeout = setTimeout(() => {
-      if (!stopped) {
-        onFound(prompt("Simula scansione EAN. Inserisci EAN trovato:") || "");
-      }
-    }, 2000);
-    return () => {
-      stopped = true;
-      clearTimeout(timeout);
-    };
-  }, [open, onFound]);
-  if (!open) return null;
-  return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white p-4 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md flex flex-col items-center relative">
-        <button onClick={onClose} className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700">×</button>
-        <h2 className="text-lg font-bold text-gray-900 mb-2 text-center">Scannerizza codice a barre</h2>
-        <div className="w-full flex items-center justify-center h-32 bg-gray-100 border rounded-xl mb-3">
-          {/* Qui puoi integrare vero Html5Qrcode */}
-          <span className="text-gray-400">[Barcode Scanner Video]</span>
-        </div>
-        <p className="text-center text-sm text-gray-600 px-2 mb-2">
-          Inquadra il codice a barre<br />
-          <span className="text-cyan-700 font-semibold">restando dentro il riquadro</span>
-        </p>
-        <button onClick={onClose} className="text-cyan-700 font-semibold hover:underline text-sm transition">Chiudi</button>
-      </div>
-    </div>
-  );
-}
 
