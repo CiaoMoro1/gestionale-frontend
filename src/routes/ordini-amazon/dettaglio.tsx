@@ -1,18 +1,19 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { Package, CheckCircle, ChevronRight, Plus, Minus } from "lucide-react";
+import { useEffect, useState, useRef } from "react";
+import { Package, CheckCircle, ChevronRight, Plus, Minus, Search } from "lucide-react";
+// Importa qui la libreria barcode se vuoi generare png in locale
 
-// --- Tipi dati
 type Articolo = {
   model_number: string;
   vendor_product_id: string;
   qty_ordered: number;
-  po_number: string;   // <--- AGGIUNGI QUESTO!
+  po_number: string;
 };
 type RigaParziale = {
   model_number: string;
   quantita: number;
   collo: number;
+  po_number: string;
   confermato: boolean;
 };
 type RigaInput = { quantita: number | ""; collo: number };
@@ -25,22 +26,23 @@ type ParzialeStorico = {
   model_number: string;
   quantita: number;
   collo: number;
+  numero_parziale?: number;
 };
 
 export default function DettaglioDestinazione() {
   const { center, data } = useParams();
   const [articoli, setArticoli] = useState<Articolo[]>([]);
   const [parziali, setParziali] = useState<RigaParziale[]>([]);
-  const [parzialiStorici, setParzialiStorici] = useState<ParzialeStorico[]>([]);
+  const [parzialiStorici, setParzialiStorici] = useState<RigaParziale[]>([]);
   const [confermaCollo, setConfermaCollo] = useState<{ [collo: number]: boolean }>({});
   const [modaleArticolo, setModaleArticolo] = useState<Articolo | null>(null);
   const [inputs, setInputs] = useState<RigaInput[]>([{ quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
+  const [showScanner, setShowScanner] = useState(false);
 
   // Carica dati all'apertura
   useEffect(() => {
     if (!center || !data) return;
-    // 1. Articoli
     fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/dettaglio-destinazione?center=${center}&data=${data}`)
       .then((res) => res.json())
       .then((json) => {
@@ -48,98 +50,23 @@ export default function DettaglioDestinazione() {
         lista.sort((a: Articolo, b: Articolo) => a.model_number.localeCompare(b.model_number));
         setArticoli(lista);
       });
-    // 2. Parziali storici
     fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-storici?center=${center}&data=${data}`)
       .then(res => res.json())
-      .then((storici: ParzialeStorico[]) => setParzialiStorici(storici));
-    // 3. Parziali WIP (in lavorazione)
-    // 3. Parziali WIP (in lavorazione)
-  fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`)
-    .then(res => res.json())
-    .then((json) => {
-      if (Array.isArray(json)) {
-        setParziali(json);             // l'API ha restituito un array puro
-        setConfermaCollo({});          // nessun confermaCollo disponibile (reset)
-      } else {
-        setParziali(json.parziali || []);
-        setConfermaCollo(json.confermaCollo || {});
-      }
-    });
-
+      .then((storici: RigaParziale[]) => setParzialiStorici(storici));
+    fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`)
+      .then(res => res.json())
+      .then((json) => {
+        if (Array.isArray(json)) {
+          setParziali(json);
+          setConfermaCollo({});
+        } else {
+          setParziali(json.parziali || []);
+          setConfermaCollo(json.confermaCollo || {});
+        }
+      });
   }, [center, data]);
 
-  // --- AGGIORNAMENTO LIVE su Supabase
-  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: any) {
-    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        parziali: nextParziali,
-        confermaCollo: nextConfermaCollo
-      }),
-    });
-    setParziali(nextParziali);
-    setConfermaCollo(nextConfermaCollo);
-  }
-  
-
-  // --- Modale apertura/modifica
-  function openParzialeModale(art: Articolo) {
-    setModaleArticolo(art);
-    // Popola gli input con i dati wip esistenti di questo articolo
-    const esistenti = parziali.filter((p) => p.model_number === art.model_number);
-    if (esistenti.length > 0) {
-      setInputs(esistenti.map(p => ({
-        quantita: p.quantita,
-        collo: p.collo,
-      })));
-    } else {
-      setInputs([{ quantita: "", collo: 1 }]);
-    }
-    setShakeIdx(null);
-  }
-
-  // Parziali storici per uno SKU (già evasi/spediti)
-  function getParzialiStorici(model: string) {
-    return parzialiStorici.filter((p) => p.model_number === model);
-  }
-  function totaleStorici(model: string) {
-    return getParzialiStorici(model).reduce((sum, r) => sum + r.quantita, 0);
-  }
-  function totaleWip(model: string) {
-    return parziali.filter((p) => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
-  }
-
-  function getResiduoInput(idx: number): number {
-    if (!modaleArticolo) return 0;
-
-    // Parziali storici (confermati)
-    const totaleStorico = getParzialiStorici(modaleArticolo.model_number)
-      .reduce((sum, r) => sum + r.quantita, 0);
-
-    // Collo degli input modale (cioè quelli che sto per cambiare/salvare)
-    const colliInput = inputs.map(inp => inp.collo);
-
-    // Parziali WIP (già salvati) per questo articolo, MA NON nei colli che sto modificando adesso
-    const parzialiAltriCollo = parziali.filter(
-      p =>
-        p.model_number === modaleArticolo.model_number &&
-        !colliInput.includes(p.collo)
-    );
-    const totaleWipAltriCollo = parzialiAltriCollo.reduce((sum, r) => sum + r.quantita, 0);
-
-    // Somma input modale tranne quello corrente
-    const sommaAltriInput = inputs
-      .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
-      .reduce((a, b) => a + b, 0);
-
-    return Math.max(
-      0,
-      modaleArticolo.qty_ordered - totaleStorico - totaleWipAltriCollo - sommaAltriInput
-    );
-  }
-
-
+  // --- Funzioni di utilità
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs((prev) => {
       const updated = prev.map((r, i) =>
@@ -153,8 +80,11 @@ export default function DettaglioDestinazione() {
             }
           : r
       );
-      // Salva live ogni modifica per l'articolo attuale
       salvaParzialiLiveGenerico(modaleArticolo, updated);
+      // Se tutto vuoto, cancella da supabase
+      if (updated.every(x => !x.quantita || Number(x.quantita) === 0)) {
+        resetParzialiWip();
+      }
       return updated;
     });
     if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
@@ -162,7 +92,22 @@ export default function DettaglioDestinazione() {
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
+  function aggiungiRiga() {
+    setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
+  }
+  function rimuoviRiga(idx: number) {
+    setInputs((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
+  }
 
+  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: any) {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ parziali: nextParziali, confermaCollo: nextConfermaCollo }),
+    });
+    setParziali(nextParziali);
+    setConfermaCollo(nextConfermaCollo);
+  }
   async function salvaParzialiLiveGenerico(art: Articolo | null, nextInputs: RigaInput[]) {
     if (!art) return;
     const nuoviParziali: RigaParziale[] = nextInputs
@@ -172,27 +117,42 @@ export default function DettaglioDestinazione() {
         quantita: Number(r.quantita),
         collo: r.collo,
         po_number: art.po_number,
-        confermato: false      // <-- sempre presente!
+        confermato: false
       }));
     const altri = parziali.filter(p => p.model_number !== art.model_number);
     await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
   }
-
-  function aggiungiRiga() {
-    setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
+  async function resetParzialiWip() {
+    if (!center || !data) return;
+    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/reset`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ center, data }),
+    });
+    window.location.reload();
   }
-  function rimuoviRiga(idx: number) {
-    setInputs((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
+  async function confermaParziale() {
+    if (!center || !data) return;
+    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/conferma-parziale`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ center, data }),
+    });
+    window.location.reload();
   }
-
+  async function generaSpedizione() {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/chiudi`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ center, data }),
+    });
+    window.location.reload();
+  }
   async function aggiungiParziali() {
     if (!modaleArticolo) return;
-    // Aggiorna i parziali su Supabase SOLO per questo articolo
     await salvaParzialiLiveGenerico(modaleArticolo, inputs);
     setModaleArticolo(null);
   }
-
-  // --- Collo: conferma/annulla live
   async function confermaUnCollo(collo: number) {
     const updated = { ...confermaCollo, [collo]: true };
     await salvaParzialiLive(parziali, updated);
@@ -202,10 +162,48 @@ export default function DettaglioDestinazione() {
     await salvaParzialiLive(parziali, updated);
   }
 
-  // Tutti colli confermati?
-  const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every((c) => c.confermato);
+  // Ricerca: attiva scanner e apri modale articolo se trovato
+  async function handleBarcodeScan(ean: string) {
+    const found = articoli.find(a => a.vendor_product_id === ean);
+    setShowScanner(false);
+    if (found) setModaleArticolo(found);
+    else alert("Articolo non trovato");
+  }
 
-  // --- Riepilogo colli (in tempo reale)
+  // --------- UI HELPERS
+  function getResiduoInput(idx: number): number {
+    if (!modaleArticolo) return 0;
+    const totaleStorico = getParzialiStorici(modaleArticolo.model_number)
+      .reduce((sum, r) => sum + r.quantita, 0);
+    const colliInput = inputs.map(inp => inp.collo);
+    const parzialiAltriCollo = parziali.filter(
+      p => p.model_number === modaleArticolo.model_number &&
+        !colliInput.includes(p.collo)
+    );
+    const totaleWipAltriCollo = parzialiAltriCollo.reduce((sum, r) => sum + r.quantita, 0);
+    const sommaAltriInput = inputs
+      .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
+      .reduce((a, b) => a + b, 0);
+    return Math.max(0, modaleArticolo.qty_ordered - totaleStorico - totaleWipAltriCollo - sommaAltriInput);
+  }
+
+  function getParzialiStorici(model: string) {
+    // Raggruppa per numero_parziale (se presente)
+    const storici = parzialiStorici.filter(p => p.model_number === model);
+    const perParziale: { [num: number]: number } = {};
+    storici.forEach((r: any) => {
+      const parz = r.numero_parziale || 1;
+      perParziale[parz] = (perParziale[parz] || 0) + r.quantita;
+    });
+    // Ritorna [{parziale: 1, quantita: X}, ...]
+    return Object.entries(perParziale).map(([parziale, quantita]) => ({ parziale, quantita }));
+  }
+  function totaleStorici(model: string) {
+    return parzialiStorici.filter((p) => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
+  }
+  function totaleWip(model: string) {
+    return parziali.filter((p) => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
+  }
   function colliRiepilogo(): ColloRiepilogo[] {
     const gruppi: { [collo: number]: ColloRiepilogo } = {};
     for (const p of parziali) {
@@ -215,31 +213,30 @@ export default function DettaglioDestinazione() {
     }
     return Object.values(gruppi).sort((a, b) => a.collo - b.collo);
   }
+  const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every((c) => c.confermato);
 
-  // --- Conferma spedizione: POST conferma a backend
-  async function generaSpedizione() {
-    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/conferma`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ center, data }),
-    });
-    // Forza ricarica dati storici/wip appena confermi!
-    window.location.reload();
-  }
-
-  // --- UI
+  // --------- UI START
   return (
-    <div className="w-full max-w-[900px] mx-auto px-2 pb-24">
+    <div className="w-full max-w-[900px] mx-auto px-2 pb-24 font-sans">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <Package className="text-blue-600" size={32} />
-        <div className="flex-1">
-          <span className="block font-bold text-xl uppercase">{center}</span>
-          <span className="block text-sm text-neutral-500">Data: {data}</span>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-4 mb-6">
+        <div className="flex items-center gap-3">
+          <Package className="text-blue-600" size={32} />
+          <div>
+            <span className="block font-bold text-xl sm:text-2xl uppercase">{center}</span>
+            <span className="block text-sm text-neutral-500">Data: {data}</span>
+          </div>
         </div>
+        <button
+          className="ml-auto flex items-center gap-2 px-3 py-2 bg-cyan-600 text-white rounded-xl shadow hover:bg-cyan-800 transition sm:text-base text-sm"
+          onClick={() => setShowScanner(true)}
+        >
+          <Search size={18} /> Cerca Articolo
+        </button>
       </div>
+
       {/* Tabella Articoli */}
-      <div className="rounded-2xl shadow border bg-white/70 px-2 py-2 mb-8 overflow-x-auto">
+      <div className="rounded-2xl shadow border bg-white/70 px-1 sm:px-2 py-2 mb-8 overflow-x-auto">
         <table className="w-full min-w-[340px] text-[15px]">
           <thead>
             <tr>
@@ -253,40 +250,34 @@ export default function DettaglioDestinazione() {
             {articoli.map((art) => {
               const totStorici = totaleStorici(art.model_number);
               const confermata = totStorici + totaleWip(art.model_number);
+              const completa = confermata >= art.qty_ordered;
               return (
                 <tr key={art.model_number} className="border-t">
-                  <td className="font-mono px-2 py-2">
-                    <span className="inline-block bg-blue-100 px-2 py-1 rounded">
-                      {art.model_number}
-                    </span>
-                  </td>
+                  <td className="font-mono px-2 py-2">{art.model_number}</td>
                   <td className="px-2 py-2 text-center font-bold text-blue-500">
-                    {/* Dettaglio parziali storici */}
-                    {totStorici === 0 ? (
+                    {/* Parziali precedenti sintesi */}
+                    {getParzialiStorici(art.model_number).length === 0 ? (
                       <span className="text-neutral-400 text-xs">Nessuno</span>
                     ) : (
-                      <span>
-                        {getParzialiStorici(art.model_number).map((p, idx) => (
-                          <span
-                            key={idx}
-                            className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 rounded px-2 py-0.5 mr-1 text-xs font-bold"
-                          >
-                            Collo {p.collo}
-                            <span className="bg-blue-200 text-blue-900 rounded px-1 ml-1">
-                              {p.quantita}
-                            </span>
+                      <span className="text-xs">
+                        {getParzialiStorici(art.model_number).map((r, i) => (
+                          <span key={i} className="inline-block mr-1">
+                            {r.quantita}
                           </span>
                         ))}
                       </span>
                     )}
                   </td>
-                  <td className="px-2 py-2 text-center font-bold text-blue-800">
+                  <td className={`px-2 py-2 text-center font-bold ${completa ? "text-green-600" : "text-blue-800"}`}>
                     {confermata}/{art.qty_ordered}
                   </td>
                   <td className="text-right">
                     <button
-                      className="bg-blue-500 text-white rounded-full p-2 shadow hover:bg-blue-700 transition"
-                      onClick={() => openParzialeModale(art)}
+                      className={`rounded-full p-2 shadow transition
+                        ${completa ? "bg-gray-300 text-gray-400 line-through cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-700"}
+                      `}
+                      onClick={() => !completa && setModaleArticolo(art)}
+                      disabled={completa}
                     >
                       <ChevronRight size={18} />
                     </button>
@@ -301,34 +292,42 @@ export default function DettaglioDestinazione() {
       {/* MODALE */}
       {modaleArticolo && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl p-7 shadow-lg min-w-[360px] w-full max-w-sm relative border">
+          <div className="bg-white rounded-2xl p-5 shadow-lg min-w-[90vw] sm:min-w-[360px] w-full max-w-sm relative border">
             <button
               className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
               onClick={() => setModaleArticolo(null)}
-            >
-              ×
-            </button>
+            >×</button>
             <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
-            <div className="mb-2 font-mono text-base">
+            <div className="mb-2 font-mono text-base flex items-center gap-3">
               <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number}</span>
+              <button
+                className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
+                onClick={() => {
+                  // Esempio generazione barcode: console.log(modaleArticolo.model_number, modaleArticolo.vendor_product_id)
+                  alert("Generazione etichette non ancora implementata!");
+                }}
+              >
+                Genera Etichette
+              </button>
             </div>
-            <div className="mb-2 text-xs text-neutral-500">
-              <b>EAN:</b> {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
+            <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+              <b>EAN:</b>
+              {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
+              {/* Puoi mettere qui una funzione barcode png */}
             </div>
-            {/* Parziali precedenti */}
+            {/* Parziali precedenti sintesi */}
             <div className="mb-2">
               <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
               {getParzialiStorici(modaleArticolo.model_number).length === 0 ? (
                 <div className="text-neutral-400 text-xs">Nessun parziale inserito</div>
               ) : (
-                <ul className="space-y-1 text-xs">
-                  {getParzialiStorici(modaleArticolo.model_number).map((p, idx) => (
-                    <li key={idx} className="flex gap-3 items-center">
-                      <span className="font-mono text-blue-900">{p.quantita}</span>
-                      <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px]">Collo {p.collo}</span>
-                    </li>
+                <span className="flex flex-wrap gap-2 text-xs">
+                  {getParzialiStorici(modaleArticolo.model_number).map((r, i) => (
+                    <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
+                      {r.parziale}°: {r.quantita}
+                    </span>
                   ))}
-                </ul>
+                </span>
               )}
             </div>
             {/* Input Quantità + Collo affiancati, multipli */}
@@ -436,7 +435,7 @@ export default function DettaglioDestinazione() {
             {colliRiepilogo().map((collo) => (
               <div
                 key={collo.collo}
-                className={`bg-white rounded-2xl shadow p-4 min-w-[180px] relative border-2 ${
+                className={`bg-white rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2 ${
                   collo.confermato ? "border-green-500" : "border-blue-200"
                 }`}
               >
@@ -476,17 +475,79 @@ export default function DettaglioDestinazione() {
           </div>
         )}
       </div>
-      {/* TASTO GENERA SPEDIZIONE */}
-      <div className="mt-12 flex justify-end">
+      {/* TASTI FINALI */}
+      <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
         <button
-          className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition ${
+          className="bg-red-500 text-white font-bold rounded-xl px-6 py-4 text-lg shadow-lg transition hover:bg-red-600 w-full sm:w-auto"
+          onClick={resetParzialiWip}
+          disabled={parziali.length === 0}
+        >
+          Svuota tutto
+        </button>
+        <button
+          className={`bg-yellow-500 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
+            !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-yellow-600"
+          }`}
+          disabled={!tuttiConfermati}
+          onClick={confermaParziale}
+        >
+          Conferma Parziale
+        </button>
+        <button
+          className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
             !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
           }`}
           disabled={!tuttiConfermati}
           onClick={generaSpedizione}
         >
-          Genera Spedizione
+          Chiudi Ordine
         </button>
+      </div>
+
+      {/* --- MODALE SCANNER --- */}
+      {showScanner && (
+        <BarcodeScannerModal
+          open={showScanner}
+          onClose={() => setShowScanner(false)}
+          onFound={handleBarcodeScan}
+        />
+      )}
+    </div>
+  );
+}
+
+// --- Scanner Modal Minimal ---
+function BarcodeScannerModal({ open, onClose, onFound }: { open: boolean; onClose: () => void; onFound: (ean: string) => void }) {
+  const scannerRef = useRef<any>(null);
+  useEffect(() => {
+    if (!open) return;
+    let stopped = false;
+    // Simula scanning barcode dopo 2s (mock)
+    const timeout = setTimeout(() => {
+      if (!stopped) {
+        onFound(prompt("Simula scansione EAN. Inserisci EAN trovato:") || "");
+      }
+    }, 2000);
+    return () => {
+      stopped = true;
+      clearTimeout(timeout);
+    };
+  }, [open, onFound]);
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="bg-white p-4 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md flex flex-col items-center relative">
+        <button onClick={onClose} className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700">×</button>
+        <h2 className="text-lg font-bold text-gray-900 mb-2 text-center">Scannerizza codice a barre</h2>
+        <div className="w-full flex items-center justify-center h-32 bg-gray-100 border rounded-xl mb-3">
+          {/* Qui puoi integrare vero Html5Qrcode */}
+          <span className="text-gray-400">[Barcode Scanner Video]</span>
+        </div>
+        <p className="text-center text-sm text-gray-600 px-2 mb-2">
+          Inquadra il codice a barre<br />
+          <span className="text-cyan-700 font-semibold">restando dentro il riquadro</span>
+        </p>
+        <button onClick={onClose} className="text-cyan-700 font-semibold hover:underline text-sm transition">Chiudi</button>
       </div>
     </div>
   );

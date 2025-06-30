@@ -18,6 +18,8 @@ import { Toaster } from "react-hot-toast";
 import toast from "react-hot-toast";
 import RiepilogoNuovi from "./routes/ordini-amazon/nuovi";
 import DettaglioDestinazione from './routes/ordini-amazon/dettaglio';
+import Parziali from "./routes/ordini-amazon/parziali";
+
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
@@ -112,7 +114,7 @@ function AppContent() {
               <Route path="/prodotti/:id" element={<ProductDetailWrapper />} />
               <Route path="/movimenti" element={<Movimenti />} />
               <Route path="/ordini-amazon/dettaglio/:center/:data" element={<DettaglioDestinazione />} />
-
+              <Route path="/ordini-amazon/parziali" element={<Parziali />} />
               <Route path="/prelievo" element={<Prelievo />} />
               <Route path="/prelievo/:id" element={<ConfermaPrelievo />} />
               <Route path="/ordini-amazon/dashboard" element={<OrdiniAmazonDashboard />} />
