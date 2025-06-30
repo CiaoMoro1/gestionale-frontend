@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, } from "react";
 import { Package, CheckCircle, ChevronRight, Plus, Minus, Search } from "lucide-react";
+import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 // Importa qui la libreria barcode se vuoi generare png in locale
 
 type Articolo = {
@@ -22,12 +23,7 @@ type ColloRiepilogo = {
   righe: { model_number: string; quantita: number }[];
   confermato: boolean;
 };
-type ParzialeStorico = {
-  model_number: string;
-  quantita: number;
-  collo: number;
-  numero_parziale?: number;
-};
+
 
 export default function DettaglioDestinazione() {
   const { center, data } = useParams();
@@ -39,6 +35,7 @@ export default function DettaglioDestinazione() {
   const [inputs, setInputs] = useState<RigaInput[]>([{ quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
   const [showScanner, setShowScanner] = useState(false);
+  const [showEtichette, setShowEtichette] = useState(false);
 
   // Carica dati all'apertura
   useEffect(() => {
@@ -262,7 +259,7 @@ export default function DettaglioDestinazione() {
                       <span className="text-xs">
                         {getParzialiStorici(art.model_number).map((r, i) => (
                           <span key={i} className="inline-block mr-1">
-                            {r.quantita}
+                            {r.parziale}°:{r.quantita}
                           </span>
                         ))}
                       </span>
@@ -300,20 +297,19 @@ export default function DettaglioDestinazione() {
             <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
             <div className="mb-2 font-mono text-base flex items-center gap-3">
               <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number}</span>
-              <button
-                className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
-                onClick={() => {
-                  // Esempio generazione barcode: console.log(modaleArticolo.model_number, modaleArticolo.vendor_product_id)
-                  alert("Generazione etichette non ancora implementata!");
-                }}
-              >
-                Genera Etichette
-              </button>
+
             </div>
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b>
               {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
-              {/* Puoi mettere qui una funzione barcode png */}
+              {modaleArticolo.vendor_product_id && (
+                <button
+                  className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
+                  onClick={() => setShowEtichette(true)}
+                >
+                  Genera Etichette
+                </button>
+              )}
             </div>
             {/* Parziali precedenti sintesi */}
             <div className="mb-2">
@@ -512,13 +508,20 @@ export default function DettaglioDestinazione() {
           onFound={handleBarcodeScan}
         />
       )}
+
+      <GeneraEtichetteModal
+  open={showEtichette}
+  onClose={() => setShowEtichette(false)}
+  sku={modaleArticolo?.model_number || ""}
+  ean={modaleArticolo?.vendor_product_id || ""}
+/>
+
     </div>
   );
 }
 
 // --- Scanner Modal Minimal ---
 function BarcodeScannerModal({ open, onClose, onFound }: { open: boolean; onClose: () => void; onFound: (ean: string) => void }) {
-  const scannerRef = useRef<any>(null);
   useEffect(() => {
     if (!open) return;
     let stopped = false;
@@ -552,3 +555,4 @@ function BarcodeScannerModal({ open, onClose, onFound }: { open: boolean; onClos
     </div>
   );
 }
+
