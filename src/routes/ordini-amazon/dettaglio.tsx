@@ -389,18 +389,23 @@ useEffect(() => {
                 <tr key={art.model_number} className={`border-t ${bgClass} transition-all`}>
                   <td className="font-mono px-2 py-2">
                     <div className="flex items-center gap-2">
-                      <span>{art.model_number}</span>
+                      <span className="text-base">{art.model_number}</span>
                       {/* SPUNTA solo se completa e ha storici */}
                       {completa && hasStorici && (
-                        <CheckCircle size={18} className="text-green-600 ml-1" />
+                        <CheckCircle
+  size={18}
+  className="text-green-600 ml-0.5 sm:size-[18px] size-[50px]" // 28 su mobile, 18 su desktop
+/>
                       )}
                     </div>
                   </td>
                   <td className="px-2 py-2 text-center font-bold text-blue-500">
                     {hasStorici ? (
                       <span className="text-xs">
-                        {getParzialiStorici(art.model_number).map((r, i) => (
-                          <span key={i} className="inline-block mr-1">{r.quantita}</span>
+                        {getParzialiStorici(art.model_number).map((r) => (
+                          <span className="bg-blue-100 px-2 py-0.5 rounded font-bold text-lg sm:text-xs">
+                            {r.quantita}
+                          </span>
                         ))}
                       </span>
                     ) : (
@@ -428,148 +433,160 @@ useEffect(() => {
         </table>
       </div>
 
-      {/* MODALE ARTICOLO */}
-      {modaleArticolo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl p-5 shadow-lg min-w-[90vw] sm:min-w-[360px] w-full max-w-sm relative border">
-            <button
-              className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
-              onClick={() => {
-                setModaleArticolo(null);
-                setSkuSearch("");
-                setSkuSearchError("");
-                setInputs([{ quantita: "", collo: 1 }]);
-              }}
-            >×</button>
-            <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
-            <div className="mb-2 font-mono text-base flex items-center gap-3">
-              <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.model_number} - Ordinati : {modaleArticolo.qty_ordered}</span>
-            </div>
-            <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
-              <b>EAN:</b>
-              {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
-              {modaleArticolo.vendor_product_id && (
-                <button
-                  className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
-                  onClick={() => setShowEtichette(true)}
-                >
-                  Genera Etichette
-                </button>
-              )}
-            </div>
-            {/* Parziali precedenti sintesi */}
-            <div className="mb-2">
-              <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
-              {getParzialiStorici(modaleArticolo.model_number).length === 0 ? (
-                <div className="text-neutral-400 text-xs">Nessun parziale inserito</div>
-              ) : (
-                <span className="flex flex-wrap gap-2 text-xs">
-                  {getParzialiStorici(modaleArticolo.model_number).map((r, i) => (
-                    <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
-                      {r.quantita}
-                    </span>
-                  ))}
+{modaleArticolo && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+    <div
+      className="bg-white rounded-2xl p-5 shadow-lg min-w-[90vw] sm:min-w-[360px] w-full max-w-sm relative border flex flex-col"
+      style={{ maxHeight: "92vh", minWidth: 0, width: "100%" }}
+    >
+      <button
+        className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
+        onClick={() => {
+          setModaleArticolo(null);
+          setSkuSearch("");
+          setSkuSearchError("");
+          setInputs([{ quantita: "", collo: 1 }]);
+        }}
+      >×</button>
+      <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
+      <div className="mb-2 font-mono text-base flex items-center gap-3">
+        <span className="bg-blue-100 px-2 py-1 rounded">
+          {modaleArticolo.model_number} - Ordinati :{" "}
+          <span className="inline-block px-2 py-0.5 bg-green-500 text-white rounded font-bold ml-1">
+            {modaleArticolo.qty_ordered}
+          </span>
+        </span>
+      </div>
+      <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
+        <b>EAN:</b>
+        {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
+        {modaleArticolo.vendor_product_id && (
+          <button
+            className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
+            onClick={() => setShowEtichette(true)}
+          >
+            Genera Etichette
+          </button>
+        )}
+      </div>
+      {/* --- CONTENUTO SCORREVOLE --- */}
+      <div className="flex-1 overflow-y-auto" style={{ minHeight: 0, maxHeight: "50vh" }}>
+        {/* Parziali precedenti sintesi */}
+        <div className="mb-2">
+          <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
+          {getParzialiStorici(modaleArticolo.model_number).length === 0 ? (
+            <div className="text-neutral-400 text-xs">Nessun parziale inserito</div>
+          ) : (
+            <span className="flex flex-wrap gap-2 text-xs">
+              {getParzialiStorici(modaleArticolo.model_number).map((r, i) => (
+                <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
+                  {r.quantita}
                 </span>
-              )}
-            </div>
-            {/* Input Quantità + Collo affiancati, multipli */}
-            <div className="flex flex-col gap-2 mb-3">
-              {inputs.map((inp, idx) => (
-                <div key={idx} className="flex gap-2 items-end">
-                  <div className="flex-1">
-                    <label className="block text-xs mb-1">Quantità</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={getResiduoInput(idx)}
-                      value={inp.quantita === 0 ? "" : inp.quantita}
-                      onChange={e => {
-                        let v = Number(e.target.value);
-                        if (isNaN(v)) v = 0;
-                        const max = getResiduoInput(idx);
-                        if (v > max) {
-                          v = max;
-                          setShakeIdx(idx);
-                          setTimeout(() => setShakeIdx(null), 400);
-                        }
-                        if (v < 1) v = 0;
-                        aggiornaInput(idx, "quantita", v);
-                      }}
-                      className={`w-full border rounded-lg p-2 text-center font-bold text-blue-700 outline-blue-400 ${shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""}`}
-                      placeholder="Quantità"
-                    />
-                  </div>
-                  <div className="flex-1">
-                    <label className="block text-xs mb-1">Collo</label>
-                    <input
-                      type="number"
-                      min={1}
-                      value={inp.collo === 0 ? "" : inp.collo}
-                      onChange={e => {
-                        let v = e.target.value;
-                        if (v === "" || v === "0") {
-                          aggiornaInput(idx, "collo", "");
-                        } else {
-                          let num = Number(v);
-                          if (isNaN(num) || num < 1) num = 1;
-                          aggiornaInput(idx, "collo", num);
-                        }
-                      }}
-                      className="w-full border rounded-lg p-2 text-center font-bold outline-blue-400"
-                      placeholder="Collo"
-                    />
-                  </div>
-                  <button
-                    className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
-                    onClick={() => rimuoviRiga(idx)}
-                    disabled={inputs.length === 1}
-                    title="Rimuovi riga"
-                  >
-                    <Minus size={18} />
-                  </button>
-                </div>
               ))}
-            </div>
-            <div className="flex gap-2 justify-between mb-1">
-              <button
-                className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 font-semibold rounded-full hover:bg-blue-200 transition"
-                onClick={aggiungiRiga}
-              >
-                <Plus size={18} /> Aggiungi Collo
-              </button>
-            </div>
-            <div className="flex justify-end">
-              <button
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-full shadow hover:bg-blue-700 transition"
-                onClick={aggiungiParziali}
-                disabled={
-                  inputs.every((inp, idx) =>
-                    !inp.quantita ||
-                    inp.quantita <= 0 ||
-                    inp.collo <= 0 ||
-                    Number(inp.quantita) > getResiduoInput(idx)
-                  )
-                }
-              >
-                Aggiungi
-              </button>
-            </div>
-            <style>
-              {`
-                @keyframes shake {
-                  0% { transform: translateX(0);}
-                  20% { transform: translateX(-5px);}
-                  40% { transform: translateX(5px);}
-                  60% { transform: translateX(-5px);}
-                  80% { transform: translateX(5px);}
-                  100% { transform: translateX(0);}
-                }
-                .animate-shake { animation: shake 0.4s; }
-              `}
-            </style>
-          </div>
+            </span>
+          )}
         </div>
-      )}
+        {/* Input Quantità + Collo affiancati, multipli */}
+        <div className="flex flex-col gap-2 mb-3">
+          {inputs.map((inp, idx) => (
+            <div key={idx} className="flex gap-2 items-end">
+              <div className="flex-1">
+                <label className="block text-xs mb-1">Quantità</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={getResiduoInput(idx)}
+                  value={inp.quantita === 0 ? "" : inp.quantita}
+                  onChange={e => {
+                    let v = Number(e.target.value);
+                    if (isNaN(v)) v = 0;
+                    const max = getResiduoInput(idx);
+                    if (v > max) {
+                      v = max;
+                      setShakeIdx(idx);
+                      setTimeout(() => setShakeIdx(null), 400);
+                    }
+                    if (v < 1) v = 0;
+                    aggiornaInput(idx, "quantita", v);
+                  }}
+                  className={`w-full border rounded-lg p-2 text-center font-bold text-blue-700 outline-blue-400 ${shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""}`}
+                  placeholder="Quantità"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs mb-1">Collo</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={inp.collo === 0 ? "" : inp.collo}
+                  onChange={e => {
+                    let v = e.target.value;
+                    if (v === "" || v === "0") {
+                      aggiornaInput(idx, "collo", "");
+                    } else {
+                      let num = Number(v);
+                      if (isNaN(num) || num < 1) num = 1;
+                      aggiornaInput(idx, "collo", num);
+                    }
+                  }}
+                  className="w-full border rounded-lg p-2 text-center font-bold outline-blue-400"
+                  placeholder="Collo"
+                />
+              </div>
+              <button
+                className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
+                onClick={() => rimuoviRiga(idx)}
+                disabled={inputs.length === 1}
+                title="Rimuovi riga"
+              >
+                <Minus size={18} />
+              </button>
+            </div>
+          ))}
+        </div>
+        <div className="flex gap-2 justify-between mb-1">
+          <button
+            className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 font-semibold rounded-full hover:bg-blue-200 transition"
+            onClick={aggiungiRiga}
+          >
+            <Plus size={18} /> Aggiungi Collo
+          </button>
+        </div>
+      </div>
+      {/* --- FINE CONTENUTO SCORREVOLE --- */}
+      <div className="flex justify-end mt-2">
+        <button
+          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-full shadow hover:bg-blue-700 transition"
+          onClick={aggiungiParziali}
+          disabled={
+            inputs.every((inp, idx) =>
+              !inp.quantita ||
+              inp.quantita <= 0 ||
+              inp.collo <= 0 ||
+              Number(inp.quantita) > getResiduoInput(idx)
+            )
+          }
+        >
+          Aggiungi
+        </button>
+      </div>
+      <style>
+        {`
+          @keyframes shake {
+            0% { transform: translateX(0);}
+            20% { transform: translateX(-5px);}
+            40% { transform: translateX(5px);}
+            60% { transform: translateX(-5px);}
+            80% { transform: translateX(5px);}
+            100% { transform: translateX(0);}
+          }
+          .animate-shake { animation: shake 0.4s; }
+        `}
+      </style>
+    </div>
+  </div>
+)}
+
 
       {/* RIEPILOGO COLLI */}
       <div className="mt-10">
