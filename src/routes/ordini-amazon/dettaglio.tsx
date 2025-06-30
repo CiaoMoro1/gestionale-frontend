@@ -79,11 +79,14 @@ export default function DettaglioDestinazione() {
         }
       });
   }, [center, data]);
-
+// <<< AGGIUNGI QUI >>>
+useEffect(() => {
+  setInputs([{ quantita: "", collo: 1 }]);
+}, [modaleArticolo?.model_number]);
   // Funzioni di utilità e gestione
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs((prev) => {
-      const updated = prev.map((r, i) =>
+      return prev.map((r, i) =>
         i === idx
           ? {
               ...r,
@@ -94,14 +97,13 @@ export default function DettaglioDestinazione() {
             }
           : r
       );
-      salvaParzialiLiveGenerico(modaleArticolo, updated);
-      return updated;
     });
     if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
       setShakeIdx(idx);
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
+
   function aggiungiRiga() {
     setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
   }
@@ -129,9 +131,15 @@ export default function DettaglioDestinazione() {
         po_number: art.po_number,
         confermato: false
       }));
-    const altri = parziali.filter(p => p.model_number !== art.model_number);
+
+    // Rimuovi solo le righe con stesso model_number **E** stesso collo
+    const altri = parziali.filter(
+      p => !(p.model_number === art.model_number && nuoviParziali.some(n => n.collo === p.collo))
+    );
+
     await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
   }
+
   async function resetParzialiWip() {
     if (!center || !data) return;
     await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/reset`, {
@@ -368,22 +376,35 @@ export default function DettaglioDestinazione() {
           <tbody>
             {articoli.map((art) => {
               const totStorici = totaleStorici(art.model_number);
-              const confermata = totStorici + totaleWip(art.model_number);
+              const wip = totaleWip(art.model_number);
+              const confermata = totStorici + wip;
               const completa = confermata >= art.qty_ordered;
+              const hasStorici = getParzialiStorici(art.model_number).length > 0;
+              // Colorazione row:
+              let bgClass = "bg-gray-50"; // default grigio chiaro
+              if (wip > 0) bgClass = "bg-blue-100"; // verde se presente nel parziale attuale
+              else if (hasStorici) bgClass = "bg-yellow-100"; // giallo se ci sono parziali precedenti
+
               return (
-                <tr key={art.model_number} className="border-t">
-                  <td className="font-mono px-2 py-2">{art.model_number}</td>
+                <tr key={art.model_number} className={`border-t ${bgClass} transition-all`}>
+                  <td className="font-mono px-2 py-2">
+                    <div className="flex items-center gap-2">
+                      <span>{art.model_number}</span>
+                      {/* SPUNTA solo se completa e ha storici */}
+                      {completa && hasStorici && (
+                        <CheckCircle size={18} className="text-green-600 ml-1" />
+                      )}
+                    </div>
+                  </td>
                   <td className="px-2 py-2 text-center font-bold text-blue-500">
-                    {getParzialiStorici(art.model_number).length === 0 ? (
-                      <span className="text-neutral-400 text-xs">Nessuno</span>
-                    ) : (
+                    {hasStorici ? (
                       <span className="text-xs">
                         {getParzialiStorici(art.model_number).map((r, i) => (
-                          <span key={i} className="inline-block mr-1">
-                            {r.quantita}
-                          </span>
+                          <span key={i} className="inline-block mr-1">{r.quantita}</span>
                         ))}
                       </span>
+                    ) : (
+                      <span className="text-neutral-400 text-xs">Nessuno</span>
                     )}
                   </td>
                   <td className={`px-2 py-2 text-center font-bold ${completa ? "text-green-600" : "text-blue-800"}`}>
@@ -601,85 +622,85 @@ export default function DettaglioDestinazione() {
         )}
       </div>
 
-      {/* BOTTONI FINALI SLIDE TO CONFIRM */}
-      <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
-        {confirmAction === "reset" ? (
-          <div className="w-full sm:w-auto">
-            <SlideToConfirm
-              onConfirm={() => { setConfirmAction(null); resetParzialiWip(); }}
-              text="Scorri per svuotare tutto"
-              colorClass="bg-red-500"
-              icon={<Minus />}
-              disabled={parziali.length === 0}
-            />
-            <button
-              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
-              type="button"
-              onClick={() => setConfirmAction(null)}
-            >Annulla</button>
-          </div>
-        ) : (
-          <button
-            className="bg-red-500 text-white font-bold rounded-xl px-6 py-4 text-lg shadow-lg transition hover:bg-red-600 w-full sm:w-auto"
-            onClick={() => setConfirmAction("reset")}
-            disabled={parziali.length === 0}
-          >
-            Svuota tutto
-          </button>
-        )}
-        {confirmAction === "parziale" ? (
-          <div className="w-full sm:w-auto">
-            <SlideToConfirm
-              onConfirm={() => { setConfirmAction(null); confermaParziale(); }}
-              text="Scorri per confermare"
-              colorClass="bg-yellow-500"
-              icon={<ChevronRight />}
-              disabled={!tuttiConfermati}
-            />
-            <button
-              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
-              type="button"
-              onClick={() => setConfirmAction(null)}
-            >Annulla</button>
-          </div>
-        ) : (
-          <button
-            className={`bg-yellow-500 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
-              !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-yellow-600"
-            }`}
-            disabled={!tuttiConfermati}
-            onClick={() => setConfirmAction("parziale")}
-          >
-            Conferma Parziale
-          </button>
-        )}
-        {confirmAction === "chiudi" ? (
-          <div className="w-full sm:w-auto">
-            <SlideToConfirm
-              onConfirm={() => { setConfirmAction(null); generaSpedizione(); }}
-              text="Scorri per chiudere ordine"
-              colorClass="bg-green-600"
-              icon={<CheckCircle />}
-              disabled={!tuttiConfermati}
-            />
-            <button
-              className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
-              type="button"
-              onClick={() => setConfirmAction(null)}
-            >Annulla</button>
-          </div>
-        ) : (
-          <button
-            className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
-              !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
-            }`}
-            disabled={!tuttiConfermati}
-            onClick={() => setConfirmAction("chiudi")}
-          >
-            Chiudi Ordine
-          </button>
-        )}
-      </div>
+{/* BOTTONI FINALI SLIDE TO CONFIRM */}
+<div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
+  {confirmAction === "reset" ? (
+    <div className="w-full sm:w-auto">
+      <SlideToConfirm
+        onConfirm={() => { setConfirmAction(null); resetParzialiWip(); }}
+        text="Scorri per svuotare tutto"
+        colorClass="bg-red-500"
+        disabled={parziali.length === 0}
+      />
+      <button
+        className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+        type="button"
+        onClick={() => setConfirmAction(null)}
+      >Annulla</button>
+    </div>
+  ) : (
+    <button
+      className="bg-red-500 text-white font-bold rounded-xl px-6 py-4 text-lg shadow-lg transition hover:bg-red-600 w-full sm:w-auto"
+      onClick={() => setConfirmAction("reset")}
+      disabled={parziali.length === 0}
+    >
+      Svuota tutto
+    </button>
+  )}
+
+  {confirmAction === "parziale" ? (
+    <div className="w-full sm:w-auto">
+      <SlideToConfirm
+        onConfirm={() => { setConfirmAction(null); confermaParziale(); }}
+        text="Scorri per confermare"
+        colorClass="bg-yellow-500"
+        disabled={!tuttiConfermati}
+      />
+      <button
+        className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+        type="button"
+        onClick={() => setConfirmAction(null)}
+      >Annulla</button>
+    </div>
+  ) : (
+    <button
+      className={`bg-yellow-500 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
+        !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-yellow-600"
+      }`}
+      disabled={!tuttiConfermati}
+      onClick={() => setConfirmAction("parziale")}
+    >
+      Conferma Parziale
+    </button>
+  )}
+
+  {confirmAction === "chiudi" ? (
+    <div className="w-full sm:w-auto">
+      <SlideToConfirm
+        onConfirm={() => { setConfirmAction(null); generaSpedizione(); }}
+        text="Scorri per chiudere ordine"
+        colorClass="bg-green-600"
+        disabled={!tuttiConfermati}
+      />
+      <button
+        className="block mt-2 mx-auto text-xs text-gray-400 hover:underline"
+        type="button"
+        onClick={() => setConfirmAction(null)}
+      >Annulla</button>
+    </div>
+  ) : (
+    <button
+      className={`bg-green-600 text-white font-bold rounded-xl px-8 py-4 text-lg shadow-lg transition w-full sm:w-auto ${
+        !tuttiConfermati ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
+      }`}
+      disabled={!tuttiConfermati}
+      onClick={() => setConfirmAction("chiudi")}
+    >
+      Chiudi Ordine
+    </button>
+  )}
+</div>
+
 
       {/* MODALE ETICHETTE */}
       <GeneraEtichetteModal

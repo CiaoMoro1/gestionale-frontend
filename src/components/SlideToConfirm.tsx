@@ -5,15 +5,23 @@ type Props = {
   onConfirm: () => void;
   text: string;
   colorClass?: string;
-  icon?: React.ReactNode;
   disabled?: boolean;
 };
 
-export default function SlideToConfirm({ onConfirm, text, colorClass = "bg-gray-400", icon, disabled }: Props) {
+export default function SlideToConfirm({
+  onConfirm,
+  text,
+  colorClass = "bg-gray-400",
+  disabled,
+}: Props) {
   const [dragX, setDragX] = useState(0);
   const [isSliding, setIsSliding] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const dragXRef = useRef(0);
+
+  // Dimensione pallino (deve essere la stessa usata sotto)
+  const ballSize = 48;
+  const ballSpace = ballSize + 8; // con margine
 
   function handlePointerDown(e: React.PointerEvent | React.TouchEvent) {
     if (disabled) return;
@@ -31,21 +39,21 @@ export default function SlideToConfirm({ onConfirm, text, colorClass = "bg-gray-
 
     const moveListener = (ev: any) => {
       if (!containerRef.current) return;
-      const containerWidth = containerRef.current.offsetWidth - 48;
+      const maxX = containerRef.current.offsetWidth - ballSpace;
       const currX = getClientX(ev);
-      const diff = Math.max(0, Math.min(currX - startX, containerWidth));
+      const diff = Math.max(0, Math.min(currX - startX, maxX));
       setDragX(diff);
       dragXRef.current = diff;
     };
 
     const upListener = () => {
       if (!containerRef.current) return;
-      const containerWidth = containerRef.current.offsetWidth - 48;
-      if (dragXRef.current > containerWidth * 0.85) {
-        setDragX(containerWidth);
+      const maxX = containerRef.current.offsetWidth - ballSpace;
+      if (dragXRef.current > maxX * 0.8) {
+        setDragX(maxX);
         setTimeout(onConfirm, 200);
       }
-      setTimeout(() => setDragX(0), 200);
+      setTimeout(() => setDragX(0), 180);
       setIsSliding(false);
       window.removeEventListener("pointermove", moveListener);
       window.removeEventListener("pointerup", upListener);
@@ -65,33 +73,63 @@ export default function SlideToConfirm({ onConfirm, text, colorClass = "bg-gray-
       className={`relative w-full sm:w-auto select-none ${disabled ? "opacity-50" : ""}`}
       style={{ maxWidth: 340, minWidth: 200 }}
     >
-      <div className={`flex items-center justify-center h-14 ${colorClass} rounded-2xl shadow-lg px-3 font-bold text-white text-lg relative`}>
-        <span className="w-full text-center pointer-events-none select-none" style={{ opacity: dragX > 40 ? 0.2 : 1 }}>
-          {icon} {text}
-        </span>
-        {/* slider pallino */}
+      <div
+        className={`relative flex items-center h-14 ${colorClass} rounded-2xl shadow-lg font-bold text-white text-lg overflow-hidden`}
+        style={{ backdropFilter: "blur(8px)" }}
+      >
+        {/* Glass overlay */}
         <div
-          className="absolute top-1/2 left-0 -translate-y-1/2"
+          className="absolute inset-0 rounded-2xl pointer-events-none"
+          style={{
+            background: "rgba(255,255,255,0.08)",
+            backdropFilter: "blur(12px)",
+          }}
+        />
+
+        {/* SPAZIO pallino */}
+        <div style={{ width: ballSpace, minWidth: ballSpace }} />
+
+        {/* Testo centrale, con padding sinistro per il pallino */}
+        <span
+          className="relative z-10 w-full text-center select-none transition-all tracking-wide"
+          style={{
+            opacity: dragX > 40 ? 0.32 : 1,
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          {text}
+        </span>
+
+        {/* Pallino */}
+        <div
+          className="absolute top-1/2 left-0"
           style={{
             transform: `translate(${dragX}px, -50%)`,
             transition: isSliding ? "none" : "transform 0.2s",
-            zIndex: 10,
+            zIndex: 20,
+            width: ballSize,
+            height: ballSize,
           }}
         >
           <button
             type="button"
-            disabled={disabled}
             onPointerDown={handlePointerDown}
             onTouchStart={handlePointerDown}
-            className={`w-12 h-12 rounded-full shadow-xl flex items-center justify-center
-              ${colorClass} border-4 border-white transition-all active:scale-95`}
+            disabled={disabled}
+            className={`
+              w-12 h-12 rounded-full border-4 border-white
+              flex items-center justify-center
+              bg-white/30 backdrop-blur-md
+              active:scale-95 transition-shadow
+              shadow-[0_0_16px_0_rgba(0,0,0,0.15)]
+            `}
             style={{
               cursor: disabled ? "not-allowed" : "grab",
               touchAction: "none",
-              opacity: disabled ? 0.5 : 1,
             }}
           >
-            <ChevronRight size={32} />
+            <ChevronRight size={28} className="text-white drop-shadow" />
           </button>
         </div>
       </div>

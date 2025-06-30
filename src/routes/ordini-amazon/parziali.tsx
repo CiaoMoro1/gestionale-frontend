@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Package, CheckCircle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import VisualizzaParzialeModal from "../../components/VisualizzaParzialeModal";
 
 type Riepilogo = {
   id: number;
@@ -192,12 +193,10 @@ export default function ParzialiOrdini() {
                         {formatDate(p.created_at)}
                     </span>
                     <span className="flex-1 flex items-center justify-end">
-                        <button
-                        className="text-blue-700 underline text-xs md:text-sm"
-                        onClick={() => alert("Visualizza non ancora implementato")}
-                        >
-                        Visualizza
-                        </button>
+                        <VisualizzaParzialeModal
+                            dati={typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati}
+                         />
+
                     </span>
                     </div>
                 ))}
