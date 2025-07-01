@@ -103,7 +103,10 @@ useEffect(() => {
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
-
+    function handleOpenScanner() {
+      if (inputRef.current) inputRef.current.blur(); // Togli il focus dall’input
+      setBarcodeModalOpen(true); // Apri il modale scanner
+    }
   function aggiungiRiga() {
     setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
   }
@@ -344,12 +347,13 @@ useEffect(() => {
         </form>
         <button
           className="flex items-center gap-2 px-3 py-2 bg-gray-700 text-white rounded-xl shadow hover:bg-gray-900 transition text-sm font-semibold"
-          onClick={() => setBarcodeModalOpen(true)}
+          onClick={handleOpenScanner} // <-- Usa la funzione qui!
           type="button"
         >
           <span className="hidden sm:inline">Scanner</span>
           <svg className="inline-block sm:hidden" width="20" height="20" fill="none" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" strokeWidth="2"/><path d="M7 3v4M17 3v4M3 7h4M17 7h4M3 17h4M17 17h4M7 21v-4M17 21v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/></svg>
         </button>
+
       </div>
       {skuSearchError && (
         <div className="text-red-600 text-xs mb-2">{skuSearchError}</div>
@@ -393,9 +397,9 @@ useEffect(() => {
                       {/* SPUNTA solo se completa e ha storici */}
                       {completa && hasStorici && (
                         <CheckCircle
-  size={18}
-  className="text-green-600 ml-0.5 sm:size-[18px] size-[50px]" // 28 su mobile, 18 su desktop
-/>
+                          size={18}
+                          className="text-green-600 ml-0.5 sm:size-[18px] size-[50px]" // 28 su mobile, 18 su desktop
+                        />
                       )}
                     </div>
                   </td>
