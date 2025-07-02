@@ -5,19 +5,28 @@ import { supabase } from "../lib/supabase";
 export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
-  const [lastBarcodeTs, setLastBarcodeTs] = useState<number>(0);
   const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [scanningActive, setScanningActive] = useState(true);
 
+  // Box rettangolare centrato (260x80)
   const boxRect = { left: 30, top: 120, width: 260, height: 80 };
   const tolerance = 40;
+
+  // Start scan again after reset
+  const startScanner = () => {
+    setBarcode(null);
+    setProcessing(false);
+    setErrorMsg(null);
+    setScanningActive(true);
+  };
 
   useEffect(() => {
     if (!open) return;
     setBarcode(null);
     setErrorMsg(null);
     setProcessing(false);
-    setLastBarcodeTs(0);
+    setScanningActive(true);
 
     Quagga.init({
       inputStream: {
@@ -38,19 +47,11 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     });
 
     const handler = (result: any) => {
-      // Se non c'è nessun barcode rilevato
-      if (!result.codeResult?.code) {
-        setBarcode(null);
-        setLastBarcodeTs(0);
-        return;
-      }
+      if (!scanningActive) return; // Non processare se bloccato
+      if (!result.codeResult?.code) return;
       const code = result.codeResult.code;
       const box = result.box;
-      if (!box || box.length < 4) {
-        setBarcode(null);
-        setLastBarcodeTs(0);
-        return;
-      }
+      if (!box || box.length < 4) return;
       const scaleX = 320 / 640;
       const scaleY = 320 / 480;
       const xs = box.map((b: number[]) => b[0] * scaleX);
@@ -65,21 +66,11 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         centerY <= boxRect.top + boxRect.height + tolerance
       ) {
         setBarcode(code);
-        setLastBarcodeTs(Date.now());
-      } else {
-        setBarcode(null);
-        setLastBarcodeTs(0);
+        setScanningActive(false); // Blocca la scansione!
       }
     };
 
     Quagga.onDetected(handler);
-
-    // Timer: reset barcode se non rilevato per > 400ms
-    const interval = setInterval(() => {
-      if (barcode && Date.now() - lastBarcodeTs > 400) {
-        setBarcode(null);
-      }
-    }, 200);
 
     return () => {
       Quagga.offDetected(handler);
@@ -87,16 +78,17 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
       setBarcode(null);
       setErrorMsg(null);
       setProcessing(false);
-      setLastBarcodeTs(0);
-      clearInterval(interval);
+      setScanningActive(true);
     };
-  // eslint-disable-next-line
-  }, [open, barcode, lastBarcodeTs]);
+  }, [open, scanningActive]);
 
+  // Click su "Apri"
   const handleSearch = async () => {
     if (!barcode) return;
     setProcessing(true);
     setErrorMsg(null);
+
+    try { Quagga.stop(); } catch {}
 
     const { data, error } = await supabase
       .from("products")
@@ -125,7 +117,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             setBarcode(null);
             setErrorMsg(null);
             setProcessing(false);
-            setLastBarcodeTs(0);
+            setScanningActive(true);
             onClose();
           }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
@@ -171,13 +163,22 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           )}
         </div>
         {barcode && (
-          <button
-            onClick={handleSearch}
-            disabled={processing}
-            className="mt-3 px-4 py-2 rounded-xl font-semibold shadow text-white bg-green-600 hover:bg-green-700 transition"
-          >
-            {processing ? "Apro..." : "Apri"}
-          </button>
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={handleSearch}
+              disabled={processing}
+              className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-green-600 hover:bg-green-700 transition"
+            >
+              {processing ? "Apro..." : "Apri"}
+            </button>
+            <button
+              onClick={startScanner}
+              disabled={processing}
+              className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-cyan-600 hover:bg-cyan-700 transition"
+            >
+              Reset
+            </button>
+          </div>
         )}
         {errorMsg && (
           <div className="text-center text-xs text-red-600">{errorMsg}</div>
@@ -192,7 +193,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             setBarcode(null);
             setErrorMsg(null);
             setProcessing(false);
-            setLastBarcodeTs(0);
+            setScanningActive(true);
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
