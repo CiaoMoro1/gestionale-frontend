@@ -10,6 +10,8 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
   // Box rettangolare centrato (260x80)
   const boxRect = { left: 30, top: 120, width: 260, height: 80 };
+  // Tolleranza (zona invisibile extra per accettare barcode anche se non perfettamente centrati)
+  const tolerance = 40;
 
   useEffect(() => {
     if (!open) return;
@@ -53,12 +55,13 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
       const ys = box.map((b: number[]) => b[1] * scaleY);
       const centerX = (xs[0] + xs[2]) / 2;
       const centerY = (ys[0] + ys[2]) / 2;
-      // Solo se il centro è nel box rettangolare
+
+      // Zona accettazione molto più tollerante!
       if (
-        centerX >= boxRect.left &&
-        centerX <= boxRect.left + boxRect.width &&
-        centerY >= boxRect.top &&
-        centerY <= boxRect.top + boxRect.height
+        centerX >= boxRect.left - tolerance &&
+        centerX <= boxRect.left + boxRect.width + tolerance &&
+        centerY >= boxRect.top - tolerance &&
+        centerY <= boxRect.top + boxRect.height + tolerance
       ) {
         setBarcode(code);
       } else {
@@ -167,7 +170,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           <div className="text-center text-xs text-red-600">{errorMsg}</div>
         )}
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
-          Posiziona il barcode dentro il riquadro.<br />
+          Posiziona il barcode dentro (o vicino) al riquadro.<br />
           Il box diventa verde quando è pronto!
         </p>
         <button
