@@ -2,38 +2,29 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
+type Detected = {
+  code: string;
+  box: [number, number][];
+  ts: number;
+};
+
 export default function SearchProductModal({
   open,
   onClose,
 }: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const [scanning, setScanning] = useState(false);
-  const [lastCode, setLastCode] = useState<string | null>(null);
-  const [product, setProduct] = useState<any>(null);
+  const [detected, setDetected] = useState<Detected[]>([]);
+  const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Area centrale (rettangolo 60% del video, puoi regolare)
+  // Box centrale (60% area, adattalo se vuoi)
   const area = { top: "20%", right: "20%", left: "20%", bottom: "20%" };
 
+  // Start/stop camera and scan on modal open/close
   useEffect(() => {
     if (!open) return;
-    setProduct(null);
-    setLastCode(null);
-    setErrorMsg(null);
-    setScanning(false);
-
-    // Cleanup Quagga on unmount
-    return () => {
-      Quagga.offDetected();
-      try { Quagga.stop(); } catch {}
-    };
-  }, [open]);
-
-  // Avvia la camera quando si apre il modale, ma NON la scansione
-  const handleStartScanner = () => {
-    if (scanning) return;
-    setLastCode(null);
-    setProduct(null);
+    setDetected([]);
+    setProcessing(false);
     setErrorMsg(null);
 
     Quagga.init(
@@ -50,61 +41,59 @@ export default function SearchProductModal({
         frequency: 12,
       },
       (err?: any) => {
-        if (err) {
-          setErrorMsg("Errore apertura camera: " + err);
-        } else {
-          Quagga.start();
-          setScanning(true);
-        }
+        if (!err) Quagga.start();
       }
     );
-  };
 
-  // Scansiona solo quando clicchi "Scansiona"
-  const handleScan = () => {
-    if (!scanning) return;
-    setLastCode(null);
-    setProduct(null);
-    setErrorMsg(null);
-
-    Quagga.onDetected(async (result: any) => {
+    const handler = (result: any) => {
       if (!result.codeResult?.code) return;
-      // Area centrale del box (60%)
+      const code = result.codeResult.code;
+      // Calcola centro barcode
       const box = result.box;
       if (!box || box.length < 4) return;
       const centerX = (box[0][0] + box[2][0]) / 2;
       const centerY = (box[0][1] + box[2][1]) / 2;
-      // Video 320x320, area centrale 20%-80% => (64,64)-(256,256)
       if (centerX < 64 || centerX > 256 || centerY < 64 || centerY > 256) return;
+      // Evita duplicati (solo codici nuovi nelle ultime 2 sec)
+      setDetected((prev) => {
+        const now = Date.now();
+        if (prev.some(d => d.code === code && now - d.ts < 2000)) return prev;
+        return [...prev.filter(d => now - d.ts < 2000), { code, box, ts: now }];
+      });
+    };
 
-      Quagga.offDetected();
-      Quagga.stop();
+    Quagga.onDetected(handler);
 
-      setLastCode(result.codeResult.code);
-
-      // Query Supabase
-      const code = result.codeResult.code.trim();
-      let { data, error } = await supabase
-        .from("products")
-        .select("id, nome, ean, image_url")
-        .eq("ean", code)
-        .single();
-
-      if (error || !data?.id) {
-        setErrorMsg(`Nessun prodotto trovato per EAN: ${code}`);
-        setProduct(null);
-      } else {
-        setProduct(data);
-      }
-      setScanning(false);
-    });
-  };
-
-  // Avvia scanner quando il modale si apre
-  useEffect(() => {
-    if (open) handleStartScanner();
-    // eslint-disable-next-line
+    return () => {
+      Quagga.offDetected(handler);
+      try { Quagga.stop(); } catch {}
+      setDetected([]);
+      setProcessing(false);
+      setErrorMsg(null);
+    };
   }, [open]);
+
+  // Quando clicchi una card, cerca su Supabase
+  const handleSearch = async (barcode: string) => {
+    setProcessing(true);
+    setErrorMsg(null);
+
+    const { data, error } = await supabase
+      .from("products")
+      .select("id")
+      .eq("ean", barcode.trim())
+      .single();
+
+    setProcessing(false);
+
+    if (error || !data?.id) {
+      setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
+      return;
+    }
+
+    // Redirect al prodotto
+    window.location.href = `/prodotti/${data.id}`;
+  };
 
   if (!open) return null;
 
@@ -113,18 +102,15 @@ export default function SearchProductModal({
       <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-3 relative flex flex-col items-center">
         <button
           onClick={() => {
-            Quagga.offDetected();
             try { Quagga.stop(); } catch {}
-            setScanning(false);
-            setProduct(null);
-            setLastCode(null);
+            setDetected([]);
             setErrorMsg(null);
+            setProcessing(false);
             onClose();
           }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
         >×</button>
         <h2 className="text-lg font-bold text-gray-900 text-center">Scannerizza codice a barre</h2>
-
         {/* VIDEO + OVERLAY */}
         <div
           className="relative w-full aspect-square max-w-[320px] flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
@@ -150,63 +136,37 @@ export default function SearchProductModal({
               zIndex: 2
             }}
           />
-          {lastCode && (
-            <div className="absolute bottom-2 left-0 w-full flex justify-center z-10">
-              <span className="px-4 py-1 bg-white/90 rounded-lg border border-cyan-400 text-cyan-800 font-bold shadow">
-                {lastCode}
-              </span>
-            </div>
-          )}
         </div>
-
-        {!product && (
-          <button
-            onClick={handleScan}
-            disabled={!scanning}
-            className={
-              "mt-3 px-4 py-2 rounded-xl font-semibold shadow text-white " +
-              (!scanning
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-cyan-600 hover:bg-cyan-700 transition")
-            }
-          >
-            {scanning ? "Scansiona..." : "Scansiona"}
-          </button>
-        )}
-
-        {product && (
-          <div
-            className="mt-2 bg-cyan-50 rounded-xl border border-cyan-300 px-4 py-3 text-center shadow cursor-pointer transition hover:bg-cyan-100"
-            onClick={() => window.location.href = `/prodotti/${product.id}`}
-          >
-            {product.image_url && (
-              <img
-                src={product.image_url}
-                alt={product.nome}
-                className="mx-auto rounded mb-2 max-h-28 object-contain"
-              />
-            )}
-            <div className="font-bold text-cyan-900 text-lg">{product.nome || "Prodotto"}</div>
-            <div className="text-sm text-cyan-700">EAN: {product.ean}</div>
-            <div className="text-xs text-gray-500 mt-1">Clicca per dettagli</div>
-          </div>
-        )}
-
+        {/* CARD BARCODE rilevati negli ultimi 2 sec */}
+        <div className="flex flex-col gap-2 w-full items-center">
+          {detected.length === 0 && (
+            <div className="text-xs text-gray-400 text-center">Nessun codice rilevato…</div>
+          )}
+          {detected.map(d => (
+            <button
+              key={d.code}
+              disabled={processing}
+              onClick={() => handleSearch(d.code)}
+              className="px-4 py-2 rounded-xl border border-cyan-400 bg-white shadow font-mono text-cyan-900 text-lg w-full hover:bg-cyan-100 transition text-center"
+            >
+              {d.code}
+              {processing && <span className="ml-2 animate-spin">⏳</span>}
+            </button>
+          ))}
+        </div>
         {errorMsg && (
           <div className="text-center text-xs text-red-600">{errorMsg}</div>
         )}
-
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
-          Solo il codice <b>totalmente dentro il box centrale</b> verrà letto!
+          Tocca il codice che vuoi cercare.<br />
+          Solo il barcode <b>totalmente dentro il box centrale</b> viene mostrato!
         </p>
         <button
           onClick={() => {
-            Quagga.offDetected();
             try { Quagga.stop(); } catch {}
-            setScanning(false);
-            setProduct(null);
-            setLastCode(null);
+            setDetected([]);
             setErrorMsg(null);
+            setProcessing(false);
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
