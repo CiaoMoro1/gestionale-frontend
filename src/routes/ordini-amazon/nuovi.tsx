@@ -1,10 +1,6 @@
-// src\routes\ordini-amazon\nuovi.tsx
-
-
-
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Package } from "lucide-react";
+import { Package, Download } from "lucide-react";
 
 // Tipi
 type PO = {
@@ -31,8 +27,25 @@ export default function RiepilogoNuovi() {
       .catch(console.error);
   }, []);
 
+  // --- Funzione per scaricare il PDF ---
+  function exportListaPrelievoPDF() {
+    const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/lista-prelievo/nuovi/pdf`;
+    window.open(url, "_blank");
+  }
+
   return (
     <div className="mx-auto max-w-2xl p-2 sm:p-4">
+      {/* --- Pulsante esporta PDF --- */}
+      <div className="flex justify-end mb-4">
+        <button
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition"
+          onClick={exportListaPrelievoPDF}
+        >
+          <Download size={18} />
+          Esporta lista di prelievo PDF
+        </button>
+      </div>
+      {/* --- Lista ordini come prima --- */}
       {dati.length === 0 ? (
         <div className="text-center text-neutral-400 py-12 animate-pulse">
           Caricamento...

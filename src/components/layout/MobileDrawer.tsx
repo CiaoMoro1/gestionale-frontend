@@ -6,6 +6,7 @@ import { navSections } from "../../constants/navSections";
 import { supabase } from "../../lib/supabase";
 import { ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
+import { useVendorBadgeCounts } from "../../hooks/useVendorBadgeCounts"; // <--- IMPORTA QUI
 
 type NavItem = {
   label: string;
@@ -26,6 +27,14 @@ interface Props {
 }
 
 export default function MobileDrawer({ isOpen, onClose, session }: Props) {
+  const { nuoviCount, parzialiCount } = useVendorBadgeCounts(); // <--- HOOK QUI
+
+  // Mappa path → badge count
+  const badgeMap: Record<string, number | undefined> = {
+    "/ordini-amazon/nuovi": nuoviCount,
+    "/ordini-amazon/parziali": parzialiCount,
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -69,6 +78,7 @@ export default function MobileDrawer({ isOpen, onClose, session }: Props) {
               {...section}
               layout="horizontal"
               onNavigate={onClose}
+              badges={badgeMap}    // <--- PASSA QUI
             />
           ))}
 

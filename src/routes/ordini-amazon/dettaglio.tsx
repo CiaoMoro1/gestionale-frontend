@@ -103,10 +103,15 @@ useEffect(() => {
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
-    function handleOpenScanner() {
-      if (inputRef.current) inputRef.current.blur(); // Togli il focus dall’input
-      setBarcodeModalOpen(true); // Apri il modale scanner
-    }
+
+  function handleOpenScanner() {
+    if (inputRef.current) inputRef.current.blur();
+    if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    window.scrollTo(0, 0);
+    setTimeout(() => setBarcodeModalOpen(true), 150);
+  }
+
+
   function aggiungiRiga() {
     setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
   }

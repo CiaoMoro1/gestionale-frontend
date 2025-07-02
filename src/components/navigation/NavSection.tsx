@@ -4,18 +4,22 @@ import { motion, AnimatePresence } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import NavLink from "./NavLink";
 
+type BadgeMap = { [path: string]: number | undefined };
+
 export default function NavSection({
   label,
   icon,
   items,
   layout,
   onNavigate,
+  badges = {},
 }: {
   label: string;
   icon: React.ReactNode;
   items: { label: string; icon: React.ReactNode; path: string }[];
   layout: "horizontal" | "vertical";
   onNavigate?: () => void;
+  badges?: BadgeMap;
 }) {
   const location = useLocation();
   const [open, setOpen] = useState(items.some((i) => i.path === location.pathname));
@@ -53,9 +57,37 @@ export default function NavSection({
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden flex flex-col gap-1 pl-6 mt-1"
           >
-            {items.map((item) => (
-              <NavLink key={item.path} {...item} layout={layout} onClick={onNavigate} />
-            ))}
+            {items.map((item) => {
+              const count = badges[item.path];
+              const isBadge = typeof count === "number" && count > 0;
+              return (
+                <div
+                  key={item.path}
+                  className="relative flex items-center w-full" // full width!
+                >
+                  {/* Il link/menu */}
+                  <NavLink {...item} layout={layout} onClick={onNavigate} />
+                  {/* BADGE ABSOLUTE */}
+                  {isBadge && (
+                    <span
+                      className={`
+                        absolute right-3 top-1/2 -translate-y-1/2
+                        min-w-[20px] h-5 px-1.5 flex items-center justify-center
+                        text-xs font-bold rounded-full shadow
+                        ${item.path === "/ordini-amazon/nuovi"
+                          ? "bg-green-600 text-white"
+                          : item.path === "/ordini-amazon/parziali"
+                          ? "bg-yellow-400 text-black"
+                          : "bg-gray-300 text-gray-700"}
+                      `}
+                      style={{ zIndex: 10 }}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
           </motion.div>
         )}
       </AnimatePresence>

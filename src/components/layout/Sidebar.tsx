@@ -5,6 +5,7 @@ import NavSection from "../navigation/NavSection";
 import { navSections } from "../../constants/navSections";
 import { supabase } from "../../lib/supabase";
 import { ReactNode } from "react";
+import { useVendorBadgeCounts } from "../../hooks/useVendorBadgeCounts";
 
 type NavItem = {
   label: string;
@@ -19,6 +20,13 @@ type NavSectionType = {
 };
 
 export default function Sidebar() {
+  const { nuoviCount, parzialiCount } = useVendorBadgeCounts();
+
+  const badgeMap: Record<string, number | undefined> = {
+    "/ordini-amazon/nuovi": nuoviCount,
+    "/ordini-amazon/parziali": parzialiCount,
+  };
+
   const logout = async () => {
     await supabase.auth.signOut();
     window.location.href = "/login";
@@ -38,7 +46,12 @@ export default function Sidebar() {
           layout="horizontal"
         />
         {navSections.map((section: NavSectionType) => (
-          <NavSection key={section.label} {...section} layout="horizontal" />
+          <NavSection
+            key={section.label}
+            {...section}
+            layout="horizontal"
+            badges={badgeMap}   // PASSA I BADGE QUI!
+          />
         ))}
       </nav>
 
