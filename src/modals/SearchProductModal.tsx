@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
@@ -16,28 +16,40 @@ type Product = {
 };
 
 export default function SearchProductModal({ open, onClose }: Props) {
-  const scannerRef = useRef<HTMLDivElement>(null);
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState(false);
   const [loading, setLoading] = useState(false);
   const [product, setProduct] = useState<Product | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
+  const videoDivId = "barcode-reader";
 
-  const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
-
-  // Serve per evitare che processi barcode quando non vuoi!
-  const allowScan = scanning && !loading && !product;
-
-  // Avvia SEMPRE la camera quando la modale è aperta!
+  // Avvia Quagga SOLO quando la modale e il div video sono montati
   useEffect(() => {
-    if (!open || !isMobile) return;
+    if (!open) return;
 
+    setTimeout(() => setCameraReady(true), 200); // Permette al DOM di renderizzare il div
+
+    return () => {
+      setCameraReady(false);
+      setFound(false);
+      setScanning(false);
+      setLoading(false);
+      setProduct(null);
+      if (Quagga.running) Quagga.stop();
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !cameraReady) return;
+
+    // Inizializza Quagga appena il div è presente
     Quagga.init(
       {
         inputStream: {
           type: "LiveStream",
-          target: scannerRef.current!,
+          target: document.getElementById(videoDivId)!,
           constraints: { facingMode: "environment" },
-          area: { top: "30%", right: "30%", left: "30%", bottom: "30%" },
+          // area: { top: "30%", right: "30%", left: "30%", bottom: "30%" }, // disabilita per test
         },
         decoder: {
           readers: ["ean_reader", "code_128_reader", "code_39_reader"],
@@ -45,18 +57,31 @@ export default function SearchProductModal({ open, onClose }: Props) {
         locate: true,
         locator: { patchSize: "medium", halfSample: true },
         numOfWorkers: 2,
-        frequency: 12,
+        frequency: 10,
       },
       (err?: any) => {
-        if (!err) Quagga.start();
+        if (err) {
+          alert("Errore apertura camera: " + err);
+          return;
+        }
+        Quagga.start();
       }
     );
 
+    return () => {
+      if (Quagga.running) Quagga.stop();
+    };
+  }, [open, cameraReady]);
+
+  useEffect(() => {
+    if (!open || !cameraReady) return;
+
     const handler = async (data: any) => {
-      if (!allowScan) return;
+      if (!scanning || loading || product) return;
       setLoading(true);
 
       const code = data.codeResult.code;
+      setFound(true);
 
       const { data: prodotto, error } = await supabase
         .from("products")
@@ -72,19 +97,18 @@ export default function SearchProductModal({ open, onClose }: Props) {
       }
 
       setProduct(prodotto);
-      setFound(true);
       setLoading(false);
       setScanning(false);
+      setFound(true);
     };
 
     Quagga.onDetected(handler);
 
     return () => {
       Quagga.offDetected(handler);
-      if (Quagga.running) Quagga.stop();
     };
     // eslint-disable-next-line
-  }, [open, isMobile, allowScan]);
+  }, [open, scanning, loading, product, cameraReady]);
 
   if (!open) return null;
 
@@ -105,7 +129,7 @@ export default function SearchProductModal({ open, onClose }: Props) {
           Scannerizza codice a barre
         </h2>
 
-        {/* CARD PRODOTTO TROVATO */}
+        {/* CARD PRODOTTO */}
         {product && (
           <div
             className="mt-2 bg-cyan-50 rounded-xl border border-cyan-300 px-4 py-3 text-center shadow cursor-pointer transition hover:bg-cyan-100"
@@ -132,9 +156,9 @@ export default function SearchProductModal({ open, onClose }: Props) {
               flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
           >
             <div
-              ref={scannerRef}
-              id="barcode-reader"
+              id={videoDivId}
               className="absolute inset-0 w-full h-full object-cover"
+              style={{ minWidth: 200, minHeight: 200 }}
             />
             <div
               className={
