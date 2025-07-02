@@ -1,5 +1,3 @@
-// src/modals/SearchProductModal.tsx
-
 import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
@@ -9,13 +7,21 @@ type Props = {
   onClose: () => void;
 };
 
+type Product = {
+  id: string;
+  nome?: string;
+  ean?: string;
+  image_url?: string;
+  [key: string]: any;
+};
+
 export default function SearchProductModal({ open, onClose }: Props) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [scanning, setScanning] = useState(false);
   const [found, setFound] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [product, setProduct] = useState<Product | null>(null);
 
-  // Usa questa riga se vuoi SOLO su mobile, togli se vuoi anche su desktop
   const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
   useEffect(() => {
@@ -43,15 +49,14 @@ export default function SearchProductModal({ open, onClose }: Props) {
     );
 
     Quagga.onDetected(async (data: any) => {
-      if (loading) return;
+      if (loading || product) return;
       setLoading(true);
-      setFound(true);
 
       const code = data.codeResult.code;
 
       const { data: prodotto, error } = await supabase
         .from("products")
-        .select("id")
+        .select("id, nome, ean, image_url") // aggiungi altri campi se vuoi
         .eq("ean", code)
         .single();
 
@@ -62,17 +67,17 @@ export default function SearchProductModal({ open, onClose }: Props) {
         return;
       }
 
+      setProduct(prodotto);
+      setFound(true);
+      setLoading(false);
       Quagga.stop();
-      setTimeout(() => {
-        window.location.href = `/prodotti/${prodotto.id}`;
-      }, 600);
     });
 
     return () => {
       Quagga.offDetected();
       if (Quagga.running) Quagga.stop();
     };
-  }, [open, scanning, isMobile, loading]);
+  }, [open, scanning, isMobile, loading, product]);
 
   if (!open) return null;
 
@@ -83,47 +88,90 @@ export default function SearchProductModal({ open, onClose }: Props) {
           onClick={onClose}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
         >×</button>
-        <h2 className="text-lg font-bold text-gray-900 text-center">Scannerizza codice a barre</h2>
-        <div
-          className="
-            relative w-full aspect-square max-w-[320px]
-            flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
-        >
+        <h2 className="text-lg font-bold text-gray-900 text-center">
+          Scannerizza codice a barre
+        </h2>
+
+        {/* CARD PRODOTTO TROVATO */}
+        {product && (
           <div
-            ref={scannerRef}
-            id="barcode-reader"
-            className="absolute inset-0 w-full h-full object-cover"
-          />
+            className="mt-2 bg-cyan-50 rounded-xl border border-cyan-300 px-4 py-3 text-center shadow cursor-pointer transition hover:bg-cyan-100"
+            onClick={() => window.location.href = `/prodotti/${product.id}`}
+          >
+            {product.image_url && (
+              <img
+                src={product.image_url}
+                alt={product.nome}
+                className="mx-auto rounded mb-2 max-h-28 object-contain"
+              />
+            )}
+            <div className="font-bold text-cyan-900 text-lg">{product.nome || "Prodotto"}</div>
+            <div className="text-sm text-cyan-700">EAN: {product.ean}</div>
+            <div className="text-xs text-gray-500 mt-1">Clicca per dettagli</div>
+          </div>
+        )}
+
+        {/* VIDEO + OVERLAY */}
+        {!product && (
           <div
-            className={
-              "absolute inset-0 pointer-events-none border-2 rounded-xl " +
-              (found
-                ? "border-green-500 shadow-green-400/70 animate-none"
-                : "border-cyan-400/80 animate-pulse")
-            }
-            style={{
-              boxShadow: found
-                ? "0 0 24px 0 #22c55e99"
-                : "0 0 24px 0 #06b6d433"
+            className="
+              relative w-full aspect-square max-w-[320px]
+              flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
+          >
+            <div
+              ref={scannerRef}
+              id="barcode-reader"
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+            <div
+              className={
+                "absolute inset-0 pointer-events-none border-2 rounded-xl " +
+                (found
+                  ? "border-green-500 shadow-green-400/70 animate-none"
+                  : "border-cyan-400/80 animate-pulse")
+              }
+              style={{
+                boxShadow: found
+                  ? "0 0 24px 0 #22c55e99"
+                  : "0 0 24px 0 #06b6d433"
+              }}
+            ></div>
+          </div>
+        )}
+
+        {/* BOTTONI */}
+        {!product && (
+          <button
+            disabled={scanning}
+            onClick={() => {
+              setScanning(true);
+              setFound(false);
+              setLoading(false);
             }}
-          ></div>
-        </div>
-        <button
-          disabled={scanning}
-          onClick={() => {
-            setScanning(true);
-            setFound(false);
-            setLoading(false);
-          }}
-          className={
-            "mt-3 px-4 py-2 rounded-xl font-semibold shadow text-white " +
-            (scanning
-              ? "bg-gray-400 cursor-not-allowed"
-              : "bg-cyan-600 hover:bg-cyan-700 transition")
-          }
-        >
-          {scanning ? "Scansione attiva..." : "Scansiona"}
-        </button>
+            className={
+              "mt-3 px-4 py-2 rounded-xl font-semibold shadow text-white " +
+              (scanning
+                ? "bg-gray-400 cursor-not-allowed"
+                : "bg-cyan-600 hover:bg-cyan-700 transition")
+            }
+          >
+            {scanning ? "Scansione attiva..." : "Scansiona"}
+          </button>
+        )}
+        {product && (
+          <button
+            onClick={() => {
+              setProduct(null);
+              setFound(false);
+              setScanning(false);
+              setLoading(false);
+            }}
+            className="mt-3 px-4 py-2 rounded-xl font-semibold shadow bg-cyan-200 text-cyan-900 hover:bg-cyan-300 transition"
+          >
+            Scansiona un altro prodotto
+          </button>
+        )}
+
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
           Inquadra il codice a barre <br />
           <span className="text-cyan-700 font-semibold">restando dentro il riquadro</span>
@@ -133,6 +181,7 @@ export default function SearchProductModal({ open, onClose }: Props) {
             setScanning(false);
             setFound(false);
             setLoading(false);
+            setProduct(null);
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
