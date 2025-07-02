@@ -5,12 +5,11 @@ import { supabase } from "../lib/supabase";
 export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
+  const [lastBarcodeTs, setLastBarcodeTs] = useState<number>(0);
   const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Box rettangolare centrato (260x80)
   const boxRect = { left: 30, top: 120, width: 260, height: 80 };
-  // Tolleranza (zona invisibile extra per accettare barcode anche se non perfettamente centrati)
   const tolerance = 40;
 
   useEffect(() => {
@@ -18,6 +17,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     setBarcode(null);
     setErrorMsg(null);
     setProcessing(false);
+    setLastBarcodeTs(0);
 
     Quagga.init({
       inputStream: {
@@ -38,17 +38,19 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     });
 
     const handler = (result: any) => {
+      // Se non c'è nessun barcode rilevato
       if (!result.codeResult?.code) {
         setBarcode(null);
+        setLastBarcodeTs(0);
         return;
       }
       const code = result.codeResult.code;
       const box = result.box;
       if (!box || box.length < 4) {
         setBarcode(null);
+        setLastBarcodeTs(0);
         return;
       }
-      // Mappa coordinate su 320x320
       const scaleX = 320 / 640;
       const scaleY = 320 / 480;
       const xs = box.map((b: number[]) => b[0] * scaleX);
@@ -56,7 +58,6 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
       const centerX = (xs[0] + xs[2]) / 2;
       const centerY = (ys[0] + ys[2]) / 2;
 
-      // Zona accettazione molto più tollerante!
       if (
         centerX >= boxRect.left - tolerance &&
         centerX <= boxRect.left + boxRect.width + tolerance &&
@@ -64,12 +65,21 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         centerY <= boxRect.top + boxRect.height + tolerance
       ) {
         setBarcode(code);
+        setLastBarcodeTs(Date.now());
       } else {
         setBarcode(null);
+        setLastBarcodeTs(0);
       }
     };
 
     Quagga.onDetected(handler);
+
+    // Timer: reset barcode se non rilevato per > 400ms
+    const interval = setInterval(() => {
+      if (barcode && Date.now() - lastBarcodeTs > 400) {
+        setBarcode(null);
+      }
+    }, 200);
 
     return () => {
       Quagga.offDetected(handler);
@@ -77,10 +87,12 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
       setBarcode(null);
       setErrorMsg(null);
       setProcessing(false);
+      setLastBarcodeTs(0);
+      clearInterval(interval);
     };
-  }, [open]);
+  // eslint-disable-next-line
+  }, [open, barcode, lastBarcodeTs]);
 
-  // Click su "Apri"
   const handleSearch = async () => {
     if (!barcode) return;
     setProcessing(true);
@@ -113,6 +125,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             setBarcode(null);
             setErrorMsg(null);
             setProcessing(false);
+            setLastBarcodeTs(0);
             onClose();
           }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
@@ -179,6 +192,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             setBarcode(null);
             setErrorMsg(null);
             setProcessing(false);
+            setLastBarcodeTs(0);
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
