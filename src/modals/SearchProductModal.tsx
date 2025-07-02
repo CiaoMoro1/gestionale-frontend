@@ -2,21 +2,33 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
+type Product = {
+  id: string;
+  nome?: string;
+  ean: string;
+  image_url?: string;
+  sku?: string;
+};
+
 type BarcodeOverlay = {
   code: string;
   box: [number, number][];
   ts: number;
+  product?: Product;
 };
 
 export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const [overlays, setOverlays] = useState<BarcodeOverlay[]>([]);
+  const [overlay, setOverlay] = useState<BarcodeOverlay | null>(null);
   const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Box centrale rettangolare
+  const boxRect = { left: 30, top: 120, width: 260, height: 80 };
+
   useEffect(() => {
     if (!open) return;
-    setOverlays([]);
+    setOverlay(null);
     setErrorMsg(null);
     setProcessing(false);
 
@@ -44,15 +56,28 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
       const box = result.box;
       const now = Date.now();
       if (!box || box.length < 4) return;
-      // Solo codici nuovi
-      setOverlays((prev) => {
-        if (prev.some(o => o.code === code && now - o.ts < 1500)) return prev;
-        // Sovrascrivi se vecchio, oppure aggiungi
-        return [
-          ...prev.filter(o => now - o.ts < 1500 && o.code !== code),
-          { code, box, ts: now }
-        ];
-      });
+
+      // Mapping Quagga 640x480 -> nostro 320x320
+      const scaleX = 320 / 640;
+      const scaleY = 320 / 480;
+      const xs = box.map((b: number[]) => b[0] * scaleX);
+      const ys = box.map((b: number[]) => b[1] * scaleY);
+      const centerX = (xs[0] + xs[2]) / 2;
+      const centerY = (ys[0] + ys[2]) / 2;
+
+      if (
+        centerX >= boxRect.left &&
+        centerX <= boxRect.left + boxRect.width &&
+        centerY >= boxRect.top &&
+        centerY <= boxRect.top + boxRect.height
+      ) {
+        // Non rifare la stessa card se non cambia barcode
+        setOverlay(prev =>
+          prev && prev.code === code && now - prev.ts < 1500
+            ? prev
+            : { code, box, ts: now, product: prev?.product }
+        );
+      }
     };
 
     Quagga.onDetected(handler);
@@ -60,40 +85,20 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     return () => {
       Quagga.offDetected(handler);
       try { Quagga.stop(); } catch {}
-      setOverlays([]);
+      setOverlay(null);
       setErrorMsg(null);
       setProcessing(false);
     };
   }, [open]);
 
-  // Calcola la posizione e la dimensione della card dal bounding box
-  const getOverlayStyle = (box: [number, number][]) => {
-    // Trasformo Quagga box (tipicamente da 640x480) su 320x320 (nostro video)
-    // Serve la proporzione!
-    const scaleX = 320 / 640;
-    const scaleY = 320 / 480;
-    const xs = box.map(b => b[0] * scaleX);
-    const ys = box.map(b => b[1] * scaleY);
-    const left = Math.min(...xs);
-    const top = Math.min(...ys);
-    const width = Math.max(...xs) - left;
-    const height = Math.max(...ys) - top;
-    return {
-      position: "absolute" as const,
-      left, top, width, height,
-      zIndex: 5,
-      pointerEvents: "auto" as const
-    };
-  };
-
-  // Click card → cerca su Supabase
+  // Quando clicchi la card: cerca su supabase e aggiorna la card con immagine/EAN/SKU
   const handleSearch = async (code: string) => {
     setProcessing(true);
     setErrorMsg(null);
 
     const { data, error } = await supabase
       .from("products")
-      .select("id")
+      .select("id, nome, ean, image_url, sku")
       .eq("ean", code.trim())
       .single();
 
@@ -101,13 +106,45 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
     if (error || !data?.id) {
       setErrorMsg(`Nessun prodotto trovato per EAN: ${code}`);
+      setOverlay(o => o ? { ...o, product: undefined } : null);
       return;
     }
-
-    window.location.href = `/prodotti/${data.id}`;
+    // Aggiorna la card con i dettagli prodotto
+    setOverlay(o => o ? { ...o, product: data } : null);
+    // Dopo 1s redirect automatico (o solo su secondo click, come preferisci)
+    setTimeout(() => {
+      window.location.href = `/prodotti/${data.id}`;
+    }, 900);
   };
 
   if (!open) return null;
+
+  // Stile per overlay card (mobile/tablet friendly)
+  const cardStyle = (box: [number, number][]) => {
+    const scaleX = 320 / 640;
+    const scaleY = 320 / 480;
+    const xs = box.map(b => b[0] * scaleX);
+    const ys = box.map(b => b[1] * scaleY);
+    const left = Math.min(...xs);
+    const top = Math.min(...ys) - 32; // solleva un po' la card sopra al barcode
+    const width = Math.max(...xs) - left;
+    return {
+      position: "absolute" as const,
+      left, top: Math.max(top, 0), width: Math.max(width, 110), height: 110,
+      zIndex: 10,
+      borderRadius: 18,
+      boxShadow: "0 2px 14px #1114",
+      background: "#fff",
+      border: "2px solid #16a34a",
+      display: "flex",
+      flexDirection: "column" as const,
+      alignItems: "center",
+      justifyContent: "center",
+      padding: "8px 6px",
+      pointerEvents: "auto" as const,
+      transition: "all .2s"
+    };
+  };
 
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
@@ -115,7 +152,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         <button
           onClick={() => {
             try { Quagga.stop(); } catch {}
-            setOverlays([]);
+            setOverlay(null);
             setErrorMsg(null);
             setProcessing(false);
             onClose();
@@ -133,38 +170,40 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             className="absolute inset-0 w-full h-full object-cover"
             style={{ zIndex: 1 }}
           />
-          {/* Overlay cards sui barcode */}
-          {overlays.map(o => (
+          {/* Overlay card sopra barcode */}
+          {overlay && (
             <button
-              key={o.code}
-              style={{
-                ...getOverlayStyle(o.box),
-                border: "2px solid #16a34a",
-                background: "rgba(34,197,94,0.09)",
-                borderRadius: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#16a34a",
-                fontWeight: 700,
-                fontSize: 18,
-                boxShadow: "0 2px 8px #16a34a33",
-                transition: "box-shadow .2s",
-              }}
-              onClick={() => handleSearch(o.code)}
+              style={cardStyle(overlay.box)}
+              onClick={() => handleSearch(overlay.code)}
               disabled={processing}
             >
-              {o.code}
+              <div className="text-sm text-cyan-700 font-semibold truncate w-full text-center">
+                {overlay.product?.sku ?? "Codice"}
+              </div>
+              <div className="font-bold text-cyan-900 text-lg truncate w-full text-center">
+                {overlay.product?.nome ?? overlay.code}
+              </div>
+              {overlay.product?.image_url && (
+                <img
+                  src={overlay.product.image_url}
+                  alt="prodotto"
+                  className="my-1 mx-auto rounded max-h-12 object-contain"
+                  style={{ maxWidth: "90%" }}
+                />
+              )}
+              <div className="text-xs text-gray-500 mt-1 w-full text-center">
+                {overlay.product?.ean ?? overlay.code}
+              </div>
             </button>
-          ))}
+          )}
           {/* Box centrale */}
           <div
             style={{
               position: "absolute",
-              left: "30px",     // (320 - 260) / 2
-              top: "120px",     // (320 - 80) / 2
-              width: "260px",
-              height: "80px",
+              left: boxRect.left + "px",
+              top: boxRect.top + "px",
+              width: boxRect.width + "px",
+              height: boxRect.height + "px",
               border: "2px solid #06b6d4",
               borderRadius: "14px",
               boxShadow: "0 0 24px 0 #06b6d433",
@@ -177,13 +216,13 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           <div className="text-center text-xs text-red-600">{errorMsg}</div>
         )}
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
-          Tocca il codice sopra al barcode da cercare!<br />
-          (Overlay = posizione reale del barcode inquadrato)
+          Tocca la card sopra al barcode centrato per cercare.<br />
+          SKU sopra, nome al centro, immagine e EAN sotto!
         </p>
         <button
           onClick={() => {
             try { Quagga.stop(); } catch {}
-            setOverlays([]);
+            setOverlay(null);
             setErrorMsg(null);
             setProcessing(false);
             onClose();
