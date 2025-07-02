@@ -2,13 +2,23 @@ import { useEffect, useRef } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { supabase } from "../lib/supabase";
 
-export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+function isDesktop() {
+  const ua = navigator.userAgent;
+  return (
+    /Windows|Macintosh|Linux/i.test(ua) &&
+    !/Android|Mobi|iPhone|iPad/i.test(ua)
+  );
+}
+
+export default function SearchProductModal({
+  open,
+  onClose,
+}: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanningRef = useRef(false);
-  const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
   useEffect(() => {
-    if (!open || !isMobile) return;
+    if (!open || isDesktop()) return;
 
     const scanner = new Html5Qrcode("barcode-reader");
     scannerRef.current = scanner;
@@ -21,16 +31,28 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
         if (scanningRef.current) return;
         scanningRef.current = true;
 
-        const { data, error } = await supabase
+        const barcode = decodedText.trim().replace(/[^0-9A-Za-z]/g, "");
+        console.log("Scansionato:", barcode, "| JSON:", JSON.stringify(barcode));
+
+        let { data, error } = await supabase
           .from("products")
           .select("id")
-          .eq("ean", decodedText)
+          .eq("ean", barcode)
           .single();
 
         if (error || !data?.id) {
-          alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
-          scanningRef.current = false;
-          return;
+          const { data: dataLike, error: errorLike } = await supabase
+            .from("products")
+            .select("id, ean")
+            .filter("ean", "ilike", `%${barcode}%`)
+            .maybeSingle();
+
+          if (errorLike || !dataLike?.id) {
+            alert(`Nessun prodotto trovato per EAN: ${barcode}`);
+            scanningRef.current = false;
+            return;
+          }
+          data = dataLike;
         }
 
         await scanner.stop();
@@ -40,12 +62,41 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     );
 
     return () => {
-      scanner.stop().catch(() => {});
+      if (scannerRef.current) {
+        try { scannerRef.current.stop(); } catch {}
+        try { scannerRef.current.clear(); } catch {}
+      }
+      scanningRef.current = false;
     };
-  }, [open, isMobile]);
+  }, [open]);
 
   if (!open) return null;
 
+  if (isDesktop()) {
+    // Messaggio per desktop
+    return (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
+        <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-4 relative flex flex-col items-center">
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
+          >×</button>
+          <h2 className="text-lg font-bold text-gray-900 text-center">Scansione non disponibile su desktop</h2>
+          <p className="text-center text-sm text-gray-600">
+            Apri questa pagina su <span className="text-cyan-700 font-semibold">tablet o smartphone</span> per usare la fotocamera.
+          </p>
+          <button
+            onClick={onClose}
+            className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
+          >
+            Chiudi
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // MOBILE + TABLET UI
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-3 relative flex flex-col items-center">
@@ -54,7 +105,6 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
         >×</button>
         <h2 className="text-lg font-bold text-gray-900 text-center">Scannerizza codice a barre</h2>
-
         <div
           className="
             relative w-full aspect-square max-w-[320px]
@@ -71,7 +121,6 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
             style={{ boxShadow: "0 0 24px 0 #06b6d433" }}
           ></div>
         </div>
-
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
           Inquadra il codice a barre <br />
           <span className="text-cyan-700 font-semibold">restando dentro il riquadro</span>
