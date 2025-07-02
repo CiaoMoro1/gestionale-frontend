@@ -1,114 +1,74 @@
-import { useEffect, useState } from "react";
-import Quagga from "quagga";
+import { useEffect, useRef, useState } from "react";
+import { Html5Qrcode } from "html5-qrcode";
 import { supabase } from "../lib/supabase";
 
-type Props = {
-  open: boolean;
-  onClose: () => void;
-};
-
-type Product = {
-  id: string;
-  nome?: string;
-  ean?: string;
-  image_url?: string;
-  [key: string]: any;
-};
-
-export default function SearchProductModal({ open, onClose }: Props) {
+export default function SearchProductModal({
+  open,
+  onClose,
+}: { open: boolean; onClose: () => void }) {
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const [, setCameraReady] = useState(false);
+  const [lastDetected, setLastDetected] = useState<string | null>(null);
+  const [product, setProduct] = useState<any>(null);
   const [scanning, setScanning] = useState(false);
-  const [found, setFound] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [product, setProduct] = useState<Product | null>(null);
-  const [cameraReady, setCameraReady] = useState(false);
-  const videoDivId = "barcode-reader";
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Avvia Quagga SOLO quando la modale e il div video sono montati
+  // Avvia la camera appena si apre la modale
   useEffect(() => {
     if (!open) return;
 
-    setTimeout(() => setCameraReady(true), 200); // Permette al DOM di renderizzare il div
+    const scanner = new Html5Qrcode("barcode-reader");
+    scannerRef.current = scanner;
+    setCameraReady(true);
+    setLastDetected(null);
+    setProduct(null);
+    setErrorMsg(null);
 
-    return () => {
-      setCameraReady(false);
-      setFound(false);
-      setScanning(false);
-      setLoading(false);
-      setProduct(null);
-      if (Quagga.running) Quagga.stop();
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open || !cameraReady) return;
-
-    // Inizializza Quagga appena il div è presente
-    Quagga.init(
-      {
-        inputStream: {
-          type: "LiveStream",
-          target: document.getElementById(videoDivId)!,
-          constraints: { facingMode: "environment" },
-          // area: { top: "30%", right: "30%", left: "30%", bottom: "30%" }, // disabilita per test
-        },
-        decoder: {
-          readers: ["ean_reader", "code_128_reader", "code_39_reader"],
-        },
-        locate: true,
-        locator: { patchSize: "medium", halfSample: true },
-        numOfWorkers: 2,
-        frequency: 10,
+    scanner.start(
+      { facingMode: "environment" },
+      { fps: 12, qrbox: 250 },
+      (decodedText) => {
+        setLastDetected(decodedText); // solo memorizza, non scansiona!
       },
-      (err?: any) => {
-        if (err) {
-          alert("Errore apertura camera: " + err);
-          return;
-        }
-        Quagga.start();
-      }
+      () => {}
     );
 
     return () => {
-      if (Quagga.running) Quagga.stop();
-    };
-  }, [open, cameraReady]);
-
-  useEffect(() => {
-    if (!open || !cameraReady) return;
-
-    const handler = async (data: any) => {
-      if (!scanning || loading || product) return;
-      setLoading(true);
-
-      const code = data.codeResult.code;
-      setFound(true);
-
-      const { data: prodotto, error } = await supabase
-        .from("products")
-        .select("id, nome, ean, image_url")
-        .eq("ean", code)
-        .single();
-
-      if (error || !prodotto?.id) {
-        alert(`Nessun prodotto trovato per EAN: ${code}`);
-        setLoading(false);
-        setFound(false);
-        return;
-      }
-
-      setProduct(prodotto);
-      setLoading(false);
+      try { scanner.stop(); } catch {}
+      try { scanner.clear(); } catch {}
+      scannerRef.current = null;
+      setCameraReady(false);
+      setLastDetected(null);
+      setProduct(null);
       setScanning(false);
-      setFound(true);
+      setErrorMsg(null);
     };
+  }, [open]);
 
-    Quagga.onDetected(handler);
-
-    return () => {
-      Quagga.offDetected(handler);
-    };
-    // eslint-disable-next-line
-  }, [open, scanning, loading, product, cameraReady]);
+  // Quando clicchi "Scansiona"
+  const handleScan = async () => {
+    if (!lastDetected) {
+      setErrorMsg("Nessun barcode rilevato da scansionare.");
+      return;
+    }
+    setScanning(true);
+    setErrorMsg(null);
+    setProduct(null);
+    // CERCA su supabase
+    const { data, error } = await supabase
+      .from("products")
+      .select("id, nome, ean, image_url")
+      .eq("ean", lastDetected)
+      .single();
+    if (error || !data?.id) {
+      setErrorMsg(`Nessun prodotto trovato per EAN: ${lastDetected}`);
+      setScanning(false);
+      setProduct(null);
+      return;
+    }
+    setProduct(data);
+    setScanning(false);
+  };
 
   if (!open) return null;
 
@@ -117,10 +77,11 @@ export default function SearchProductModal({ open, onClose }: Props) {
       <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-3 relative flex flex-col items-center">
         <button
           onClick={() => {
-            setScanning(false);
-            setFound(false);
-            setLoading(false);
             setProduct(null);
+            setScanning(false);
+            setLastDetected(null);
+            setCameraReady(false);
+            setErrorMsg(null);
             onClose();
           }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
@@ -128,7 +89,6 @@ export default function SearchProductModal({ open, onClose }: Props) {
         <h2 className="text-lg font-bold text-gray-900 text-center">
           Scannerizza codice a barre
         </h2>
-
         {/* CARD PRODOTTO */}
         {product && (
           <div
@@ -147,7 +107,6 @@ export default function SearchProductModal({ open, onClose }: Props) {
             <div className="text-xs text-gray-500 mt-1">Clicca per dettagli</div>
           </div>
         )}
-
         {/* VIDEO + OVERLAY */}
         {!product && (
           <div
@@ -156,57 +115,64 @@ export default function SearchProductModal({ open, onClose }: Props) {
               flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
           >
             <div
-              id={videoDivId}
+              id="barcode-reader"
               className="absolute inset-0 w-full h-full object-cover"
-              style={{ minWidth: 200, minHeight: 200 }}
             />
+            {/* Overlay bordo, verde se c'è un barcode */}
             <div
               className={
-                "absolute inset-0 pointer-events-none border-2 rounded-xl " +
-                (found
-                  ? "border-green-500 shadow-green-400/70 animate-none"
+                "absolute inset-0 pointer-events-none border-2 rounded-xl transition-all " +
+                (lastDetected
+                  ? "border-green-500 shadow-green-400/70"
                   : "border-cyan-400/80 animate-pulse")
               }
               style={{
-                boxShadow: found
+                boxShadow: lastDetected
                   ? "0 0 24px 0 #22c55e99"
                   : "0 0 24px 0 #06b6d433"
               }}
             ></div>
+            {/* Mostra il codice rilevato */}
+            {lastDetected && (
+              <div className="absolute bottom-2 left-0 w-full flex justify-center">
+                <span className="px-4 py-1 bg-white/90 rounded-lg border border-cyan-400 text-cyan-800 font-bold shadow">
+                  {lastDetected}
+                </span>
+              </div>
+            )}
           </div>
         )}
-
         {/* BOTTONI */}
         {!product && (
           <button
-            disabled={scanning}
-            onClick={() => {
-              setScanning(true);
-              setFound(false);
-              setLoading(false);
-            }}
+            disabled={!lastDetected || scanning}
+            onClick={handleScan}
             className={
               "mt-3 px-4 py-2 rounded-xl font-semibold shadow text-white " +
-              (scanning
+              (!lastDetected || scanning
                 ? "bg-gray-400 cursor-not-allowed"
                 : "bg-cyan-600 hover:bg-cyan-700 transition")
             }
           >
-            {scanning ? "Scansione attiva..." : "Scansiona"}
+            {scanning ? "Scansione..." : "Scansiona"}
           </button>
         )}
         {product && (
           <button
             onClick={() => {
               setProduct(null);
-              setFound(false);
               setScanning(false);
-              setLoading(false);
+              setLastDetected(null);
+              setErrorMsg(null);
             }}
             className="mt-3 px-4 py-2 rounded-xl font-semibold shadow bg-cyan-200 text-cyan-900 hover:bg-cyan-300 transition"
           >
             Scansiona un altro prodotto
           </button>
+        )}
+
+        {errorMsg && (
+          <div className="text-center text-xs text-red-600">{errorMsg}</div>
         )}
 
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
@@ -215,10 +181,10 @@ export default function SearchProductModal({ open, onClose }: Props) {
         </p>
         <button
           onClick={() => {
-            setScanning(false);
-            setFound(false);
-            setLoading(false);
             setProduct(null);
+            setScanning(false);
+            setLastDetected(null);
+            setErrorMsg(null);
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
