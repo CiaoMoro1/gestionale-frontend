@@ -39,10 +39,10 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
           height: { min: 480 }
         }
       },
-      locator: { patchSize: "x-large", halfSample: false },
+      locator: { patchSize: "medium", halfSample: true },
       decoder: { readers: ["ean_reader"] },
       locate: true,
-      frequency: 10,
+      frequency: 30,
     }, (err?: any) => {
       if (!err) Quagga.start();
     });
