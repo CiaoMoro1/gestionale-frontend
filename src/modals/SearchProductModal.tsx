@@ -24,8 +24,12 @@ export default function SearchProductModal({ open, onClose }: Props) {
 
   const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
 
+  // Serve per evitare che processi barcode quando non vuoi!
+  const allowScan = scanning && !loading && !product;
+
+  // Avvia SEMPRE la camera quando la modale è aperta!
   useEffect(() => {
-    if (!open || !scanning || !isMobile) return;
+    if (!open || !isMobile) return;
 
     Quagga.init(
       {
@@ -48,15 +52,15 @@ export default function SearchProductModal({ open, onClose }: Props) {
       }
     );
 
-    Quagga.onDetected(async (data: any) => {
-      if (loading || product) return;
+    const handler = async (data: any) => {
+      if (!allowScan) return;
       setLoading(true);
 
       const code = data.codeResult.code;
 
       const { data: prodotto, error } = await supabase
         .from("products")
-        .select("id, nome, ean, image_url") // aggiungi altri campi se vuoi
+        .select("id, nome, ean, image_url")
         .eq("ean", code)
         .single();
 
@@ -70,14 +74,17 @@ export default function SearchProductModal({ open, onClose }: Props) {
       setProduct(prodotto);
       setFound(true);
       setLoading(false);
-      Quagga.stop();
-    });
+      setScanning(false);
+    };
+
+    Quagga.onDetected(handler);
 
     return () => {
-      Quagga.offDetected();
+      Quagga.offDetected(handler);
       if (Quagga.running) Quagga.stop();
     };
-  }, [open, scanning, isMobile, loading, product]);
+    // eslint-disable-next-line
+  }, [open, isMobile, allowScan]);
 
   if (!open) return null;
 
@@ -85,7 +92,13 @@ export default function SearchProductModal({ open, onClose }: Props) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50">
       <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-3 relative flex flex-col items-center">
         <button
-          onClick={onClose}
+          onClick={() => {
+            setScanning(false);
+            setFound(false);
+            setLoading(false);
+            setProduct(null);
+            onClose();
+          }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
         >×</button>
         <h2 className="text-lg font-bold text-gray-900 text-center">
