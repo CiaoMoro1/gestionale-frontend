@@ -3,6 +3,7 @@ import { Package, CheckCircle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import VisualizzaParzialeModal from "../../components/VisualizzaParzialeModal";
 
+
 type Riepilogo = {
   id: number;
   fulfillment_center: string;
@@ -200,21 +201,47 @@ export default function ParzialiOrdini() {
                     </span>
                     </div>
                 ))}
-                {/* Bottone Aggiungi Parziale */}
-                <div className="flex mt-4">
-                    <button
-                    className="bg-blue-600 text-white rounded-full px-4 py-2 font-semibold shadow hover:bg-blue-800 transition mx-auto flex items-center gap-2 text-base md:text-lg"
+                {/* Bottoni Aggiungi Parziale + Chiudi Ordine */}
+                <div className="flex justify-center gap-4 mt-4">
+                  <button
+                    className="bg-blue-600 text-white rounded-full px-4 py-2 font-semibold shadow hover:bg-blue-800 transition flex items-center gap-2 text-base md:text-lg"
                     onClick={() =>
-                        navigate(
-                            `/ordini-amazon/dettaglio/${riep.fulfillment_center}/${riep.start_delivery}?numero_parziale=next`,
-                            { state: { from: "parziali" } }
-                        )
+                      navigate(
+                        `/ordini-amazon/dettaglio/${riep.fulfillment_center}/${riep.start_delivery}?numero_parziale=next`,
+                        { state: { from: "parziali" } }
+                      )
                     }
-                    >
+                  >
                     <Plus size={20} />
                     <span>Aggiungi Parziale</span>
-                    </button>
+                  </button>
+
+                  <button
+                    className={`bg-green-600 text-white font-bold rounded-full px-4 py-2 text-base md:text-lg shadow-lg transition flex items-center gap-2 ${
+                      !parziali[riep.id] || parziali[riep.id].length === 0 ? "opacity-40 cursor-not-allowed" : "hover:bg-green-700"
+                    }`}
+                    disabled={!parziali[riep.id] || parziali[riep.id].length === 0}
+                    onClick={() => {
+                      // Chiedi conferma: puoi usare window.confirm o un modale, oppure chiama direttamente l’API
+                      if (window.confirm("Sei sicuro di voler chiudere l’ordine?")) {
+                        // Qui chiama la funzione per chiudere ordine (POST su /api/amazon/vendor/parziali-wip/chiudi)
+                        fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/chiudi`, {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            center: riep.fulfillment_center,
+                            data: riep.start_delivery,
+                          }),
+                        }).then(() => window.location.reload());
+                      }
+                    }}
+                    title="Chiudi Ordine (tutte le quantità devono essere confermate)"
+                  >
+                    <CheckCircle size={20} />
+                    <span>Chiudi Ordine</span>
+                  </button>
                 </div>
+
             </div>
         </div>
       ))}
