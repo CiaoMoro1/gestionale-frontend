@@ -2,10 +2,7 @@ import { useEffect, useRef } from "react";
 import { Html5Qrcode } from "html5-qrcode";
 import { supabase } from "../lib/supabase";
 
-export default function SearchProductModal({
-  open,
-  onClose,
-}: { open: boolean; onClose: () => void }) {
+export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const scanningRef = useRef(false);
   const isMobile = /Mobi|Android|iPhone/i.test(navigator.userAgent);
@@ -24,32 +21,16 @@ export default function SearchProductModal({
         if (scanningRef.current) return;
         scanningRef.current = true;
 
-        // Pulisci codice, logga per debug
-        const barcode = decodedText.trim().replace(/[^0-9A-Za-z]/g, "");
-        console.log("Scansionato:", barcode, "| JSON:", JSON.stringify(barcode));
-
-        // Prima ricerca precisa
-        let { data, error } = await supabase
+        const { data, error } = await supabase
           .from("products")
           .select("id")
-          .eq("ean", barcode)
+          .eq("ean", decodedText)
           .single();
 
-        // Se non trovato, cerca anche per 'like' per essere più tollerante
         if (error || !data?.id) {
-          // Prova a trovare substring simile (caso di barcode con zeri mancanti o extra)
-          const { data: dataLike, error: errorLike } = await supabase
-            .from("products")
-            .select("id, ean")
-            .filter("ean", "ilike", `%${barcode}%`)
-            .maybeSingle();
-
-          if (errorLike || !dataLike?.id) {
-            alert(`Nessun prodotto trovato per EAN: ${barcode}`);
-            scanningRef.current = false;
-            return;
-          }
-          data = dataLike;
+          alert(`Nessun prodotto trovato per EAN: ${decodedText}`);
+          scanningRef.current = false;
+          return;
         }
 
         await scanner.stop();
@@ -59,11 +40,7 @@ export default function SearchProductModal({
     );
 
     return () => {
-      if (scannerRef.current) {
-        try { scannerRef.current.stop(); } catch {}
-        try { scannerRef.current.clear(); } catch {}
-      }
-      scanningRef.current = false;
+      scanner.stop().catch(() => {});
     };
   }, [open, isMobile]);
 
@@ -77,6 +54,7 @@ export default function SearchProductModal({
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
         >×</button>
         <h2 className="text-lg font-bold text-gray-900 text-center">Scannerizza codice a barre</h2>
+
         <div
           className="
             relative w-full aspect-square max-w-[320px]
@@ -93,6 +71,7 @@ export default function SearchProductModal({
             style={{ boxShadow: "0 0 24px 0 #06b6d433" }}
           ></div>
         </div>
+
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
           Inquadra il codice a barre <br />
           <span className="text-cyan-700 font-semibold">restando dentro il riquadro</span>
