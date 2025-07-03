@@ -13,7 +13,6 @@ export default function SearchProductModal({
   onBarcodeFound,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
 
@@ -24,83 +23,35 @@ export default function SearchProductModal({
 
     const codeReader = new BrowserMultiFormatReader();
     let active = true;
-    let animationId: number;
 
     (async () => {
       try {
-        // Ottieni lista camere
+        // Ottieni la lista delle camere disponibili
         const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+        // Cerca la camera posteriore (label contiene 'back' o 'environment')
         let backCamera = devices.find(device =>
           device.label.toLowerCase().includes("back") ||
           device.label.toLowerCase().includes("environment")
         );
-        if (!backCamera && devices.length > 0) backCamera = devices[0];
+        if (!backCamera && devices.length > 0) backCamera = devices[0]; // fallback prima camera
 
-        // Stream video alla <video>
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            deviceId: backCamera?.deviceId,
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
-          }
-        });
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play();
-        }
-
-        // Inizia il loop di scansione sul box centrale
-        const scanLoop = async () => {
-          if (!active || !videoRef.current || !canvasRef.current) return;
-          const video = videoRef.current;
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) return;
-
-          // Aspetta che la camera sia pronta
-          if (video.videoWidth === 0 || video.videoHeight === 0) {
-            animationId = requestAnimationFrame(scanLoop);
-            return;
-          }
-
-          // Box centrale (esempio: 70x220 pixel centrato)
-          const boxW = 300;
-          const boxH = 150;
-          const x = (video.videoWidth - boxW) / 2;
-          const y = (video.videoHeight - boxH) / 2;
-          canvas.width = boxW;
-          canvas.height = boxH;
-
-          ctx.drawImage(video, x, y, boxW, boxH, 0, 0, boxW, boxH);
-
-          try {
-            const result = await codeReader.decodeFromCanvas(canvas);
+        await codeReader.decodeFromVideoDevice(
+          backCamera?.deviceId,
+          videoRef.current!,
+          (result, err) => {
+            if (!active) return;
             if (result) {
               setScanning(false);
               active = false;
-              // Ferma lo stream video
-              stream.getTracks().forEach(track => track.stop());
+              (codeReader as any).reset && (codeReader as any).reset();
               if (onBarcodeFound) onBarcodeFound(result.getText());
               onClose();
-              return;
             }
-          } catch (e) {
-            // Ignora: no code found
+            if (err && err.message && err.message !== "No MultiFormat Readers were able to detect the code.") {
+              setError("Errore scanner: " + err.message);
+            }
           }
-          animationId = requestAnimationFrame(scanLoop);
-        };
-
-        // Aspetta che la <video> sia pronta
-        if (videoRef.current) {
-          videoRef.current.onloadedmetadata = () => {
-            scanLoop();
-          };
-          // Se già pronto
-          if (videoRef.current.readyState >= 2) {
-            scanLoop();
-          }
-        }
+        );
       } catch (e: any) {
         setError("Impossibile aprire fotocamera: " + (e?.message || e));
         setScanning(false);
@@ -109,14 +60,8 @@ export default function SearchProductModal({
 
     return () => {
       active = false;
+      (codeReader as any).reset && (codeReader as any).reset();
       setScanning(false);
-      // Stop stream video
-      if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
-        videoRef.current.srcObject = null;
-      }
-      if (animationId) cancelAnimationFrame(animationId);
     };
     // eslint-disable-next-line
   }, [open]);
@@ -161,16 +106,14 @@ export default function SearchProductModal({
               borderRadius: 18,
               top: "50%",
               left: "50%",
-              width: 300,
-              height: 150,
+              width: 220,
+              height: 70,
               transform: "translate(-50%, -50%)",
               pointerEvents: "none",
               boxShadow: "0 0 32px 0 #0ea5e955"
             }}
           />
         </div>
-        {/* Canvas invisibile usato per cropping */}
-        <canvas ref={canvasRef} style={{ display: "none" }} />
         {error && (
           <div className="text-red-500 text-sm mt-3 bg-white/90 px-2 py-1 rounded">{error}</div>
         )}
