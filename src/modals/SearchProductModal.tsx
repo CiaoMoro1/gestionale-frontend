@@ -2,13 +2,14 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
-type Props = {
+export default function SearchProductModal({
+  open,
+  onClose,
+}: {
   open: boolean;
   onClose: () => void;
-  onBarcodeFound?: (barcode: string) => void; // <-- AGGIUNGI QUESTA!
-};
-
-export default function SearchProductModal({ open, onClose, onBarcodeFound }: Props) {
+  onBarcodeFound?: (barcode: string) => void;  // AGGIUNGI QUI
+}) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -54,7 +55,7 @@ export default function SearchProductModal({ open, onClose, onBarcodeFound }: Pr
     });
 
     const handler = (result: any) => {
-      if (!scanningActiveRef.current) return; // Solo se scanner attivo!
+      if (!scanningActiveRef.current) return;
       if (!result.codeResult?.code) return;
       const code = result.codeResult.code;
       const box = result.box;
@@ -63,8 +64,11 @@ export default function SearchProductModal({ open, onClose, onBarcodeFound }: Pr
       const scaleY = 320 / 480;
       const xs = box.map((b: number[]) => b[0] * scaleX);
       const ys = box.map((b: number[]) => b[1] * scaleY);
-      const centerX = (xs[0] + xs[2]) / 2;
-      const centerY = (ys[0] + ys[2]) / 2;
+
+      // *** CENTRO REALE ***
+      const centerX = xs.reduce((sum: number, x: number) => sum + x, 0) / xs.length;
+      const centerY = ys.reduce((sum: number, y: number) => sum + y, 0) / ys.length;
+
       if (
         centerX >= boxRect.left - tolerance &&
         centerX <= boxRect.left + boxRect.width + tolerance &&
@@ -73,7 +77,7 @@ export default function SearchProductModal({ open, onClose, onBarcodeFound }: Pr
       ) {
         setBarcode(code);
         setScanningActive(false);
-        scanningActiveRef.current = false; // BLOCCA scanner!
+        scanningActiveRef.current = false;
       }
     };
 
@@ -90,7 +94,6 @@ export default function SearchProductModal({ open, onClose, onBarcodeFound }: Pr
     };
   }, [open]);
 
-  // Cambia handleSearch: se onBarcodeFound c'è, chiama quello!
   const handleSearch = async () => {
     if (!barcode) return;
     setProcessing(true);
@@ -98,13 +101,6 @@ export default function SearchProductModal({ open, onClose, onBarcodeFound }: Pr
 
     try { Quagga.stop(); } catch {}
 
-    if (onBarcodeFound) {
-      onBarcodeFound(barcode);
-      setProcessing(false);
-      return;
-    }
-
-    // Comportamento standard (default "vecchio" redirect prodotto)
     const { data, error } = await supabase
       .from("products")
       .select("id")
