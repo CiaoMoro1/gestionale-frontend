@@ -40,7 +40,10 @@ export default function DettaglioDestinazione() {
   const [confirmAction, setConfirmAction] = useState<null | "reset" | "parziale" | "chiudi">(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const barcode = location.state?.barcode;
   const from = location.state?.from === "nuovi" ? "nuovi" : "parziali";
+  const fromDraft = location.state?.fromDraft;
+
 
   // Barra ricerca manuale con autocomplete
   const [skuSearch, setSkuSearch] = useState("");
@@ -81,7 +84,7 @@ export default function DettaglioDestinazione() {
       });
   }, [center, data]);
 
-  
+
 useEffect(() => {
   const auto = location.state?.autoOpen;
   if (auto && articoli.length > 0) {
@@ -308,6 +311,14 @@ useEffect(() => {
     <div className="w-full max-w-[900px] mx-auto px-2 pb-24 font-sans">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 mb-3 justify-between w-full">
+        {fromDraft && (
+          <button
+            onClick={() => navigate(`/ordini-amazon/draft?barcode=${barcode}`)}
+            className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-blue-700 font-semibold rounded-xl shadow hover:bg-blue-100 transition mb-4"
+          >
+            ⬅️ Torna al draft
+          </button>
+        )}
         {/* LEFT: Fulfillment center + data */}
         <div className="flex items-center gap-2 min-w-0">
           <Package className="text-blue-600 flex-shrink-0" size={26} />
