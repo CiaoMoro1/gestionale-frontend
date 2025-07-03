@@ -457,7 +457,7 @@ useEffect(() => {
           setInputs([{ quantita: "", collo: 1 }]);
         }}
       >×</button>
-      <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali</div>
+      <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali - {center}</div>
       <div className="mb-2 font-mono text-base flex items-center gap-3">
         <span className="bg-blue-100 px-2 py-1 rounded">
           {modaleArticolo.model_number} - Ordinati :{" "}

@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
-export default function SearchProductModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onBarcodeFound?: (barcode: string) => void; // <-- AGGIUNGI QUESTA!
+};
+
+export default function SearchProductModal({ open, onClose, onBarcodeFound }: Props) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -84,6 +90,7 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
     };
   }, [open]);
 
+  // Cambia handleSearch: se onBarcodeFound c'è, chiama quello!
   const handleSearch = async () => {
     if (!barcode) return;
     setProcessing(true);
@@ -91,6 +98,13 @@ export default function SearchProductModal({ open, onClose }: { open: boolean; o
 
     try { Quagga.stop(); } catch {}
 
+    if (onBarcodeFound) {
+      onBarcodeFound(barcode);
+      setProcessing(false);
+      return;
+    }
+
+    // Comportamento standard (default "vecchio" redirect prodotto)
     const { data, error } = await supabase
       .from("products")
       .select("id")
