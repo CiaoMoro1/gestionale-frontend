@@ -1,137 +1,155 @@
 import { useState } from "react";
-import SearchProductModal from "../../modals/SearchProductModal";
-import ModaleParziale from "../../components/ModaleParziale";
+import BarcodeScannerModal from "../../components/BarcodeScannerModal";
+import ModaleParziale from "../../components/ModaleParziale"; // Usa il tuo componente estratto!
 
-type CentroRiga = {
-  fulfillment_center: string;
-  po_number: string;
-  qty_ordered: number;
-};
-
-type CentriInfo = {
-  model_number: string;
-  vendor_product_id: string;
-  righe: CentroRiga[];
-};
-
-export default function DraftOrdini() {
+export default function DraftGestione() {
+  const [barcode, setBarcode] = useState("");
+  const [foundRows, setFoundRows] = useState<any[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [centriInfo, setCentriInfo] = useState<CentriInfo | null>(null);
-  const [modaleArticolo, setModaleArticolo] = useState<any>(null);
+  const [modaleArticolo, setModaleArticolo] = useState<any | null>(null);
 
-  // Funzioni "mock" da sostituire con quelle reali se vuoi
-  const getParzialiStorici = () => [];
-  const getResiduoInput = () => 9999;
-  const aggiungiParziali = async () => {};
-
-  // Callback dopo lettura barcode
-  async function handleBarcodeTrovato(barcode: string) {
-    setScannerOpen(false);
-    setModaleArticolo(null);
-    setCentriInfo(null);
-
-    // Chiamata al backend (API Flask)
+  // Ricerca API per barcode/SKU
+  async function searchArticle(code: string) {
+    setFoundRows([]); // reset
+    if (!code) return;
     const res = await fetch(
-      `/api/amazon/vendor/draft-barcode?ean=${encodeURIComponent(barcode)}`
+      `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items/by-barcode?barcode=${encodeURIComponent(code)}`
     );
-    if (!res.ok) {
-      alert("Articolo non trovato!");
-      return;
-    }
-    const info = await res.json();
-    setCentriInfo(info);
+    const data = await res.json();
+    setFoundRows(data);
+  }
+
+  function handleScannerFound(ean: string) {
+    setBarcode(ean);
+    searchArticle(ean);
+    setScannerOpen(false);
+  }
+
+  function handleManualSearch(e: React.FormEvent) {
+    e.preventDefault();
+    if (!barcode.trim()) return;
+    searchArticle(barcode.trim());
+  }
+
+  // Dopo chiusura modale, aggiorna la tabella!
+  function handleCloseModale() {
+    setModaleArticolo(null);
+    if (barcode) searchArticle(barcode);
+  }
+
+  // Funzioni per ModaleParziale (minima versione per draft!)
+  function getResiduoInput(idx: number, articolo: any, inputs: any[]) {
+    // qty residua = qty ordinata - qty già confermata - gli input che stai inserendo
+    return Math.max(
+      0,
+      articolo.qty_ordered -
+        articolo.qty_confirmed -
+        inputs.map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0)).reduce((a, b) => a + b, 0)
+    );
+  }
+
+  function getParzialiStorici() {
+    // In draft, puoi non mostrare i parziali storici (o fetch se vuoi)
+    return [];
+  }
+
+  async function aggiungiParziali(inputs: any[]) {
+    // Chiama l’API passando center+data dalla riga
+    await fetch(
+      `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${modaleArticolo.fulfillment_center}&data=${modaleArticolo.start_delivery}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          parziali: inputs.map((r: any) => ({
+            model_number: modaleArticolo.model_number,
+            quantita: Number(r.quantita),
+            collo: r.collo,
+            po_number: modaleArticolo.po_number,
+            confermato: false,
+          })),
+        }),
+      }
+    );
   }
 
   return (
-    <div className="max-w-xl mx-auto px-2 py-5">
-      <h1 className="text-2xl font-bold mb-6 text-center">DRAFT — Prelievo Ordini</h1>
+    <div className="max-w-3xl mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Gestione DRAFT ordini (barcode/SKU)</h1>
 
-      {/* Bottone scanner */}
-      <div className="flex justify-center mt-10 mb-10">
+      {/* Ricerca manuale e scanner */}
+      <div className="flex gap-2 mb-4">
+        <form onSubmit={handleManualSearch} className="flex-1 flex gap-2">
+          <input
+            value={barcode}
+            onChange={e => setBarcode(e.target.value)}
+            placeholder="Cerca SKU o EAN"
+            className="border rounded px-3 py-2 w-full"
+          />
+          <button type="submit" className="bg-cyan-700 text-white px-4 py-2 rounded">Cerca</button>
+        </form>
         <button
-          className="bg-cyan-700 text-white font-bold px-8 py-4 rounded-2xl text-xl shadow hover:bg-cyan-900 transition"
-          onClick={() => {
-            setCentriInfo(null);
-            setScannerOpen(true);
-            setModaleArticolo(null);
-          }}
+          className="bg-gray-700 text-white px-4 py-2 rounded"
+          onClick={() => setScannerOpen(true)}
         >
-          Scannerizza barcode
+          Scanner
         </button>
       </div>
 
-      {/* Modale scanner */}
-      <SearchProductModal
+      {/* Scanner modal */}
+      <BarcodeScannerModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onBarcodeFound={handleBarcodeTrovato}
+        onFound={handleScannerFound}
       />
 
-      {/* Tabella centri/PO trovati */}
-      {centriInfo && (
-        <div className="bg-white rounded-xl shadow p-4 my-6">
-          <div className="flex justify-between items-center mb-4">
-            <div>
-              <h2 className="font-bold text-lg">
-                ARTICOLO: {centriInfo.model_number}
-              </h2>
-              <div className="text-sm text-gray-600">
-                EAN: {centriInfo.vendor_product_id}
-              </div>
-            </div>
-            <button
-              className="px-3 py-1 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-xs"
-              onClick={() => setCentriInfo(null)}
-            >
-              Nuova scansione
-            </button>
-          </div>
-          <table className="w-full border mt-2 text-sm">
-            <thead>
-              <tr className="bg-gray-100">
-                <th className="px-3 py-2 text-left">Centro</th>
-                <th className="px-3 py-2 text-center">Quantità</th>
-                <th className="px-3 py-2 text-center">PO</th>
-                <th className="px-3 py-2 text-center">Azioni</th>
+      {/* Risultati */}
+      {foundRows.length === 0 ? (
+        <div className="text-neutral-400">Nessun articolo trovato</div>
+      ) : (
+        <table className="w-full border mb-10 text-sm">
+          <thead>
+            <tr>
+              <th className="py-2 px-1">Centro</th>
+              <th className="py-2 px-1">PO</th>
+              <th className="py-2 px-1">SKU</th>
+              <th className="py-2 px-1">EAN</th>
+              <th className="py-2 px-1">Ord.</th>
+              <th className="py-2 px-1">Conf.</th>
+              <th className="py-2 px-1"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {foundRows.map((art, idx) => (
+              <tr key={idx}>
+                <td className="border px-1">{art.fulfillment_center}</td>
+                <td className="border px-1 font-mono">{art.po_number}</td>
+                <td className="border px-1 font-mono">{art.model_number}</td>
+                <td className="border px-1">{art.vendor_product_id}</td>
+                <td className="border px-1 text-right">{art.qty_ordered}</td>
+                <td className="border px-1 text-right">{art.qty_confirmed}</td>
+                <td className="border px-1 text-center">
+                  <button
+                    className="underline text-blue-700 font-semibold"
+                    onClick={() => setModaleArticolo(art)}
+                  >
+                    Gestisci Parziale
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {centriInfo.righe.map((riga, idx) => (
-                <tr key={idx} className="border-t">
-                  <td className="px-3 py-2">{riga.fulfillment_center}</td>
-                  <td className="px-3 py-2 text-center">{riga.qty_ordered}</td>
-                  <td className="px-3 py-2 text-center">{riga.po_number}</td>
-                  <td className="px-3 py-2 text-center">
-                    <button
-                      className="px-3 py-1 bg-cyan-700 text-white rounded-lg hover:bg-cyan-900 text-sm"
-                      onClick={() =>
-                        setModaleArticolo({
-                          model_number: centriInfo.model_number,
-                          vendor_product_id: centriInfo.vendor_product_id,
-                          po_number: riga.po_number,
-                          qty_ordered: riga.qty_ordered,
-                          fulfillment_center: riga.fulfillment_center,
-                        })
-                      }
-                    >
-                      Gestisci parziali
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
 
-      {/* Modale gestione parziali */}
+      {/* Modale inserimento quantità/collo */}
       {modaleArticolo && (
         <ModaleParziale
           articolo={modaleArticolo}
-          onClose={() => setModaleArticolo(null)}
-          getParzialiStorici={getParzialiStorici}
-          getResiduoInput={getResiduoInput}
+          onClose={handleCloseModale}
           aggiungiParziali={aggiungiParziali}
+          getResiduoInput={getResiduoInput}
+          getParzialiStorici={getParzialiStorici}
         />
       )}
     </div>
