@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
+// Tipizzazione chiara
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  onBarcodeFound?: (barcode: string) => void;
+};
+
 export default function SearchProductModal({
   open,
   onClose,
-  onBarcodeFound, // <-- AGGIUNGI QUI
-}: {
-  open: boolean;
-  onClose: () => void;
-  onBarcodeFound?: (barcode: string) => void; // <-- AGGIUNGI QUI
-}) {
+  onBarcodeFound,
+}: Props) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
@@ -18,9 +21,11 @@ export default function SearchProductModal({
   const [, setScanningActive] = useState(true);
   const scanningActiveRef = useRef(true);
 
+  // Configurazione box centrale (modifica qui per cambiare posizione/dimensioni)
   const boxRect = { left: 30, top: 120, width: 260, height: 80 };
   const tolerance = 40;
 
+  // Resetta lo scanner
   const startScanner = () => {
     setBarcode(null);
     setProcessing(false);
@@ -29,47 +34,65 @@ export default function SearchProductModal({
     scanningActiveRef.current = true;
   };
 
+  // Setup Quagga ogni volta che "open" diventa true
   useEffect(() => {
     if (!open) return;
+
     setBarcode(null);
     setErrorMsg(null);
     setProcessing(false);
     setScanningActive(true);
     scanningActiveRef.current = true;
 
-    Quagga.init({
-      inputStream: {
-        type: "LiveStream",
-        target: scannerRef.current!,
-        constraints: {
-          facingMode: "environment",
-          width: { min: 640 },
-          height: { min: 480 }
+    // Funzione di avvio
+    function startQuagga() {
+      Quagga.init(
+        {
+          inputStream: {
+            type: "LiveStream",
+            target: scannerRef.current!,
+            constraints: {
+              facingMode: "environment",
+              width: { min: 640 },
+              height: { min: 480 }
+            }
+          },
+          locator: { patchSize: "medium", halfSample: true },
+          decoder: { readers: ["ean_reader"] },
+          locate: true,
+          frequency: 30,
+        },
+        (err?: any) => {
+          if (err) {
+            setErrorMsg("Errore avvio scanner: " + err.message);
+            return;
+          }
+          Quagga.start();
         }
-      },
-      locator: { patchSize: "medium", halfSample: true },
-      decoder: { readers: ["ean_reader"] },
-      locate: true,
-      frequency: 30,
-    }, (err?: any) => {
-      if (!err) Quagga.start();
-    });
+      );
+    }
 
+    startQuagga();
+
+    // Handler del barcode rilevato
     const handler = (result: any) => {
       if (!scanningActiveRef.current) return;
       if (!result.codeResult?.code) return;
-      const code = result.codeResult.code;
-      const box = result.box;
+
+      const code: string = result.codeResult.code;
+      const box: number[][] = result.box;
       if (!box || box.length < 4) return;
+
       const scaleX = 320 / 640;
       const scaleY = 320 / 480;
       const xs = box.map((b: number[]) => b[0] * scaleX);
       const ys = box.map((b: number[]) => b[1] * scaleY);
 
-      // *** CENTRO REALE ***
+      // CENTRO: media di tutti i vertici (meglio ancora che solo diagonale)
       const centerX = xs.reduce((sum: number, x: number) => sum + x, 0) / xs.length;
       const centerY = ys.reduce((sum: number, y: number) => sum + y, 0) / ys.length;
 
+      // Overlay box di tolleranza
       if (
         centerX >= boxRect.left - tolerance &&
         centerX <= boxRect.left + boxRect.width + tolerance &&
@@ -79,6 +102,8 @@ export default function SearchProductModal({
         setBarcode(code);
         setScanningActive(false);
         scanningActiveRef.current = false;
+        // Log per debug
+        //console.log("Codice letto:", code);
       }
     };
 
@@ -93,38 +118,40 @@ export default function SearchProductModal({
       setScanningActive(true);
       scanningActiveRef.current = true;
     };
+    // eslint-disable-next-line
   }, [open]);
 
+  // Clic su "Apri" o "Cerca"
   const handleSearch = async () => {
-  if (!barcode) return;
-  setProcessing(true);
-  setErrorMsg(null);
+    if (!barcode) return;
+    setProcessing(true);
+    setErrorMsg(null);
 
-  try { Quagga.stop(); } catch {}
+    try { Quagga.stop(); } catch {}
 
-  // 1️⃣ Se la callback custom esiste, chiama quella! (DRAFT: mostra lista centri/PO)
-  if (onBarcodeFound) {
-    onBarcodeFound(barcode);
+    // Callback custom per draft (tabella centri/PO)
+    if (onBarcodeFound) {
+      onBarcodeFound(barcode);
+      setProcessing(false);
+      return;
+    }
+
+    // Default: ricerca prodotti (tabella products)
+    const { data, error } = await supabase
+      .from("products")
+      .select("id")
+      .eq("ean", barcode.trim())
+      .single();
+
     setProcessing(false);
-    return;
-  }
 
-  // 2️⃣ Default: redirect alla pagina prodotto (usato in ricerca classica)
-  const { data, error } = await supabase
-    .from("products")
-    .select("id")
-    .eq("ean", barcode.trim())
-    .single();
+    if (error || !data?.id) {
+      setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
+      return;
+    }
 
-  setProcessing(false);
-
-  if (error || !data?.id) {
-    setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
-    return;
-  }
-
-  window.location.href = `/prodotti/${data.id}`;
-};
+    window.location.href = `/prodotti/${data.id}`;
+  };
 
   if (!open) return null;
 
@@ -156,14 +183,14 @@ export default function SearchProductModal({
             className="absolute inset-0 w-full h-full object-cover"
             style={{ zIndex: 1 }}
           />
-          {/* Box centrale che diventa verde */}
+          {/* Box centrale */}
           <div
             style={{
               position: "absolute",
-              left: boxRect.left + "px",
-              top: boxRect.top + "px",
-              width: boxRect.width + "px",
-              height: boxRect.height + "px",
+              left: boxRect.left,
+              top: boxRect.top,
+              width: boxRect.width,
+              height: boxRect.height,
               border: `3px solid ${barcode ? "#16a34a" : "#06b6d4"}`,
               borderRadius: "14px",
               boxShadow: barcode
@@ -190,7 +217,7 @@ export default function SearchProductModal({
               disabled={processing}
               className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-green-600 hover:bg-green-700 transition"
             >
-              {processing ? "Apro..." : "Apri"}
+              {processing ? "Apro..." : onBarcodeFound ? "Cerca" : "Apri"}
             </button>
             <button
               onClick={startScanner}
