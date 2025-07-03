@@ -186,9 +186,9 @@ export default function SearchProductModal({
         </h2>
         {/* Video e overlay */}
         <div
-          className="relative w-full aspect-square max-w-[320px] flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
-          style={{ minHeight: 320, minWidth: 320 }}
+          className="relative w-full max-w-[400px] h-[320px] sm:h-[380px] flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
           ref={scannerRef}
+          style={{ minWidth: 280, minHeight: 200 }}
         >
           {/* Overlay box centrale */}
           <div
