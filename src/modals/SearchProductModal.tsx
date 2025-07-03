@@ -2,11 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import Quagga from "quagga";
 import { supabase } from "../lib/supabase";
 
-// Tipizzazione chiara
 type Props = {
   open: boolean;
   onClose: () => void;
   onBarcodeFound?: (barcode: string) => void;
+};
+
+type DetectedBarcode = {
+  code: string;
+  box: number[][];
+  center: { x: number; y: number };
 };
 
 export default function SearchProductModal({
@@ -15,36 +20,29 @@ export default function SearchProductModal({
   onBarcodeFound,
 }: Props) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const [barcode, setBarcode] = useState<string | null>(null);
+  const [barcodes, setBarcodes] = useState<DetectedBarcode[]>([]);
+  const [selected, setSelected] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [, setScanningActive] = useState(true);
-  const scanningActiveRef = useRef(true);
+  const [videoDims, setVideoDims] = useState({ width: 640, height: 480 });
 
-  // Configurazione box centrale (modifica qui per cambiare posizione/dimensioni)
-  const boxRect = { left: 30, top: 120, width: 260, height: 80 };
-  const tolerance = 40;
+  // Per focus manuale
+  const lastTapRef = useRef<number>(0);
 
-  // Resetta lo scanner
+  // Start o resetta lo scanner
   const startScanner = () => {
-    setBarcode(null);
-    setProcessing(false);
+    setBarcodes([]);
+    setSelected(null);
     setErrorMsg(null);
-    setScanningActive(true);
-    scanningActiveRef.current = true;
+    setProcessing(false);
   };
 
-  // Setup Quagga ogni volta che "open" diventa true
+  // Rileva i codici con posizione e box
   useEffect(() => {
     if (!open) return;
 
-    setBarcode(null);
-    setErrorMsg(null);
-    setProcessing(false);
-    setScanningActive(true);
-    scanningActiveRef.current = true;
+    startScanner();
 
-    // Funzione di avvio
     function startQuagga() {
       Quagga.init(
         {
@@ -54,11 +52,11 @@ export default function SearchProductModal({
             constraints: {
               facingMode: "environment",
               width: { min: 640 },
-              height: { min: 480 }
-            }
+              height: { min: 480 },
+            },
           },
           locator: { patchSize: "medium", halfSample: true },
-          decoder: { readers: ["ean_reader"] },
+          decoder: { readers: ["ean_reader", "code_128_reader"] },
           locate: true,
           frequency: 30,
         },
@@ -68,89 +66,121 @@ export default function SearchProductModal({
             return;
           }
           Quagga.start();
+          // Ottieni la vera dimensione video dopo avvio
+          setTimeout(() => {
+            const video = scannerRef.current?.querySelector("video");
+            if (video) {
+              setVideoDims({
+                width: video.videoWidth || 640,
+                height: video.videoHeight || 480,
+              });
+            }
+          }, 500);
         }
       );
     }
 
     startQuagga();
 
-    // Handler del barcode rilevato
     const handler = (result: any) => {
-      if (!scanningActiveRef.current) return;
-      if (!result.codeResult?.code) return;
+      if (!result.codeResult?.code || !result.box || result.box.length < 4)
+        return;
 
-      const code: string = result.codeResult.code;
+      const { code } = result.codeResult;
       const box: number[][] = result.box;
-      if (!box || box.length < 4) return;
 
-      const scaleX = 320 / 640;
-      const scaleY = 320 / 480;
-      const xs = box.map((b: number[]) => b[0] * scaleX);
-      const ys = box.map((b: number[]) => b[1] * scaleY);
+      // Calcola centro
+      const xs = box.map((b: number[]) => b[0]);
+      const ys = box.map((b: number[]) => b[1]);
+      const center = {
+        x: xs.reduce((sum, x) => sum + x, 0) / xs.length,
+        y: ys.reduce((sum, y) => sum + y, 0) / ys.length,
+      };
 
-      // CENTRO: media di tutti i vertici (meglio ancora che solo diagonale)
-      const centerX = xs.reduce((sum: number, x: number) => sum + x, 0) / xs.length;
-      const centerY = ys.reduce((sum: number, y: number) => sum + y, 0) / ys.length;
-
-      // Overlay box di tolleranza
-      if (
-        centerX >= boxRect.left - tolerance &&
-        centerX <= boxRect.left + boxRect.width + tolerance &&
-        centerY >= boxRect.top - tolerance &&
-        centerY <= boxRect.top + boxRect.height + tolerance
-      ) {
-        setBarcode(code);
-        setScanningActive(false);
-        scanningActiveRef.current = false;
-        // Log per debug
-        //console.log("Codice letto:", code);
-      }
+      setBarcodes((prev) => {
+        // Se già presente aggiorna la posizione, se nuovo aggiungi
+        if (prev.some((b) => b.code === code)) {
+          return prev.map((b) =>
+            b.code === code ? { ...b, box, center } : b
+          );
+        }
+        return [...prev, { code, box, center }];
+      });
     };
 
     Quagga.onDetected(handler);
 
     return () => {
       Quagga.offDetected(handler);
-      try { Quagga.stop(); } catch {}
-      setBarcode(null);
+      try {
+        Quagga.stop();
+      } catch {}
+      setBarcodes([]);
+      setSelected(null);
       setErrorMsg(null);
       setProcessing(false);
-      setScanningActive(true);
-      scanningActiveRef.current = true;
     };
     // eslint-disable-next-line
   }, [open]);
 
-  // Clic su "Apri" o "Cerca"
-  const handleSearch = async () => {
-    if (!barcode) return;
+  // Gestione ricerca/click barcode
+  const handleSearch = async (code: string) => {
     setProcessing(true);
     setErrorMsg(null);
+    try {
+      Quagga.stop();
+    } catch {}
 
-    try { Quagga.stop(); } catch {}
-
-    // Callback custom per draft (tabella centri/PO)
     if (onBarcodeFound) {
-      onBarcodeFound(barcode);
+      onBarcodeFound(code);
       setProcessing(false);
       return;
     }
 
-    // Default: ricerca prodotti (tabella products)
+    // Default: ricerca su products
     const { data, error } = await supabase
       .from("products")
       .select("id")
-      .eq("ean", barcode.trim())
+      .eq("ean", code.trim())
       .single();
 
     setProcessing(false);
 
     if (error || !data?.id) {
-      setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
+      setErrorMsg(`Nessun prodotto trovato per EAN: ${code}`);
       return;
     }
-
     window.location.href = `/prodotti/${data.id}`;
+  };
+
+  // Funzione focus camera su tap
+  const handleVideoTap = () => {
+    const now = Date.now();
+    // Debounce per evitare doppio tap
+    if (now - lastTapRef.current < 500) return;
+    lastTapRef.current = now;
+
+    const video = scannerRef.current?.querySelector("video");
+    if (video && "focus" in video) {
+      // Alcuni browser supportano MediaTrack focus, altri no
+      // Qui richiami l'API autofocus se esiste
+      // @ts-ignore
+      if (typeof video.focus === "function") video.focus();
+    }
+    // In alternativa, puoi tentare il re-focus via constraints
+    const stream = video && (video as any).srcObject;
+    if (stream && stream.getTracks) {
+      const track = stream.getTracks()[0];
+      // Alcune webcam moderne supportano la focusMode
+      // @ts-ignore
+      if (track && track.applyConstraints) {
+        // Prova autofocus
+        // @ts-ignore
+        track.applyConstraints({
+          advanced: [{ focusMode: "continuous" }],
+        });
+      }
+    }
   };
 
   if (!open) return null;
@@ -160,89 +190,111 @@ export default function SearchProductModal({
       <div className="bg-white p-3 rounded-2xl shadow-2xl w-full max-w-xs sm:max-w-md space-y-3 relative flex flex-col items-center">
         <button
           onClick={() => {
-            try { Quagga.stop(); } catch {}
-            setBarcode(null);
+            try {
+              Quagga.stop();
+            } catch {}
+            setBarcodes([]);
+            setSelected(null);
             setErrorMsg(null);
             setProcessing(false);
-            setScanningActive(true);
-            scanningActiveRef.current = true;
             onClose();
           }}
           className="absolute top-2 right-3 text-xl text-gray-400 hover:text-gray-700"
-        >×</button>
+        >
+          ×
+        </button>
         <h2 className="text-lg font-bold text-gray-900 text-center">
-          Scannerizza codice a barre
+          Scannerizza codici a barre
         </h2>
         {/* VIDEO + OVERLAY */}
         <div
           className="relative w-full aspect-square max-w-[320px] flex items-center justify-center rounded-xl overflow-hidden border border-cyan-400 bg-gray-100 shadow-inner"
           style={{ minHeight: 320, minWidth: 320 }}
+          ref={scannerRef}
+          onClick={handleVideoTap}
+          title="Tocca per mettere a fuoco"
         >
-          <div
-            ref={scannerRef}
-            className="absolute inset-0 w-full h-full object-cover"
-            style={{ zIndex: 1 }}
-          />
-          {/* Box centrale */}
-          <div
-            style={{
-              position: "absolute",
-              left: boxRect.left,
-              top: boxRect.top,
-              width: boxRect.width,
-              height: boxRect.height,
-              border: `3px solid ${barcode ? "#16a34a" : "#06b6d4"}`,
-              borderRadius: "14px",
-              boxShadow: barcode
-                ? "0 0 24px 0 #16a34a77"
-                : "0 0 24px 0 #06b6d433",
-              pointerEvents: "none" as const,
-              zIndex: 2,
-              transition: "border-color .2s, box-shadow .2s"
-            }}
-          />
-          {/* Mostra barcode trovato */}
-          {barcode && (
-            <div className="absolute left-0 w-full flex justify-center" style={{ top: boxRect.top + boxRect.height + 8 }}>
-              <span className="px-4 py-1 bg-white/90 rounded-lg border border-cyan-400 text-cyan-800 font-bold shadow">
-                {barcode}
-              </span>
-            </div>
-          )}
+          {/* Overlay su ogni barcode */}
+          {barcodes.map((b) => {
+            // Proietta posizione nel box video reale
+            const scaleX = 320 / videoDims.width;
+            const scaleY = 320 / videoDims.height;
+            const left = b.center.x * scaleX - 50;
+            const top = b.center.y * scaleY - 30;
+
+            return (
+              <div
+                key={b.code}
+                style={{
+                  position: "absolute",
+                  left: left,
+                  top: top,
+                  zIndex: 3,
+                  width: 100,
+                  minHeight: 40,
+                  background: "#fff",
+                  border: b.code === selected ? "3px solid #16a34a" : "2px solid #06b6d4",
+                  borderRadius: 12,
+                  boxShadow: "0 4px 12px 0 #0002",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  transition: "border .2s",
+                }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelected(b.code);
+                }}
+                className="barcode-card"
+              >
+                <span
+                  className="font-semibold text-cyan-800"
+                  style={{ fontSize: 16 }}
+                >
+                  {b.code}
+                </span>
+                {selected === b.code && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleSearch(b.code);
+                    }}
+                    disabled={processing}
+                    className="ml-2 px-3 py-1 rounded-xl font-semibold shadow text-white bg-green-600 hover:bg-green-700 transition"
+                  >
+                    {processing ? "Apro..." : onBarcodeFound ? "Cerca" : "Apri"}
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
-        {barcode && (
-          <div className="flex gap-2 mt-3">
-            <button
-              onClick={handleSearch}
-              disabled={processing}
-              className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-green-600 hover:bg-green-700 transition"
-            >
-              {processing ? "Apro..." : onBarcodeFound ? "Cerca" : "Apri"}
-            </button>
-            <button
-              onClick={startScanner}
-              disabled={processing}
-              className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-cyan-600 hover:bg-cyan-700 transition"
-            >
-              Reset
-            </button>
-          </div>
-        )}
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={startScanner}
+            disabled={processing}
+            className="px-4 py-2 rounded-xl font-semibold shadow text-white bg-cyan-600 hover:bg-cyan-700 transition"
+          >
+            Reset
+          </button>
+        </div>
         {errorMsg && (
           <div className="text-center text-xs text-red-600">{errorMsg}</div>
         )}
         <p className="text-center text-sm text-gray-600 px-2 mt-1">
-          Posiziona il barcode dentro (o vicino) al riquadro.<br />
-          Il box diventa verde quando è pronto!
+          Tocca la zona video per mettere a fuoco.<br />
+          Clicca su un codice per selezionarlo, poi su "Cerca/Apri"!
         </p>
         <button
           onClick={() => {
-            try { Quagga.stop(); } catch {}
-            setBarcode(null);
+            try {
+              Quagga.stop();
+            } catch {}
+            setBarcodes([]);
+            setSelected(null);
             setErrorMsg(null);
             setProcessing(false);
-            setScanningActive(true);
-            scanningActiveRef.current = true;
             onClose();
           }}
           className="mt-2 text-cyan-700 font-semibold hover:underline text-sm transition"
