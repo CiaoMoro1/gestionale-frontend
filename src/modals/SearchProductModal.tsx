@@ -5,10 +5,11 @@ import { supabase } from "../lib/supabase";
 export default function SearchProductModal({
   open,
   onClose,
+  onBarcodeFound, // <-- AGGIUNGI QUI
 }: {
   open: boolean;
   onClose: () => void;
-  onBarcodeFound?: (barcode: string) => void;  // AGGIUNGI QUI
+  onBarcodeFound?: (barcode: string) => void; // <-- AGGIUNGI QUI
 }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const [barcode, setBarcode] = useState<string | null>(null);
@@ -95,27 +96,35 @@ export default function SearchProductModal({
   }, [open]);
 
   const handleSearch = async () => {
-    if (!barcode) return;
-    setProcessing(true);
-    setErrorMsg(null);
+  if (!barcode) return;
+  setProcessing(true);
+  setErrorMsg(null);
 
-    try { Quagga.stop(); } catch {}
+  try { Quagga.stop(); } catch {}
 
-    const { data, error } = await supabase
-      .from("products")
-      .select("id")
-      .eq("ean", barcode.trim())
-      .single();
-
+  // 1️⃣ Se la callback custom esiste, chiama quella! (DRAFT: mostra lista centri/PO)
+  if (onBarcodeFound) {
+    onBarcodeFound(barcode);
     setProcessing(false);
+    return;
+  }
 
-    if (error || !data?.id) {
-      setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
-      return;
-    }
+  // 2️⃣ Default: redirect alla pagina prodotto (usato in ricerca classica)
+  const { data, error } = await supabase
+    .from("products")
+    .select("id")
+    .eq("ean", barcode.trim())
+    .single();
 
-    window.location.href = `/prodotti/${data.id}`;
-  };
+  setProcessing(false);
+
+  if (error || !data?.id) {
+    setErrorMsg(`Nessun prodotto trovato per EAN: ${barcode}`);
+    return;
+  }
+
+  window.location.href = `/prodotti/${data.id}`;
+};
 
   if (!open) return null;
 
