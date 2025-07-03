@@ -1,12 +1,12 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import SearchProductModal from "../../modals/SearchProductModal";
-import ModaleParziale from "../../components/ModaleParziale"; // Usa il tuo componente estratto!
 
 export default function DraftGestione() {
   const [barcode, setBarcode] = useState("");
   const [foundRows, setFoundRows] = useState<any[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
-  const [modaleArticolo, setModaleArticolo] = useState<any | null>(null);
+  const navigate = useNavigate();
 
   // Ricerca API per barcode/SKU
   async function searchArticle(code: string) {
@@ -31,33 +31,6 @@ export default function DraftGestione() {
     searchArticle(barcode.trim());
   }
 
-  // Dopo chiusura modale, aggiorna la tabella!
-  function handleCloseModale() {
-    setModaleArticolo(null);
-    if (barcode) searchArticle(barcode);
-  }
-
-
-  async function aggiungiParziali(inputs: any[]) {
-    // Chiama l’API passando center+data dalla riga
-    await fetch(
-      `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${modaleArticolo.fulfillment_center}&data=${modaleArticolo.start_delivery}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parziali: inputs.map((r: any) => ({
-            model_number: modaleArticolo.model_number,
-            quantita: Number(r.quantita),
-            collo: r.collo,
-            po_number: modaleArticolo.po_number,
-            confermato: false,
-          })),
-        }),
-      }
-    );
-  }
-
   return (
     <div className="max-w-3xl mx-auto p-4">
       <h1 className="text-2xl font-bold mb-4">Gestione DRAFT ordini (barcode/SKU)</h1>
@@ -71,7 +44,9 @@ export default function DraftGestione() {
             placeholder="Cerca SKU o EAN"
             className="border rounded px-3 py-2 w-full"
           />
-          <button type="submit" className="bg-cyan-700 text-white px-4 py-2 rounded">Cerca</button>
+          <button type="submit" className="bg-cyan-700 text-white px-4 py-2 rounded">
+            Cerca
+          </button>
         </form>
         <button
           className="bg-gray-700 text-white px-4 py-2 rounded"
@@ -115,7 +90,20 @@ export default function DraftGestione() {
                 <td className="border px-1 text-center">
                   <button
                     className="underline text-blue-700 font-semibold"
-                    onClick={() => setModaleArticolo(art)}
+                    onClick={() =>
+                      navigate(
+                        `/ordini-amazon/dettaglio/${art.fulfillment_center}/${art.start_delivery}`,
+                        {
+                          state: {
+                            autoOpen: {
+                              po_number: art.po_number,
+                              model_number: art.model_number,
+                            },
+                            fromDraft: true,
+                          },
+                        }
+                      )
+                    }
                   >
                     Gestisci Parziale
                   </button>
@@ -124,15 +112,6 @@ export default function DraftGestione() {
             ))}
           </tbody>
         </table>
-      )}
-
-      {/* Modale inserimento quantità/collo */}
-      {modaleArticolo && (
-        <ModaleParziale
-          articolo={modaleArticolo}
-          onClose={handleCloseModale}
-          aggiungiParziali={aggiungiParziali}
-        />
       )}
     </div>
   );

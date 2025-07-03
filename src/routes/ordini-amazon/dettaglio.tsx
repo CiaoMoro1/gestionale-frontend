@@ -5,6 +5,7 @@ import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 import BarcodeScannerModal from "../../components/BarcodeScannerModal";
 import SlideToConfirm from "../../components/SlideToConfirm";
 
+
 type Articolo = {
   model_number: string;
   vendor_product_id: string;
@@ -79,6 +80,23 @@ export default function DettaglioDestinazione() {
         }
       });
   }, [center, data]);
+
+  
+useEffect(() => {
+  const auto = location.state?.autoOpen;
+  if (auto && articoli.length > 0) {
+    const found = articoli.find(
+      a => a.po_number === auto.po_number && a.model_number === auto.model_number
+    );
+    if (found) {
+      setModaleArticolo(found);
+      // Pulisci lo stato per evitare doppie aperture se torni indietro
+      window.history.replaceState({}, document.title);
+    }
+  }
+  // eslint-disable-next-line
+}, [location.state, articoli]);
+
 // <<< AGGIUNGI QUI >>>
 useEffect(() => {
   setInputs([{ quantita: "", collo: 1 }]);
