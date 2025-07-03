@@ -37,21 +37,6 @@ export default function DraftGestione() {
     if (barcode) searchArticle(barcode);
   }
 
-  // Funzioni per ModaleParziale (minima versione per draft!)
-  function getResiduoInput(idx: number, articolo: any, inputs: any[]) {
-    // qty residua = qty ordinata - qty già confermata - gli input che stai inserendo
-    return Math.max(
-      0,
-      articolo.qty_ordered -
-        articolo.qty_confirmed -
-        inputs.map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0)).reduce((a, b) => a + b, 0)
-    );
-  }
-
-  function getParzialiStorici() {
-    // In draft, puoi non mostrare i parziali storici (o fetch se vuoi)
-    return [];
-  }
 
   async function aggiungiParziali(inputs: any[]) {
     // Chiama l’API passando center+data dalla riga
@@ -147,8 +132,6 @@ export default function DraftGestione() {
           articolo={modaleArticolo}
           onClose={handleCloseModale}
           aggiungiParziali={aggiungiParziali}
-          getResiduoInput={getResiduoInput}
-          getParzialiStorici={getParzialiStorici}
         />
       )}
     </div>

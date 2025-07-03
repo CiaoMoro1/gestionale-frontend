@@ -7,31 +7,61 @@ type Articolo = {
   qty_ordered: number;
   po_number: string;
   fulfillment_center?: string;
+  start_delivery?: string;
 };
 
 type RigaInput = { quantita: number | ""; collo: number };
+type RigaParziale = {
+  model_number: string;
+  quantita: number;
+  collo: number;
+  po_number: string;
+  confermato: boolean;
+};
 
 type Props = {
   articolo: Articolo;
   onClose: () => void;
   aggiungiParziali: (inputs: RigaInput[]) => Promise<void>;
-  getParzialiStorici: (model_number: string) => { parziale: number; quantita: number }[];
-  getResiduoInput: (idx: number, articolo: Articolo, inputs: RigaInput[]) => number;
 };
 
 export default function ModaleParziale({
   articolo,
   onClose,
   aggiungiParziali,
-  getParzialiStorici,
-  getResiduoInput
 }: Props) {
   const [inputs, setInputs] = useState<RigaInput[]>([{ quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
+  const [storici, setStorici] = useState<RigaParziale[]>([]);
+  const [wip, setWip] = useState<RigaParziale[]>([]);
 
+  // FETCH parziali storici + WIP per quell'articolo ogni volta che si apre il modale
   useEffect(() => {
+    const center = articolo.fulfillment_center;
+    const data = articolo.start_delivery;
+    if (!center || !data) return;
+    fetch(`/api/amazon/vendor/parziali-storici?center=${center}&data=${data}`)
+      .then(res => res.json())
+      .then(arr => setStorici(arr.filter((p: RigaParziale) => p.model_number === articolo.model_number && p.po_number === articolo.po_number)));
+    fetch(`/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`)
+      .then(res => res.json())
+      .then(arr => setWip(arr.filter((p: RigaParziale) => p.model_number === articolo.model_number && p.po_number === articolo.po_number)));
     setInputs([{ quantita: "", collo: 1 }]);
-  }, [articolo.model_number]);
+  }, [articolo.model_number, articolo.fulfillment_center, articolo.start_delivery, articolo.po_number]);
+
+  // Calcola residuo come in dettaglio
+  function getResiduoInput(idx: number, inputsArr: RigaInput[] = inputs) {
+    const totaleStorico = storici.reduce((sum, r) => sum + r.quantita, 0);
+    const colliInput = inputsArr.map(inp => inp.collo);
+    const parzialiAltriCollo = wip.filter(
+      p => !colliInput.includes(p.collo)
+    );
+    const totaleWipAltriCollo = parzialiAltriCollo.reduce((sum, r) => sum + r.quantita, 0);
+    const sommaAltriInput = inputsArr
+      .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
+      .reduce((a, b) => a + b, 0);
+    return Math.max(0, articolo.qty_ordered - totaleStorico - totaleWipAltriCollo - sommaAltriInput);
+  }
 
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs((prev) => {
@@ -47,7 +77,7 @@ export default function ModaleParziale({
           : r
       );
     });
-    if (campo === "quantita" && Number(val) > getResiduoInput(idx, articolo, inputs)) {
+    if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
       setShakeIdx(idx);
       setTimeout(() => setShakeIdx(null), 400);
     }
@@ -63,6 +93,16 @@ export default function ModaleParziale({
   async function handleAggiungiParziali() {
     await aggiungiParziali(inputs);
     onClose();
+  }
+
+  // Mostra i colli/quantità precedenti
+  function getParzialiStoriciSintesi() {
+    const perParziale: { [num: number]: number } = {};
+    storici.forEach((r: any) => {
+      const parz = r.numero_parziale || 1;
+      perParziale[parz] = (perParziale[parz] || 0) + r.quantita;
+    });
+    return Object.entries(perParziale).map(([parziale, quantita]) => ({ parziale, quantita }));
   }
 
   return (
@@ -93,11 +133,11 @@ export default function ModaleParziale({
           {/* Parziali precedenti sintesi */}
           <div className="mb-2">
             <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
-            {getParzialiStorici(articolo.model_number).length === 0 ? (
+            {getParzialiStoriciSintesi().length === 0 ? (
               <div className="text-neutral-400 text-xs">Nessun parziale inserito</div>
             ) : (
               <span className="flex flex-wrap gap-2 text-xs">
-                {getParzialiStorici(articolo.model_number).map((r, i) => (
+                {getParzialiStoriciSintesi().map((r, i) => (
                   <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
                     {r.quantita}
                   </span>
@@ -114,12 +154,12 @@ export default function ModaleParziale({
                   <input
                     type="number"
                     min={1}
-                    max={getResiduoInput(idx, articolo, inputs)}
+                    max={getResiduoInput(idx)}
                     value={inp.quantita === 0 ? "" : inp.quantita}
                     onChange={e => {
                       let v = Number(e.target.value);
                       if (isNaN(v)) v = 0;
-                      const max = getResiduoInput(idx, articolo, inputs);
+                      const max = getResiduoInput(idx);
                       if (v > max) {
                         v = max;
                         setShakeIdx(idx);
@@ -182,7 +222,7 @@ export default function ModaleParziale({
                 !inp.quantita ||
                 inp.quantita <= 0 ||
                 inp.collo <= 0 ||
-                Number(inp.quantita) > getResiduoInput(idx, articolo, inputs)
+                Number(inp.quantita) > getResiduoInput(idx)
               )
             }
           >

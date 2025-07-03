@@ -24,26 +24,43 @@ export default function SearchProductModal({
     const codeReader = new BrowserMultiFormatReader();
     let active = true;
 
-    codeReader.decodeFromVideoDevice(undefined, videoRef.current!, (result, err) => {
-      if (!active) return;
-      if (result) {
+    (async () => {
+      try {
+        // Ottieni la lista delle camere disponibili
+        const devices = await BrowserMultiFormatReader.listVideoInputDevices();
+        // Cerca la camera posteriore (label contiene 'back' o 'environment')
+        let backCamera = devices.find(device =>
+          device.label.toLowerCase().includes("back") ||
+          device.label.toLowerCase().includes("environment")
+        );
+        if (!backCamera && devices.length > 0) backCamera = devices[0]; // fallback prima camera
+
+        await codeReader.decodeFromVideoDevice(
+          backCamera?.deviceId,
+          videoRef.current!,
+          (result, err) => {
+            if (!active) return;
+            if (result) {
+              setScanning(false);
+              active = false;
+              (codeReader as any).reset && (codeReader as any).reset();
+              if (onBarcodeFound) onBarcodeFound(result.getText());
+              onClose();
+            }
+            if (err && err.message && err.message !== "No MultiFormat Readers were able to detect the code.") {
+              setError("Errore scanner: " + err.message);
+            }
+          }
+        );
+      } catch (e: any) {
+        setError("Impossibile aprire fotocamera: " + (e?.message || e));
         setScanning(false);
-        active = false;
-        (codeReader as any).reset && (codeReader as any).reset(); // <-- Fix type!
-        if (onBarcodeFound) onBarcodeFound(result.getText());
-        onClose();
       }
-      if (err && err.message && err.message !== "No MultiFormat Readers were able to detect the code.") {
-        setError("Errore scanner: " + err.message);
-      }
-    }).catch((err) => {
-      setError("Impossibile aprire fotocamera: " + err.message);
-      setScanning(false);
-    });
+    })();
 
     return () => {
       active = false;
-      (codeReader as any).reset && (codeReader as any).reset(); // <-- Fix type!
+      (codeReader as any).reset && (codeReader as any).reset();
       setScanning(false);
     };
     // eslint-disable-next-line
