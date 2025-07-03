@@ -1,5 +1,5 @@
 import { useState } from "react";
-import BarcodeScannerModal from "../../components/BarcodeScannerModal";
+import SearchProductModal from "../../modals/SearchProductModal";
 import ModaleParziale from "../../components/ModaleParziale"; // Usa il tuo componente estratto!
 
 export default function DraftGestione() {
@@ -96,11 +96,10 @@ export default function DraftGestione() {
         </button>
       </div>
 
-      {/* Scanner modal */}
-      <BarcodeScannerModal
+      <SearchProductModal
         open={scannerOpen}
         onClose={() => setScannerOpen(false)}
-        onFound={handleScannerFound}
+        onBarcodeFound={handleScannerFound}
       />
 
       {/* Risultati */}
