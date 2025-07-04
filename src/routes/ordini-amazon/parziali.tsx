@@ -195,8 +195,11 @@ export default function ParzialiOrdini() {
                     </span>
                     <span className="flex-1 flex items-center justify-end">
                         <VisualizzaParzialeModal
-                            dati={typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati}
-                         />
+                          dati={typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati}
+                          center={riep.fulfillment_center}
+                          numeroParziale={p.numero_parziale}
+                          data={riep.start_delivery}
+                        />
 
                     </span>
                     </div>

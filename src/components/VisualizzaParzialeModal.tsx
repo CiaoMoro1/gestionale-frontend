@@ -1,18 +1,64 @@
-import { useRef, useState } from "react";
-import { useReactToPrint } from "react-to-print";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
+import { useState } from "react";
 
-// Passa qui come prop l'array "dati" del parziale!
 export default function VisualizzaParzialeModal({
   dati,
+  center,
+  numeroParziale,
+  data,
   triggerLabel = "Visualizza",
-}: { dati: any[]; triggerLabel?: string }) {
+}: {
+  dati: any[];
+  center: string;
+  numeroParziale: number;
+  data: string;
+  triggerLabel?: string;
+}) {
   const [open, setOpen] = useState(false);
-  const componentRef = useRef<any>(null);
-  const handlePrint = useReactToPrint({
-    // @ts-ignore
-    content: () => componentRef.current,
-    documentTitle: "Lista Parziale",
-  });
+
+  const handleExportExcel = () => {
+    // Prepara i dati come prima
+    const ws = XLSX.utils.json_to_sheet(
+      dati.map(row => ({
+        SKU: row.model_number,
+        Quantità: row.quantita,
+        Collo: row.collo
+      }))
+    );
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Parziale");
+    
+    // Pulizia dei caratteri non validi nei nomi file
+    function safe(str: string | number) {
+      return String(str).replace(/[^a-zA-Z0-9_\-]/g, "_");
+    }
+
+    // Genera nome file
+    const nomeFile = `${safe(center)}_${safe(numeroParziale)}_${safe(data)}.xlsx`;
+
+    XLSX.writeFile(wb, nomeFile);
+  };
+
+  const handleVisualizzaPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text(`Lista Parziale`, 14, 18);
+    doc.setFontSize(12);
+    doc.text(`Centro: ${center || ""}`, 14, 28);
+    doc.text(`N° Parziale: ${numeroParziale || ""}`, 70, 28);
+    doc.text(`Data: ${data || ""}`, 130, 28);
+    autoTable(doc, {
+      head: [["SKU", "Quantità", "Collo"]],
+      body: dati.map(row => [row.model_number, row.quantita, row.collo]),
+      startY: 36,
+      theme: "grid",
+      styles: { fontSize: 12 },
+      headStyles: { fillColor: [6, 182, 212] },
+    });
+    doc.output("dataurlnewwindow");
+  };
 
   return (
     <>
@@ -22,11 +68,9 @@ export default function VisualizzaParzialeModal({
       >
         {triggerLabel}
       </button>
-
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-2">
-          <div
-            className="bg-white p-3 rounded-2xl shadow-lg w-full max-w-lg relative flex flex-col"
+          <div className="bg-white p-3 rounded-2xl shadow-lg w-full max-w-lg relative flex flex-col"
             style={{
               maxHeight: "78vh",
               minWidth: "0",
@@ -39,18 +83,24 @@ export default function VisualizzaParzialeModal({
             >
               ×
             </button>
-            <div className="flex justify-between items-center mb-2 pr-6">
+            <div className="flex justify-between items-center mb-2 pr-6 gap-2">
               <span className="font-bold text-lg text-blue-900">Lista Parziale</span>
-              <button
-                className="px-3 py-1 rounded bg-cyan-700 text-white font-semibold text-sm hover:bg-cyan-900"
-                onClick={handlePrint}
-              >
-                Stampa PDF
-              </button>
+              <div className="flex gap-2">
+                <button
+                  className="px-3 py-1 rounded bg-green-700 text-white font-semibold text-sm hover:bg-green-900"
+                  onClick={handleExportExcel}
+                >
+                  Esporta Excel
+                </button>
+                <button
+                  className="px-3 py-1 rounded bg-cyan-700 text-white font-semibold text-sm hover:bg-cyan-900"
+                  onClick={handleVisualizzaPDF}
+                >
+                  Visualizza PDF
+                </button>
+              </div>
             </div>
-            {/* CONTENUTO PDF */}
             <div
-              ref={componentRef}
               className="p-1 print:bg-white flex-1 overflow-y-auto"
               style={{
                 minHeight: 0,

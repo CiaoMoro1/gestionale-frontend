@@ -27,16 +27,20 @@ export default function RiepilogoNuovi() {
       .catch(console.error);
   }, []);
 
-  // --- Funzione per scaricare il PDF ---
+  // --- Funzioni per scaricare i PDF ---
   function exportListaPrelievoPDF() {
     const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/lista-prelievo/nuovi/pdf`;
+    window.open(url, "_blank");
+  }
+  function exportListaOrdiniPDF() {
+    const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/lista-ordini/nuovi/pdf`;
     window.open(url, "_blank");
   }
 
   return (
     <div className="mx-auto max-w-2xl p-2 sm:p-4">
-      {/* --- Pulsante esporta PDF --- */}
-      <div className="flex justify-end mb-4">
+      {/* --- Pulsanti export PDF --- */}
+      <div className="flex gap-3 justify-end mb-4 flex-wrap">
         <button
           className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 text-white font-semibold shadow hover:bg-blue-700 transition"
           onClick={exportListaPrelievoPDF}
@@ -44,7 +48,15 @@ export default function RiepilogoNuovi() {
           <Download size={18} />
           Esporta lista di prelievo PDF
         </button>
+        <button
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-600 text-white font-semibold shadow hover:bg-green-700 transition"
+          onClick={exportListaOrdiniPDF}
+        >
+          <Download size={18} />
+          Esporta ordini per centro PDF
+        </button>
       </div>
+
       {/* --- Lista ordini come prima --- */}
       {dati.length === 0 ? (
         <div className="text-center text-neutral-400 py-12 animate-pulse">

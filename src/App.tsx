@@ -20,7 +20,7 @@ import RiepilogoNuovi from "./routes/ordini-amazon/nuovi";
 import DettaglioDestinazione from './routes/ordini-amazon/dettaglio';
 import Parziali from "./routes/ordini-amazon/parziali";
 import DraftOrdini from "./routes/ordini-amazon/draft";  // <--- AGGIUNGI QUESTO!
-
+import CompletatiOrdini from "./routes/ordini-amazon/completi";
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -123,6 +123,7 @@ function AppContent() {
               <Route path="/etichettati" element={<Etichettati />} />
               <Route path="/ordini-amazon/nuovi" element={<RiepilogoNuovi />} />
               <Route path="/ordini-amazon/draft" element={<DraftOrdini />} /> {/* <-- ECCO LA ROUTE */}
+              <Route path="/ordini-amazon/completi" element={<CompletatiOrdini />} /> {/* <-- ECCO LA ROUTE */}
 
             </Routes>
           </Suspense>
