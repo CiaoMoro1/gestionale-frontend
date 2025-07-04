@@ -213,7 +213,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     let idx = 0;
     for (let page = 0; q > 0; page++) {
       if (page > 0) doc.addPage();
-      for (let r = 0; r < rows; r++) {
+      for (let r = 0.1; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           if (idx >= qty) break;
           const x = marginLeft + c * labelW;
