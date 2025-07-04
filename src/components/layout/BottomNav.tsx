@@ -1,4 +1,4 @@
-import { ClipboardList, Home, Package, Search } from "lucide-react";
+import { ClipboardList, Home, Boxes, Package, Search } from "lucide-react";
 import NavLink from "../navigation/NavLink";
 
 export default function BottomNav({ onSearch }: { onSearch: () => void }) {
@@ -19,12 +19,20 @@ export default function BottomNav({ onSearch }: { onSearch: () => void }) {
         variant="bottom"
       />
       <NavLink
+        label="⚡Draft⚡"
+        icon={<Boxes size={24} strokeWidth={1.5} />}
+        path="/ordini-amazon/draft"
+        layout="vertical"
+        variant="bottom"
+      />
+      <NavLink
         label="Prodotti"
         icon={<Package size={24} strokeWidth={1.5} />}
         path="/prodotti"
         layout="vertical"
         variant="bottom"
       />
+
       <button
         onClick={onSearch}
         className="flex flex-col items-center justify-center text-xs transition-all duration-200 group"
