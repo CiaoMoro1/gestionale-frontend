@@ -4,7 +4,8 @@ import { Package, CheckCircle, ChevronRight, CircleChevronLeft, Plus, Minus, Sea
 import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 import BarcodeScannerModal from "../../components/BarcodeScannerModal";
 import SlideToConfirm from "../../components/SlideToConfirm";
-
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
 type Articolo = {
   model_number: string;
@@ -102,8 +103,22 @@ useEffect(() => {
 
 // <<< AGGIUNGI QUI >>>
 useEffect(() => {
-  setInputs([{ quantita: "", collo: 1 }]);
-}, [modaleArticolo?.model_number]);
+  if (!modaleArticolo) return;
+  // Trova i colli WIP esistenti per quell’articolo e PO (se già inseriti)
+  const wip = parziali.filter(
+    p =>
+      p.model_number === modaleArticolo.model_number &&
+      p.po_number === modaleArticolo.po_number
+  );
+  if (wip.length > 0) {
+    setInputs(wip.map(r => ({
+      quantita: r.quantita,
+      collo: r.collo
+    })));
+  } else {
+    setInputs([{ quantita: "", collo: 1 }]);
+  }
+}, [modaleArticolo, parziali]);
   // Funzioni di utilità e gestione
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs((prev) => {
@@ -306,7 +321,35 @@ useEffect(() => {
   }
   const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every((c) => c.confermato);
 
-  // --------- UI START
+    function exportColliPDF() {
+      const doc = new jsPDF("p", "mm", "a4");
+      doc.setFontSize(16);
+      doc.text(`Riepilogo colli (NON confermati)`, 14, 18);
+      doc.setFontSize(11);
+      doc.text(`Centro: ${center}`, 14, 26);
+      doc.text(`Data: ${data}`, 90, 26);
+
+      let currentY = 36;
+      colliRiepilogo().forEach((collo) => {
+        doc.setFontSize(13);
+        doc.text(`Collo ${collo.collo}${collo.confermato ? " (confermato)" : ""}`, 14, currentY);
+        autoTable(doc, {
+          startY: currentY + 3,
+          head: [["SKU", "Quantità"]],
+          body: collo.righe.map(r => [r.model_number, String(r.quantita)]),
+          styles: { fontSize: 11 },
+          headStyles: { fillColor: [6, 182, 212] },
+          margin: { left: 14, right: 14 }
+        });
+        // Fai sempre riferimento all’ultima tabella creata!
+        currentY = ((doc as any).lastAutoTable?.finalY ?? (doc as any).previousAutoTable?.finalY ?? currentY + 40) + 8;
+      });
+
+      doc.output("dataurlnewwindow");
+    }
+
+
+
   return (
     <div className="w-full max-w-[900px] mx-auto px-2 pb-24 font-sans">
       {/* Header */}
@@ -417,6 +460,12 @@ useEffect(() => {
               const wip = totaleWip(art.model_number);
               const confermata = totStorici + wip;
               const completa = confermata >= art.qty_ordered;
+              const tuttiColliConfermati = colliRiepilogo().every(c => c.confermato);
+
+              const disableGestisci =
+                completa && tuttiColliConfermati;
+
+
               const hasStorici = getParzialiStorici(art.model_number).length > 0;
               // Colorazione row:
               let bgClass = "bg-gray-50"; // default grigio chiaro
@@ -456,10 +505,12 @@ useEffect(() => {
                   <td className="text-right">
                     <button
                       className={`rounded-full p-2 shadow transition
-                        ${completa ? "bg-gray-300 text-gray-400 line-through cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-700"}
+                        ${disableGestisci
+                          ? "bg-gray-300 text-gray-400 line-through cursor-not-allowed"
+                          : "bg-blue-500 text-white hover:bg-blue-700"}
                       `}
-                      onClick={() => !completa && setModaleArticolo(art)}
-                      disabled={completa}
+                      onClick={() => !disableGestisci && setModaleArticolo(art)}
+                      disabled={disableGestisci}
                     >
                       <ChevronRight size={18} />
                     </button>
@@ -628,6 +679,14 @@ useEffect(() => {
 
       {/* RIEPILOGO COLLI */}
       <div className="mt-10">
+        <div className="mb-4 flex justify-end">
+          <button
+            className="px-4 py-2 rounded bg-cyan-700 text-white font-semibold hover:bg-cyan-900"
+            onClick={exportColliPDF}
+          >
+            Esporta PDF colli attuali
+          </button>
+        </div>
         <h3 className="font-bold text-lg mb-3">Riepilogo colli</h3>
         {colliRiepilogo().length === 0 ? (
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
