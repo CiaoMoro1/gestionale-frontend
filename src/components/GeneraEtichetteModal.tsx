@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Document, Page, View, Text, Image, StyleSheet, pdf } from "@react-pdf/renderer";
-import JsBarcode from "jsbarcode";
 import jsPDF from "jspdf";
+import { generateEAN13Barcode } from "../utils/barcode-bwip";
 
 type Props = {
   open: boolean;
@@ -10,7 +10,7 @@ type Props = {
   ean: string;
 };
 
-const LABEL_W = 192; // px
+const LABEL_W = 192; // px (HTML preview singola)
 const LABEL_H = 92;  // px
 
 const styles = StyleSheet.create({
@@ -43,27 +43,9 @@ const styles = StyleSheet.create({
     textOverflow: "ellipsis",
     maxWidth: LABEL_W - 10,
   },
-  ean: { fontSize: 12, marginTop: 2, letterSpacing: 2 },
-  barcodeWrap: { margin: 2, width: 160, height: 38, alignItems: "center" },
+  ean: { fontSize: 14, marginTop: 3, letterSpacing: 2 },
+  barcodeWrap: { margin: 0, width: LABEL_W - 2, height: 48, alignItems: "center" },
 });
-
-function generateBarcodePngDataURL(ean: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      const canvas = document.createElement("canvas");
-      JsBarcode(canvas, ean, {
-        format: "EAN13",
-        width: 2,
-        height: 40,
-        displayValue: false,
-        margin: 0,
-      });
-      resolve(canvas.toDataURL("image/png"));
-    } catch (e) {
-      reject(e);
-    }
-  });
-}
 
 function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 15, minFont: number = 7) {
   const charWidth = baseFont * 0.62;
@@ -80,14 +62,12 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
   const [autoFont, setAutoFont] = useState(15);
 
   useEffect(() => {
-    if (sku) {
-      setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 15, 7));
-    }
+    if (sku) setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 15, 7));
   }, [sku]);
 
   useEffect(() => {
     if (ean) {
-      generateBarcodePngDataURL(ean)
+      generateEAN13Barcode(ean, 264, 56) // canvas largo!
         .then(setBarcodeUrl)
         .catch(() => setBarcodeUrl(null));
     }
@@ -98,7 +78,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     setQty(Number.isFinite(val) && val > 0 ? val : 1);
   }
 
-  // PDF etichetta singola (come prima)
+  // PDF etichetta singola
   async function handleDownloadPDF() {
     if (!barcodeUrl) return;
     setPdfLoading(true);
@@ -120,7 +100,12 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
                 }}
                 render={() => sku}
               />
-              <Image src={barcodeUrl} style={styles.barcodeWrap} />
+              <Image src={barcodeUrl} style={{
+                width: LABEL_W - 40, // margine più grande (20px per lato)
+                height: 34,
+                margin: "0 auto",
+                alignSelf: "center"
+              }} />
               <Text style={styles.ean}>{ean}</Text>
             </View>
           </Page>
@@ -173,8 +158,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
               overflow:hidden; text-overflow:clip; max-width:94%;
               line-height:1.1;
             }
-            .ean { font-size:12px; margin-top:2px; letter-spacing:2px;}
-            img { margin:2px; width:160px; height:38px;}
+            .ean { font-size:14px; margin-top:3px; letter-spacing:2px;}
+            img { margin:0; width:180px; height:50px;}
           </style>
         </head>
         <body>
@@ -193,7 +178,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }
   }
 
-  // --- NUOVO: Anteprima PDF su foglio A4 24 etichette 70x35mm ---
+  // PDF A4, 24 etichette (3x8)
   function handleAnteprimaFoglio() {
     if (!barcodeUrl) return;
     const cols = 3;
@@ -213,30 +198,29 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     let idx = 0;
     for (let page = 0; q > 0; page++) {
       if (page > 0) doc.addPage();
-      for (let r = 0.1; r < rows; r++) {
+      for (let r = 0; r < rows; r++) {
         for (let c = 0; c < cols; c++) {
           if (idx >= qty) break;
           const x = marginLeft + c * labelW;
           const y = marginTop + r * labelH;
 
-          // Bordo etichetta sottile grigio chiaro (opzionale)
+          // Bordo etichetta sottile grigio chiaro
           doc.setDrawColor(210);
           doc.rect(x, y, labelW, labelH);
 
           // SKU
-          doc.setFontSize(12);
+          doc.setFontSize(13);
           doc.setFont("courier", "bold");
-          doc.text(sku, x + labelW / 2, y + 10, { align: "center" });
+          doc.text(sku, x + labelW / 2, y + 11, { align: "center" });
 
-          // Barcode
-          if (barcodeUrl) {
-            doc.addImage(barcodeUrl, "PNG", x + 6, y + 15, labelW - 12, 11);
-          }
+          // Barcode bello largo!
+          doc.addImage(barcodeUrl, "PNG", x + 10, y + 15, labelW - 20, 12); // 10mm margine per lato
+
 
           // EAN
-          doc.setFontSize(12);
+          doc.setFontSize(13);
           doc.setFont("helvetica", "normal");
-          doc.text(ean, x + labelW / 2, y + labelH - 4, { align: "center" });
+          doc.text(ean, x + labelW / 2, y + labelH - 5, { align: "center" });
 
           idx++;
           q--;
@@ -245,10 +229,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
         if (q <= 0) break;
       }
     }
-    // Solo visualizzazione, non download!
     window.open(doc.output("bloburl"), "_blank");
   }
-  // ------------------------------------------------------------
 
   if (!open) return null;
 
@@ -283,21 +265,22 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             >
               {sku}
             </div>
-            {barcodeUrl && (
-              <img
-                src={barcodeUrl}
-                alt="barcode"
-                style={{
-                  width: 160,
-                  height: 38,
-                  background: "#fff",
-                  display: "block",
-                  marginBottom: 2,
-                  objectFit: "contain",
-                }}
-              />
-            )}
-            <div className="text-xs tracking-widest text-center">{ean}</div>
+              {barcodeUrl && (
+                <img
+                  src={barcodeUrl}
+                  alt="barcode"
+                  style={{
+                    width: LABEL_W - 32, // lascia 16px per lato di bianco (prova a ridurre ancora per più "aria")
+                    height: 36,          // un po’ meno alto se vuoi meno impattante
+                    background: "#fff",
+                    display: "block",
+                    margin: "0 auto",
+                    objectFit: "contain",
+                  }}
+                />
+              )}
+
+            <div className="text-base tracking-widest text-center mt-1">{ean}</div>
           </div>
         </div>
 
