@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Document, Page, View, Text, Image, StyleSheet, pdf } from "@react-pdf/renderer";
 import JsBarcode from "jsbarcode";
+import jsPDF from "jspdf";
 
 type Props = {
   open: boolean;
@@ -64,17 +65,13 @@ function generateBarcodePngDataURL(ean: string): Promise<string> {
   });
 }
 
-// --------- FUNZIONE ADATTIVA FONT ----------
 function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 15, minFont: number = 7) {
-  // stima: ogni carattere monospace ~0.6em
   const charWidth = baseFont * 0.62;
   const requiredWidth = sku.length * charWidth;
   if (requiredWidth < containerWidth) return baseFont;
-  // calcola font-size per farlo stare
   const shrinkFont = Math.max(minFont, Math.floor(containerWidth / (sku.length * 0.62)));
   return shrinkFont;
 }
-// -------------------------------------------
 
 export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props) {
   const [qty, setQty] = useState(1);
@@ -82,7 +79,6 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
   const [pdfLoading, setPdfLoading] = useState(false);
   const [autoFont, setAutoFont] = useState(15);
 
-  // Per la preview HTML: aggiorna la misura del font in base alla lunghezza
   useEffect(() => {
     if (sku) {
       setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 15, 7));
@@ -102,7 +98,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     setQty(Number.isFinite(val) && val > 0 ? val : 1);
   }
 
-  // PDF
+  // PDF etichetta singola (come prima)
   async function handleDownloadPDF() {
     if (!barcodeUrl) return;
     setPdfLoading(true);
@@ -197,6 +193,63 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }
   }
 
+  // --- NUOVO: Anteprima PDF su foglio A4 24 etichette 70x35mm ---
+  function handleAnteprimaFoglio() {
+    if (!barcodeUrl) return;
+    const cols = 3;
+    const rows = 8;
+    const labelW = 70; // mm
+    const labelH = 35; // mm
+    const marginTop = 5; // mm
+    const marginLeft = 0; // mm
+
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+    let q = qty;
+    let idx = 0;
+    for (let page = 0; q > 0; page++) {
+      if (page > 0) doc.addPage();
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (idx >= qty) break;
+          const x = marginLeft + c * labelW;
+          const y = marginTop + r * labelH;
+
+          // Bordo etichetta sottile grigio chiaro (opzionale)
+          doc.setDrawColor(210);
+          doc.rect(x, y, labelW, labelH);
+
+          // SKU
+          doc.setFontSize(12);
+          doc.setFont("courier", "bold");
+          doc.text(sku, x + labelW / 2, y + 10, { align: "center" });
+
+          // Barcode
+          if (barcodeUrl) {
+            doc.addImage(barcodeUrl, "PNG", x + 6, y + 15, labelW - 12, 11);
+          }
+
+          // EAN
+          doc.setFontSize(12);
+          doc.setFont("helvetica", "normal");
+          doc.text(ean, x + labelW / 2, y + labelH - 4, { align: "center" });
+
+          idx++;
+          q--;
+          if (q <= 0) break;
+        }
+        if (q <= 0) break;
+      }
+    }
+    // Solo visualizzazione, non download!
+    window.open(doc.output("bloburl"), "_blank");
+  }
+  // ------------------------------------------------------------
+
   if (!open) return null;
 
   return (
@@ -277,6 +330,13 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             Stampa subito
           </button>
         </div>
+        <button
+          className="w-full mt-3 py-2 font-bold rounded-lg shadow bg-cyan-600 text-white hover:bg-cyan-800 transition text-sm"
+          onClick={handleAnteprimaFoglio}
+          disabled={!barcodeUrl}
+        >
+          Genera PDF (foglio 24 etichette)
+        </button>
       </div>
     </div>
   );

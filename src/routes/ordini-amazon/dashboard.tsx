@@ -90,7 +90,7 @@ const DashboardAmazonVendor: React.FC = () => {
   }
 
   return (
-    <div className="max-w-4xl mx-auto mt-8">
+    <div className="max-w-4xl mx-auto mt-8 pb-16">
       <Card>
         <CardContent className="p-6 flex flex-col gap-4">
           <h1 className="text-2xl font-bold mb-2 flex items-center gap-2">

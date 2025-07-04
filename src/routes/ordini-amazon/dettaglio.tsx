@@ -177,11 +177,12 @@ useEffect(() => {
       }));
 
     // Rimuovi solo le righe con stesso model_number **E** stesso collo
-    const altri = parziali.filter(
-      p => !(p.model_number === art.model_number && nuoviParziali.some(n => n.collo === p.collo))
-    );
+const altri = parziali.filter(
+  p => p.model_number !== art.model_number || p.po_number !== art.po_number
+);
 
-    await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
+await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
+
   }
 
   async function resetParzialiWip() {
@@ -702,9 +703,9 @@ useEffect(() => {
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
                   {collo.righe.map((r, i) => (
-                    <li key={i} className="flex justify-between mb-1">
+                    <li key={i} className="flex items-center gap-1 mb-1">
                       <span className="font-mono text-xs">{r.model_number}</span>
-                      <span className="font-bold text-blue-900">{r.quantita}</span>
+                      <span className="font-bold text-blue-900 text-xs">{r.quantita}</span>
                     </li>
                   ))}
                 </ul>
