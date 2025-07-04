@@ -16,6 +16,7 @@ export default function SearchProductModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [error, setError] = useState<string | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [streamObj, setStreamObj] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -25,10 +26,10 @@ export default function SearchProductModal({
     const codeReader = new BrowserMultiFormatReader();
     let active = true;
     let animationId: number;
+    let stream: MediaStream | null = null;
 
     (async () => {
       try {
-        // Ottieni lista camere
         const devices = await BrowserMultiFormatReader.listVideoInputDevices();
         let backCamera = devices.find(device =>
           device.label.toLowerCase().includes("back") ||
@@ -36,8 +37,7 @@ export default function SearchProductModal({
         );
         if (!backCamera && devices.length > 0) backCamera = devices[0];
 
-        // Stream video alla <video>
-        const stream = await navigator.mediaDevices.getUserMedia({
+        stream = await navigator.mediaDevices.getUserMedia({
           video: {
             deviceId: backCamera?.deviceId,
             facingMode: "environment",
@@ -45,12 +45,13 @@ export default function SearchProductModal({
             height: { ideal: 720 }
           }
         });
+        setStreamObj(stream); // Salva in stato per chiusura affidabile
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play();
         }
 
-        // Inizia il loop di scansione sul box centrale
         const scanLoop = async () => {
           if (!active || !videoRef.current || !canvasRef.current) return;
           const video = videoRef.current;
@@ -58,13 +59,11 @@ export default function SearchProductModal({
           const ctx = canvas.getContext("2d");
           if (!ctx) return;
 
-          // Aspetta che la camera sia pronta
           if (video.videoWidth === 0 || video.videoHeight === 0) {
             animationId = requestAnimationFrame(scanLoop);
             return;
           }
 
-          // Box centrale (esempio: 70x220 pixel centrato)
           const boxW = 300;
           const boxH = 150;
           const x = (video.videoWidth - boxW) / 2;
@@ -80,26 +79,19 @@ export default function SearchProductModal({
               setScanning(false);
               active = false;
               // Ferma lo stream video
-              stream.getTracks().forEach(track => track.stop());
+              if (stream) stream.getTracks().forEach(track => track.stop());
+              setStreamObj(null);
               if (onBarcodeFound) onBarcodeFound(result.getText());
               onClose();
               return;
             }
-          } catch (e) {
-            // Ignora: no code found
-          }
+          } catch (e) {}
           animationId = requestAnimationFrame(scanLoop);
         };
 
-        // Aspetta che la <video> sia pronta
         if (videoRef.current) {
-          videoRef.current.onloadedmetadata = () => {
-            scanLoop();
-          };
-          // Se già pronto
-          if (videoRef.current.readyState >= 2) {
-            scanLoop();
-          }
+          videoRef.current.onloadedmetadata = () => scanLoop();
+          if (videoRef.current.readyState >= 2) scanLoop();
         }
       } catch (e: any) {
         setError("Impossibile aprire fotocamera: " + (e?.message || e));
@@ -110,10 +102,14 @@ export default function SearchProductModal({
     return () => {
       active = false;
       setScanning(false);
-      // Stop stream video
+      // Stop stream video (in ogni caso!)
+      const toStop = stream || streamObj;
+      if (toStop) {
+        toStop.getTracks().forEach(track => track.stop());
+      }
+      setStreamObj(null);
       if (videoRef.current && videoRef.current.srcObject) {
-        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
-        tracks.forEach(track => track.stop());
+        (videoRef.current.srcObject as MediaStream).getTracks().forEach(track => track.stop());
         videoRef.current.srcObject = null;
       }
       if (animationId) cancelAnimationFrame(animationId);
