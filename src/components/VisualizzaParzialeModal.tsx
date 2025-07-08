@@ -19,25 +19,21 @@ export default function VisualizzaParzialeModal({
   const [open, setOpen] = useState(false);
 
   const handleExportExcel = () => {
-    // Prepara i dati come prima
     const ws = XLSX.utils.json_to_sheet(
       dati.map(row => ({
         SKU: row.model_number,
         Quantità: row.quantita,
-        Collo: row.collo
+        Collo: row.collo,
       }))
     );
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Parziale");
-    
-    // Pulizia dei caratteri non validi nei nomi file
+
     function safe(str: string | number) {
       return String(str).replace(/[^a-zA-Z0-9_\-]/g, "_");
     }
 
-    // Genera nome file
     const nomeFile = `${safe(center)}_${safe(numeroParziale)}_${safe(data)}.xlsx`;
-
     XLSX.writeFile(wb, nomeFile);
   };
 
@@ -70,12 +66,9 @@ export default function VisualizzaParzialeModal({
       </button>
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-2">
-          <div className="bg-white p-3 rounded-2xl shadow-lg w-full max-w-lg relative flex flex-col"
-            style={{
-              maxHeight: "78vh",
-              minWidth: "0",
-              width: "100%",
-            }}
+          <div
+            className="bg-white p-3 rounded-2xl shadow-lg w-full max-w-lg relative flex flex-col"
+            style={{ maxHeight: "78vh", minWidth: "0", width: "100%" }}
           >
             <button
               className="absolute top-2 right-4 text-xl text-gray-400 hover:text-gray-700"
@@ -83,9 +76,18 @@ export default function VisualizzaParzialeModal({
             >
               ×
             </button>
-            <div className="flex justify-between items-center mb-2 pr-6 gap-2">
-              <span className="font-bold text-lg text-blue-900">Lista Parziale</span>
-              <div className="flex gap-2">
+
+            {/* Header: Titolo + bottoni */}
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 mb-1 pr-1">
+              <div>
+                <div className="font-bold text-lg text-blue-900">
+                  Lista Parziale: {center} n° {numeroParziale}
+                </div>
+                <div className="text-sm text-gray-600 mt-0.5">
+                  Colli: {Math.max(...dati.map(d => d.collo || 0), 0)}
+                </div>
+              </div>
+              <div className="flex gap-2 justify-end flex-wrap">
                 <button
                   className="px-3 py-1 rounded bg-green-700 text-white font-semibold text-sm hover:bg-green-900"
                   onClick={handleExportExcel}
@@ -100,12 +102,11 @@ export default function VisualizzaParzialeModal({
                 </button>
               </div>
             </div>
+
+            {/* Tabella */}
             <div
               className="p-1 print:bg-white flex-1 overflow-y-auto"
-              style={{
-                minHeight: 0,
-                maxHeight: "56vh",
-              }}
+              style={{ minHeight: 0, maxHeight: "56vh" }}
             >
               <table className="w-full border text-[15px] min-w-[330px]">
                 <thead>
@@ -126,6 +127,7 @@ export default function VisualizzaParzialeModal({
                 </tbody>
               </table>
             </div>
+
             <div className="text-right mt-2">
               <button
                 className="text-sm text-gray-500 hover:underline"
