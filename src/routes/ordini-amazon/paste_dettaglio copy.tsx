@@ -152,7 +152,7 @@ useEffect(() => {
     setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
   }
   function rimuoviRiga(idx: number) {
-    setInputs((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== idx)));
+    setInputs(prev => prev.filter((_, i) => i !== idx));
   }
 
   async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: any) {
@@ -164,8 +164,11 @@ useEffect(() => {
     setParziali(nextParziali);
     setConfermaCollo(nextConfermaCollo);
   }
+
   async function salvaParzialiLiveGenerico(art: Articolo | null, nextInputs: RigaInput[]) {
     if (!art) return;
+
+    // Next parziali: SOLO quelli > 0 e con collo > 0
     const nuoviParziali: RigaParziale[] = nextInputs
       .filter(r => Number(r.quantita) > 0 && r.collo > 0)
       .map(r => ({
@@ -176,13 +179,12 @@ useEffect(() => {
         confermato: false
       }));
 
-    // Rimuovi solo le righe con stesso model_number **E** stesso collo
-const altri = parziali.filter(
-  p => p.model_number !== art.model_number || p.po_number !== art.po_number
-);
-
-await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
-
+    // **Rimuovi TUTTE le righe di WIP per quell’articolo/PO**
+    const altri = parziali.filter(
+      p => p.model_number !== art.model_number || p.po_number !== art.po_number
+    );
+    // Anche se nuoviParziali è vuoto, cancella tutto (es: utente vuole azzerare!)
+    await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
   }
 
   async function resetParzialiWip() {
@@ -213,7 +215,7 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
   }
   async function aggiungiParziali() {
     if (!modaleArticolo) return;
-    await salvaParzialiLiveGenerico(modaleArticolo, inputs);
+    await salvaParzialiLiveGenerico(modaleArticolo, inputs); // inputs può essere vuoto!
     setModaleArticolo(null);
   }
   async function confermaUnCollo(collo: number) {
@@ -281,20 +283,38 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
 
   // --------- UI HELPERS
   function getResiduoInput(idx: number): number {
-    if (!modaleArticolo) return 0;
-    const totaleStorico = getParzialiStorici(modaleArticolo.model_number)
-      .reduce((sum, r) => sum + r.quantita, 0);
-    const colliInput = inputs.map(inp => inp.collo);
-    const parzialiAltriCollo = parziali.filter(
-      p => p.model_number === modaleArticolo.model_number &&
-        !colliInput.includes(p.collo)
-    );
-    const totaleWipAltriCollo = parzialiAltriCollo.reduce((sum, r) => sum + r.quantita, 0);
-    const sommaAltriInput = inputs
-      .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
-      .reduce((a, b) => a + b, 0);
-    return Math.max(0, modaleArticolo.qty_ordered - totaleStorico - totaleWipAltriCollo - sommaAltriInput);
-  }
+  if (!modaleArticolo) return 0;
+
+  // Quantità già confermate in storico
+  const totaleStorico = getParzialiStorici(modaleArticolo.model_number)
+    .reduce((sum, r) => sum + r.quantita, 0);
+
+  // Somma degli input correnti (escludi quello che stai editando)
+  const sommaAltriInput = inputs
+    .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
+    .reduce((a, b) => a + b, 0);
+
+  // Tutti i parziali di quell’articolo/PO che NON sono in "inputs" (stai editando tutto)
+  const altri = parziali.filter(
+    p =>
+      !(
+        p.model_number === modaleArticolo.model_number &&
+        p.po_number === modaleArticolo.po_number
+      )
+  );
+  const totaleWipAltri = altri
+    .filter(p => p.model_number === modaleArticolo.model_number)
+    .reduce((sum, r) => sum + r.quantita, 0);
+
+  // Residuo = Ordinato - Confermato - Altri WIP - Somma degli altri input
+  return Math.max(
+    0,
+    modaleArticolo.qty_ordered -
+      totaleStorico -
+      totaleWipAltri -
+      sommaAltriInput
+  );
+}
 
   function getParzialiStorici(model: string) {
     const storici = parzialiStorici.filter(p => p.model_number === model);
@@ -578,8 +598,13 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
         </div>
         {/* Input Quantità + Collo affiancati, multipli */}
         <div className="flex flex-col gap-2 mb-3">
+          {inputs.length === 0 && (
+            <div className="text-center text-gray-500 my-4">
+              Nessun collo assegnato.<br />Aggiungi una riga o premi "Aggiungi" per eliminare tutti i colli di questo articolo.
+            </div>
+          )}
           {inputs.map((inp, idx) => (
-            <div key={idx} className="flex gap-2 items-end">
+              <div key={`collo${inp.collo}-q${inp.quantita}-row${idx}`} className="flex gap-2 items-end">
               <div className="flex-1">
                 <label className="block text-xs mb-1">Quantità</label>
                 <input
@@ -626,7 +651,7 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
               <button
                 className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
                 onClick={() => rimuoviRiga(idx)}
-                disabled={inputs.length === 1}
+                disabled={false}
                 title="Rimuovi riga"
               >
                 <Minus size={18} />
@@ -649,11 +674,13 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
           className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-full shadow hover:bg-blue-700 transition"
           onClick={aggiungiParziali}
           disabled={
-            inputs.every((inp, idx) =>
-              !inp.quantita ||
-              inp.quantita <= 0 ||
-              inp.collo <= 0 ||
-              Number(inp.quantita) > getResiduoInput(idx)
+            (inputs.length > 0 &&
+              inputs.every((inp, idx) =>
+                !inp.quantita ||
+                inp.quantita <= 0 ||
+                inp.collo <= 0 ||
+                Number(inp.quantita) > getResiduoInput(idx)
+              )
             )
           }
         >
@@ -703,7 +730,7 @@ await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
                   {collo.righe.map((r, i) => (
-                    <li key={i} className="flex items-center gap-1 mb-1">
+                    <li key={`${r.model_number}-${r.quantita}-${collo.collo}-${i}`} className="flex items-center gap-1 mb-1">
                       <span className="font-mono text-xs">{r.model_number}</span>
                       <span className="font-bold text-blue-900 text-xs">{r.quantita}</span>
                     </li>

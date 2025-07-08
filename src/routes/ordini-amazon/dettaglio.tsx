@@ -20,7 +20,7 @@ type RigaParziale = {
   po_number: string;
   confermato: boolean;
 };
-type RigaInput = { quantita: number | ""; collo: number };
+type RigaInput = { id: string; quantita: number | ""; collo: number };
 type ColloRiepilogo = {
   collo: number;
   righe: { model_number: string; quantita: number }[];
@@ -34,7 +34,7 @@ export default function DettaglioDestinazione() {
   const [parzialiStorici, setParzialiStorici] = useState<RigaParziale[]>([]);
   const [confermaCollo, setConfermaCollo] = useState<{ [collo: number]: boolean }>({});
   const [modaleArticolo, setModaleArticolo] = useState<Articolo | null>(null);
-  const [inputs, setInputs] = useState<RigaInput[]>([{ quantita: "", collo: 1 }]);
+  const [inputs, setInputs] = useState<RigaInput[]>([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
   const [showEtichette, setShowEtichette] = useState(false);
   const [barcodeModalOpen, setBarcodeModalOpen] = useState(false);
@@ -112,11 +112,12 @@ useEffect(() => {
   );
   if (wip.length > 0) {
     setInputs(wip.map(r => ({
+      id: crypto.randomUUID(),
       quantita: r.quantita,
       collo: r.collo
     })));
   } else {
-    setInputs([{ quantita: "", collo: 1 }]);
+    setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
   }
 }, [modaleArticolo, parziali]);
   // Funzioni di utilità e gestione
@@ -149,10 +150,10 @@ useEffect(() => {
 
 
   function aggiungiRiga() {
-    setInputs((prev) => [...prev, { quantita: "", collo: 1 }]);
+    setInputs((prev) => [...prev, { id: crypto.randomUUID(), quantita: "", collo: 1 }]);
   }
-  function rimuoviRiga(idx: number) {
-    setInputs(prev => prev.filter((_, i) => i !== idx));
+  function rimuoviRiga(idToRemove: string) {
+    setInputs(prev => prev.filter(inp => inp.id !== idToRemove));
   }
 
   async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: any) {
@@ -555,7 +556,7 @@ useEffect(() => {
           setModaleArticolo(null);
           setSkuSearch("");
           setSkuSearchError("");
-          setInputs([{ quantita: "", collo: 1 }]);
+          setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
         }}
       >×</button>
       <div className="mb-1 font-bold text-blue-700 text-lg">Gestisci Parziali - {center}</div>
@@ -604,7 +605,7 @@ useEffect(() => {
             </div>
           )}
           {inputs.map((inp, idx) => (
-              <div key={`collo${inp.collo}-q${inp.quantita}-row${idx}`} className="flex gap-2 items-end">
+            <div key={inp.id} className="flex gap-2 items-end">
               <div className="flex-1">
                 <label className="block text-xs mb-1">Quantità</label>
                 <input
@@ -650,7 +651,7 @@ useEffect(() => {
               </div>
               <button
                 className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
-                onClick={() => rimuoviRiga(idx)}
+                onClick={() => rimuoviRiga(inp.id)}
                 disabled={false}
                 title="Rimuovi riga"
               >
