@@ -8,6 +8,7 @@ type Articolo = {
   model_number: string;
   qty_ordered: number;
   qty_confirmed: number;
+  cost?: number | string;
   vendor_product_id?: string;
 };
 
@@ -17,7 +18,7 @@ type Riepilogo = {
   start_delivery: string;
   stato_ordine: string;
   po_list: string[];
-  created_at: string; // Deve arrivare dal backend!
+  created_at: string;
 };
 
 type FilterType = {
@@ -181,186 +182,231 @@ export default function CompletatiOrdini() {
           Nessun ordine completato per i filtri scelti.
         </div>
       ) : (
-        Object.entries(groupedByDate).map(([dataRiep, rieps]) => (
-          <div key={dataRiep} className="mb-8 bg-gray-50 rounded-2xl shadow border">
-            {/* Intestazione raggruppamento */}
-            <button
-              className="w-full text-left px-4 py-3 flex justify-between items-center bg-gray-100 rounded-t-2xl focus:outline-none"
-              onClick={() =>
-                setExpanded(prev => ({
-                  ...prev,
-                  [dataRiep]: !prev[dataRiep],
-                }))
-              }
-            >
-              <span className="font-bold text-base text-gray-800">
-                Data consegna: {dataRiep}
-              </span>
-              {expanded[dataRiep] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
-            </button>
-            {/* Lista ordini di quel gruppo data */}
-            {expanded[dataRiep] && (
-              <div className="p-2">
-                {rieps
-                  .filter(
-                    r =>
-                      !search ||
-                      r.fulfillment_center.toLowerCase().includes(search.toLowerCase()) ||
-                      r.po_list.join(",").toLowerCase().includes(search.toLowerCase()) ||
-                      (articoli[r.id] || []).some(a =>
-                        a.model_number.toLowerCase().includes(search.toLowerCase())
-                      )
-                  )
-                  .map(group => {
-                    const listaArticoli = (articoli[group.id] || []).slice().sort((a, b) =>
-                      a.model_number.localeCompare(b.model_number)
-                    );
-                    const show = showAll[group.id] || false;
-                    const visibili = show ? listaArticoli : listaArticoli.slice(0, 5);
+        Object.entries(groupedByDate).map(([dataRiep, rieps]) => {
+          // === TOTALE GRUPPO HEADER ===
+          const totaleGruppoOrdinato = rieps.reduce(
+            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_ordered || 0), 0)),
+            0
+          );
+          const totaleGruppoConfermato = rieps.reduce(
+            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_confirmed || 0), 0)),
+            0
+          );
+          const totaleGruppoValOrd = rieps.reduce(
+            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_ordered || 0) * (Number(a.cost) || 0)), 0)),
+            0
+          );
+          const totaleGruppoValConf = rieps.reduce(
+            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_confirmed || 0) * (Number(a.cost) || 0)), 0)),
+            0
+          );
 
-                    // Totali per il footer
-                    const totOrd = listaArticoli.reduce((sum, x) => sum + (x.qty_ordered || 0), 0);
-                    const totConf = listaArticoli.reduce((sum, x) => sum + (x.qty_confirmed || 0), 0);
-                    const percTot =
-                      totOrd > 0
-                        ? Math.min(Math.round((totConf / totOrd) * 100), 100)
-                        : 0;
+          return (
+            <div key={dataRiep} className="mb-8 bg-gray-50 rounded-2xl shadow border">
+              {/* Intestazione raggruppamento */}
+              <button
+                className="w-full text-left px-4 py-3 flex justify-between items-center bg-gray-100 rounded-t-2xl focus:outline-none"
+                onClick={() =>
+                  setExpanded(prev => ({
+                    ...prev,
+                    [dataRiep]: !prev[dataRiep],
+                  }))
+                }
+              >
+                <div>
+                  <div className="font-bold text-base text-gray-800">
+                    Data consegna: {dataRiep}
+                  </div>
+                  <div className="text-xs font-medium text-gray-500">
+                    Tot. ordinato: <span className="text-blue-700 font-bold">{totaleGruppoOrdinato}</span> | 
+                    Tot. confermato: <span className="text-green-700 font-bold">{totaleGruppoConfermato}</span>
+                    <br />
+                    Val. ordinato: <span className="text-blue-700 font-bold">
+                      € {totaleGruppoValOrd.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                    {" | "}
+                    Val. confermato: <span className="text-green-700 font-bold">
+                      € {totaleGruppoValConf.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                {expanded[dataRiep] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+              </button>
+              {/* Lista ordini di quel gruppo data */}
+              {expanded[dataRiep] && (
+                <div className="p-2">
+                  {rieps
+                    .filter(
+                      r =>
+                        !search ||
+                        r.fulfillment_center.toLowerCase().includes(search.toLowerCase()) ||
+                        r.po_list.join(",").toLowerCase().includes(search.toLowerCase()) ||
+                        (articoli[r.id] || []).some(a =>
+                          a.model_number.toLowerCase().includes(search.toLowerCase())
+                        )
+                    )
+                    .map(group => {
+                      const listaArticoli = (articoli[group.id] || []).slice().sort((a, b) =>
+                        a.model_number.localeCompare(b.model_number)
+                      );
+                      const show = showAll[group.id] || false;
+                      const visibili = show ? listaArticoli : listaArticoli.slice(0, 5);
 
-                    return (
-                      <div
-                        key={group.id}
-                        className="mb-6 rounded-2xl shadow border bg-white/80 backdrop-blur-xl transition-all overflow-hidden px-2 py-3"
-                      >
-                        <div className="flex items-center gap-3 pb-1 px-2">
-                          <div className="shrink-0 flex items-center justify-center rounded-xl bg-gray-100 w-12 h-12 shadow">
-                            <Package className="text-green-700" size={26} />
-                          </div>
-                          <div className="flex flex-col flex-1">
-                            <span className="font-bold text-lg tracking-wide text-neutral-900 uppercase">
-                              {group.fulfillment_center}
-                            </span>
-                            <span className="text-xs text-neutral-500 font-medium">
-                              {group.start_delivery}
-                            </span>
-                            {group.created_at && (
-                              <span className="text-xs text-blue-700 font-semibold mt-1">
-                                Creato il: {formatDate(group.created_at)}
-                              </span>
-                            )}
-                          </div>
-                          <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-semibold text-xs shadow border border-white/20">
-                            {group.stato_ordine}
-                          </span>
-                        </div>
+                      // Totali per il footer singolo ordine
+                      const totOrd = listaArticoli.reduce((sum, x) => sum + (x.qty_ordered || 0), 0);
+                      const totConf = listaArticoli.reduce((sum, x) => sum + (x.qty_confirmed || 0), 0);
+                      const percTot =
+                        totOrd > 0
+                          ? Math.min(Math.round((totConf / totOrd) * 100), 100)
+                          : 0;
 
-                        <div className="flex gap-2 mt-2 mb-1 flex-wrap">
-                          <button
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-700 text-white font-semibold shadow hover:bg-green-900 transition"
-                            onClick={() => handleExportExcel(group)}
-                          >
-                            <Download size={18} />
-                            Esporta Excel
-                          </button>
-                          <button
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-700 text-white font-semibold shadow hover:bg-cyan-900 transition"
-                            onClick={() => handleExportPDF(group)}
-                          >
-                            <Download size={18} />
-                            Esporta PDF
-                          </button>
-                        </div>
-
-                        <div className="w-full overflow-x-auto">
-                          <table className="w-full text-sm min-w-[270px] mt-2">
-                            <thead>
-                              <tr>
-                                <th className="py-2 pl-2 text-left font-medium text-neutral-500">SKU</th>
-                                <th className="py-2 text-center font-medium text-neutral-500">Q.tà ordinata</th>
-                                <th className="py-2 text-center font-medium text-neutral-500">Q.tà confermata</th>
-                                <th className="py-2 text-center font-medium text-neutral-500">Completamento</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {visibili.map((art, i) => {
-                                const completamento =
-                                  art.qty_ordered > 0
-                                    ? Math.min(
-                                        Math.round((art.qty_confirmed / art.qty_ordered) * 100),
-                                        100
-                                      )
-                                    : 0;
-                                return (
-                                  <tr key={i}>
-                                    <td className="pl-2 py-2 font-mono text-neutral-700">{art.model_number}</td>
-                                    <td className="py-2 text-center">{art.qty_ordered}</td>
-                                    <td className="py-2 text-center">{art.qty_confirmed}</td>
-                                    <td className="py-2 text-center align-middle w-[100px]">
-                                      <div className="relative w-full max-w-[90px] h-4 bg-gray-100 rounded-full overflow-hidden mx-auto">
-                                        <div
-                                          className="h-4 rounded-full bg-green-400"
-                                          style={{
-                                            width: `${completamento}%`,
-                                            transition: "width 0.4s"
-                                          }}
-                                        ></div>
-                                        <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-700">
-                                          {completamento}%
-                                        </div>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
-
-                          {/* Totale ordine */}
-                          <div className="flex flex-col sm:flex-row gap-2 justify-between items-center border-t mt-3 pt-2">
-                            <div className="font-semibold text-sm text-neutral-700">
-                              Totale ordinato: <span className="text-blue-700">{totOrd}</span> | Totale confermato: <span className="text-green-700">{totConf}</span>
+                      return (
+                        <div
+                          key={group.id}
+                          className="mb-6 rounded-2xl shadow border bg-white/80 backdrop-blur-xl transition-all overflow-hidden px-2 py-3"
+                        >
+                          <div className="flex items-center gap-3 pb-1 px-2">
+                            <div className="shrink-0 flex items-center justify-center rounded-xl bg-gray-100 w-12 h-12 shadow">
+                              <Package className="text-green-700" size={26} />
                             </div>
-                            <div className="w-full sm:w-1/2 max-w-[210px]">
-                              <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
-                                <div
-                                  className="h-5 rounded-full bg-green-500"
-                                  style={{
-                                    width: `${percTot}%`,
-                                    transition: "width 0.4s"
-                                  }}
-                                ></div>
-                                <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
-                                  {percTot}%
+                            <div className="flex flex-col flex-1">
+                              <span className="font-bold text-lg tracking-wide text-neutral-900 uppercase">
+                                {group.fulfillment_center}
+                              </span>
+                              <span className="text-xs text-neutral-500 font-medium">
+                                {group.start_delivery}
+                              </span>
+                              {group.created_at && (
+                                <span className="text-xs text-blue-700 font-semibold mt-1">
+                                  Creato il: {formatDate(group.created_at)}
+                                </span>
+                              )}
+                            </div>
+                            <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-semibold text-xs shadow border border-white/20">
+                              {group.stato_ordine}
+                            </span>
+                          </div>
+
+                          <div className="flex gap-2 mt-2 mb-1 flex-wrap">
+                            <button
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-green-700 text-white font-semibold shadow hover:bg-green-900 transition"
+                              onClick={() => handleExportExcel(group)}
+                            >
+                              <Download size={18} />
+                              Esporta Excel
+                            </button>
+                            <button
+                              className="flex items-center gap-2 px-4 py-2 rounded-xl bg-cyan-700 text-white font-semibold shadow hover:bg-cyan-900 transition"
+                              onClick={() => handleExportPDF(group)}
+                            >
+                              <Download size={18} />
+                              Esporta PDF
+                            </button>
+                          </div>
+
+                          <div className="w-full overflow-x-auto">
+                            <table className="w-full text-sm min-w-[270px] mt-2">
+                              <thead>
+                                <tr>
+                                  <th className="py-2 pl-2 text-left font-medium text-neutral-500">SKU</th>
+                                  <th className="py-2 text-center font-medium text-neutral-500">Q.tà ordinata</th>
+                                  <th className="py-2 text-center font-medium text-neutral-500">Q.tà confermata</th>
+                                  <th className="py-2 text-center font-medium text-neutral-500">Completamento</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {visibili.map((art, i) => {
+                                  const completamento =
+                                    art.qty_ordered > 0
+                                      ? Math.min(
+                                          Math.round((art.qty_confirmed / art.qty_ordered) * 100),
+                                          100
+                                        )
+                                      : 0;
+                                  return (
+                                    <tr key={i}>
+                                      <td className="pl-2 py-2 font-mono text-neutral-700">{art.model_number}</td>
+                                      <td className="py-2 text-center">{art.qty_ordered}</td>
+                                      <td className="py-2 text-center">{art.qty_confirmed}</td>
+                                      <td className="py-2 text-center align-middle w-[100px]">
+                                        <div className="relative w-full max-w-[90px] h-4 bg-gray-100 rounded-full overflow-hidden mx-auto">
+                                          <div
+                                            className="h-4 rounded-full bg-green-400"
+                                            style={{
+                                              width: `${completamento}%`,
+                                              transition: "width 0.4s"
+                                            }}
+                                          ></div>
+                                          <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-700">
+                                            {completamento}%
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+
+                            {/* Totale ordine */}
+                            <div className="flex flex-col sm:flex-row gap-2 justify-between items-center border-t mt-3 pt-2">
+                              <div className="font-semibold text-sm text-neutral-700">
+                                Totale ordinato: <span className="text-blue-700">{totOrd}</span> | Totale confermato: <span className="text-green-700">{totConf}</span>
+                                <br />
+                                <span className="text-xs font-medium text-gray-500">
+                                  Valore ordinato:{" "}
+                                  <span className="text-blue-700 font-bold">
+                                    € {listaArticoli.reduce((sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)), 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>{" "}
+                                  | Valore confermato:{" "}
+                                  <span className="text-green-700 font-bold">
+                                    € {listaArticoli.reduce((sum, x) => sum + ((x.qty_confirmed || 0) * (Number(x.cost) || 0)), 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="w-full sm:w-1/2 max-w-[210px]">
+                                <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-5 rounded-full bg-green-500"
+                                    style={{
+                                      width: `${percTot}%`,
+                                      transition: "width 0.4s"
+                                    }}
+                                  ></div>
+                                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
+                                    {percTot}%
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
 
-                          {listaArticoli.length > 5 && (
-                            <div className="flex justify-center my-2">
-                              <button
-                                className="text-xs font-semibold text-blue-700 underline flex items-center gap-1"
-                                onClick={() => setShowAll(old => ({ ...old, [group.id]: !old[group.id] }))}
-                              >
-                                {show ? (
-                                  <>
-                                    Visualizza meno <ChevronUp size={14} />
-                                  </>
-                                ) : (
-                                  <>
-                                    Visualizza di più <ChevronDown size={14} />
-                                  </>
-                                )}
-                              </button>
-                            </div>
-                          )}
+                            {listaArticoli.length > 5 && (
+                              <div className="flex justify-center my-2">
+                                <button
+                                  className="text-xs font-semibold text-blue-700 underline flex items-center gap-1"
+                                  onClick={() => setShowAll(old => ({ ...old, [group.id]: !old[group.id] }))}
+                                >
+                                  {show ? (
+                                    <>
+                                      Visualizza meno <ChevronUp size={14} />
+                                    </>
+                                  ) : (
+                                    <>
+                                      Visualizza di più <ChevronDown size={14} />
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-              </div>
-            )}
-          </div>
-        ))
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          );
+        })
       )}
     </div>
   );
