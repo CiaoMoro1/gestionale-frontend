@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SearchProductModal from "../../modals/SearchProductModal";
 
@@ -8,6 +8,16 @@ export default function DraftGestione() {
   const [scannerOpen, setScannerOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+
+  // Nuovo: ref per focus automatico
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Focalizza input quando pagina vuota o quando chiudi scanner
+  useEffect(() => {
+    if (!barcode && inputRef.current && !scannerOpen) {
+      inputRef.current.focus();
+    }
+  }, [barcode, scannerOpen]);
 
   // Rilancia la ricerca quando cambia il parametro barcode nell'URL
   useEffect(() => {
@@ -49,6 +59,7 @@ export default function DraftGestione() {
     setBarcode("");
     setSearchParams({});
     setFoundRows([]);
+    // inputRef focus già gestito da useEffect sopra!
   }
 
   return (
@@ -74,6 +85,7 @@ export default function DraftGestione() {
       <div className="flex gap-2 mb-4">
         <form onSubmit={handleManualSearch} className="flex-1 flex gap-2">
           <input
+            ref={inputRef}
             value={barcode}
             onChange={e => setBarcode(e.target.value)}
             placeholder="Cerca SKU o EAN"
