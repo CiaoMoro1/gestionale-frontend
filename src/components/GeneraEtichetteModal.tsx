@@ -10,7 +10,7 @@ type Props = {
   ean: string;
 };
 
-// Brother 62x29mm (a 96dpi ≈ 234x110px)
+// 62x29mm a 96dpi ≈ 234x110px
 const LABEL_W = 234;
 const LABEL_H = 110;
 
@@ -44,8 +44,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     maxWidth: LABEL_W - 10,
     fontSize: 26,
+    letterSpacing: 1,
   },
-  ean: { fontSize: 15, marginTop: 1, letterSpacing: 2 },
+  ean: { fontSize: 15, marginTop: 2, letterSpacing: 2 },
   barcodeWrap: { width: LABEL_W - 8, height: 60, alignItems: "center", margin: 0 },
 });
 
@@ -142,78 +143,46 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }, 100);
   }
 
-  // APRE PDF e stampa automatico (stampa perfetta su Brother, senza download)
-async function handleStampaPDFDiretta() {
-  if (!barcodeUrl) return;
-  setPdfLoading(true);
-  const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
-  const doc = (
-    <Document>
-      {[...Array(qty)].map((_, i) => (
-        <Page
-          key={i}
-          size={{ width: LABEL_W, height: LABEL_H }}
-          style={styles.page}
-        >
-          <View style={styles.label}>
-            <Text
-              style={{
-                ...styles.sku,
-                fontSize: fontSizeForPdf,
-              }}
-              render={() => sku}
-            />
-            <Image src={barcodeUrl} style={{
-              width: LABEL_W - 8,
-              height: 60,
-              margin: "0 auto",
-              alignSelf: "center"
-            }} />
-            <Text style={styles.ean}>{ean}</Text>
-          </View>
-        </Page>
-      ))}
-    </Document>
-  );
-  const asPdf = pdf();
-  asPdf.updateContainer(doc);
-  const blob = await asPdf.toBlob();
-  setPdfLoading(false);
+  // APRE SOLO IL PDF (stampa perfetta su Brother, nessun JS strano, compatibilità top su tablet/PC)
+  async function handleStampaPDFDiretta() {
+    if (!barcodeUrl) return;
+    setPdfLoading(true);
+    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
+    const doc = (
+      <Document>
+        {[...Array(qty)].map((_, i) => (
+          <Page
+            key={i}
+            size={{ width: LABEL_W, height: LABEL_H }}
+            style={styles.page}
+          >
+            <View style={styles.label}>
+              <Text
+                style={{
+                  ...styles.sku,
+                  fontSize: fontSizeForPdf,
+                }}
+                render={() => sku}
+              />
+              <Image src={barcodeUrl} style={{
+                width: LABEL_W - 8,
+                height: 60,
+                margin: "0 auto",
+                alignSelf: "center"
+              }} />
+              <Text style={styles.ean}>{ean}</Text>
+            </View>
+          </Page>
+        ))}
+      </Document>
+    );
+    const asPdf = pdf();
+    asPdf.updateContainer(doc);
+    const blob = await asPdf.toBlob();
+    setPdfLoading(false);
 
-  const pdfUrl = URL.createObjectURL(blob);
-
-  // **APRE SOLO IL PDF, lascia che l’utente prema il tasto “stampa”**
-  window.open(pdfUrl, "_blank");
-
-
-    // HTML intermedio per print automatico
-    const printWin = window.open("", "_blank");
-    if (printWin) {
-      printWin.document.write(`
-        <html>
-        <head>
-          <title>Stampa PDF Etichetta</title>
-          <style>
-            html, body { margin:0; padding:0; height:100%; }
-            iframe { border:none; width:100vw; height:100vh; }
-          </style>
-        </head>
-        <body>
-          <iframe id="etiframe" src="${pdfUrl}"></iframe>
-          <script>
-            const frame = document.getElementById('etiframe');
-            frame.onload = function() {
-              setTimeout(function() {
-                frame.contentWindow.focus();
-                frame.contentWindow.print();
-              }, 400);
-            }
-          </script>
-        </body>
-        </html>
-      `);
-      printWin.document.close();
-    }
+    const pdfUrl = URL.createObjectURL(blob);
+    window.open(pdfUrl, "_blank"); // LASCIA all'utente il click su stampa!
   }
 
   // PDF A4, 24 etichette (3x8, 70x35mm)
