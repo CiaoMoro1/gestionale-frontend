@@ -10,6 +10,7 @@ type Articolo = {
   qty_confirmed: number;
   cost?: number | string;
   vendor_product_id?: string;
+  po_number?: string;
 };
 
 type Riepilogo = {
@@ -38,9 +39,11 @@ export default function CompletatiOrdini() {
   const [showAll, setShowAll] = useState<{ [id: number]: boolean }>({});
   const [expanded, setExpanded] = useState<{ [data: string]: boolean }>({});
   const [loading, setLoading] = useState(true);
-
   const [filter, setFilter] = useState<FilterType>({});
   const [search, setSearch] = useState("");
+
+  // Modale PO
+  const [poModal, setPoModal] = useState<{ open: boolean; poList: any[]; titolo: string }>({ open: false, poList: [], titolo: "" });
 
   useEffect(() => {
     async function load() {
@@ -117,6 +120,25 @@ export default function CompletatiOrdini() {
     doc.output("dataurlnewwindow");
   }
 
+  // Mostra Modale PO
+  function showPoModal(articoliGruppo: Articolo[], titolo: string) {
+    // Raggruppa per PO con quantità totali
+    const poDettaglio: Record<string, { ordinata: number; confermata: number }> = {};
+    articoliGruppo.forEach(a => {
+      const po = a.po_number || "-";
+      if (!poDettaglio[po]) poDettaglio[po] = { ordinata: 0, confermata: 0 };
+      poDettaglio[po].ordinata += a.qty_ordered || 0;
+      poDettaglio[po].confermata += a.qty_confirmed || 0;
+    });
+    const elenco = Object.entries(poDettaglio).map(([po, vals]) => ({ po, ...vals }))
+      .sort((a, b) => a.po.localeCompare(b.po));
+    setPoModal({
+      open: true,
+      poList: elenco,
+      titolo,
+    });
+  }
+
   // Raggruppa per data (start_delivery)
   const groupedByDate: { [data: string]: Riepilogo[] } = {};
   dati.forEach(r => {
@@ -124,7 +146,6 @@ export default function CompletatiOrdini() {
       (filter.data && r.start_delivery !== filter.data) ||
       (filter.center && r.fulfillment_center !== filter.center)
     ) return;
-
     if (!groupedByDate[r.start_delivery]) groupedByDate[r.start_delivery] = [];
     groupedByDate[r.start_delivery].push(r);
   });
@@ -183,7 +204,7 @@ export default function CompletatiOrdini() {
         </div>
       ) : (
         Object.entries(groupedByDate).map(([dataRiep, rieps]) => {
-          // === TOTALE GRUPPO HEADER ===
+          // Totale raggruppamento per header
           const totaleGruppoOrdinato = rieps.reduce(
             (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_ordered || 0), 0)),
             0
@@ -200,6 +221,7 @@ export default function CompletatiOrdini() {
             (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_confirmed || 0) * (Number(a.cost) || 0)), 0)),
             0
           );
+          // Tutti gli articoli di questo gruppo
 
           return (
             <div key={dataRiep} className="mb-8 bg-gray-50 rounded-2xl shadow border">
@@ -251,7 +273,6 @@ export default function CompletatiOrdini() {
                       );
                       const show = showAll[group.id] || false;
                       const visibili = show ? listaArticoli : listaArticoli.slice(0, 5);
-
                       // Totali per il footer singolo ordine
                       const totOrd = listaArticoli.reduce((sum, x) => sum + (x.qty_ordered || 0), 0);
                       const totConf = listaArticoli.reduce((sum, x) => sum + (x.qty_confirmed || 0), 0);
@@ -282,6 +303,18 @@ export default function CompletatiOrdini() {
                                 </span>
                               )}
                             </div>
+                            {/* Pulsante PO */}
+                            <button
+                              className="mr-2 px-2 py-1 rounded bg-blue-100 text-blue-700 font-bold text-xs hover:bg-blue-200 transition"
+                              onClick={() =>
+                                showPoModal(
+                                  listaArticoli,
+                                  `Dettaglio PO - ${group.fulfillment_center} - ${group.start_delivery}`
+                                )
+                              }
+                            >
+                              PO
+                            </button>
                             <span className="px-3 py-1 rounded-full bg-green-100 text-green-700 font-semibold text-xs shadow border border-white/20">
                               {group.stato_ordine}
                             </span>
@@ -407,6 +440,45 @@ export default function CompletatiOrdini() {
             </div>
           );
         })
+      )}
+
+      {/* === MODALE PO DETTAGLIO === */}
+      {poModal.open && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 min-w-[340px] shadow-xl relative">
+            <button
+              className="absolute top-2 right-2 text-2xl text-gray-400 hover:text-black"
+              onClick={() => setPoModal({ ...poModal, open: false })}
+            >
+              ×
+            </button>
+            <h2 className="font-bold text-lg mb-2 text-blue-700">{poModal.titolo}</h2>
+            <table className="w-full mb-3 text-sm">
+              <thead>
+                <tr>
+                  <th className="text-left py-1">PO</th>
+                  <th className="text-center py-1">Q. ordinata</th>
+                  <th className="text-center py-1">Q. confermata</th>
+                </tr>
+              </thead>
+              <tbody>
+                {poModal.poList.map((po, idx) => (
+                  <tr key={idx}>
+                    <td className="font-mono">{po.po}</td>
+                    <td className="text-center">{po.ordinata ?? "-"}</td>
+                    <td className="text-center">{po.confermata ?? "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <button
+              onClick={() => setPoModal({ ...poModal, open: false })}
+              className="mt-2 px-4 py-2 rounded bg-gray-200 hover:bg-gray-300 text-blue-700 font-semibold"
+            >
+              Chiudi
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
