@@ -10,8 +10,9 @@ type Props = {
   ean: string;
 };
 
-const LABEL_W = 192; // px (HTML preview singola)
-const LABEL_H = 92;  // px
+// === 62x29mm per Brother QL
+const LABEL_W = 234; // px ~ 62mm
+const LABEL_H = 110; // px ~ 29mm
 
 const styles = StyleSheet.create({
   page: {
@@ -33,21 +34,22 @@ const styles = StyleSheet.create({
     flexDirection: "column",
     alignItems: "center",
     justifyContent: "center",
-    fontSize: 13,
     backgroundColor: "#fafbfc",
   },
   sku: {
     fontWeight: 700,
-    marginBottom: 2,
+    marginBottom: 3,
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
+    overflow: "hidden",
     maxWidth: LABEL_W - 10,
+    fontSize: 21,
   },
-  ean: { fontSize: 14, marginTop: 3, letterSpacing: 2 },
-  barcodeWrap: { margin: 0, width: LABEL_W - 2, height: 48, alignItems: "center" },
+  ean: { fontSize: 13, marginTop: 2, letterSpacing: 2 },
+  barcodeWrap: { margin: 0, width: LABEL_W - 8, height: 44, alignItems: "center" },
 });
 
-function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 15, minFont: number = 7) {
+function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 21, minFont: number = 9) {
   const charWidth = baseFont * 0.62;
   const requiredWidth = sku.length * charWidth;
   if (requiredWidth < containerWidth) return baseFont;
@@ -57,33 +59,43 @@ function computeAutoFontSize(sku: string, containerWidth: number, baseFont: numb
 
 export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props) {
   const [qty, setQty] = useState(1);
+  const [qtyInput, setQtyInput] = useState("1");
   const [barcodeUrl, setBarcodeUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [autoFont, setAutoFont] = useState(15);
+  const [autoFont, setAutoFont] = useState(21);
 
   useEffect(() => {
-    if (sku) setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 15, 7));
+    setQtyInput(String(qty));
+  }, [qty]);
+
+  useEffect(() => {
+    if (sku) setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 21, 9));
   }, [sku]);
 
   useEffect(() => {
     if (ean) {
-      generateEAN13Barcode(ean, 264, 56) // canvas largo!
+      generateEAN13Barcode(ean, LABEL_W - 12, 44)
         .then(setBarcodeUrl)
         .catch(() => setBarcodeUrl(null));
     }
   }, [ean]);
 
   function handleQtyChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = Number(e.target.value);
-    setQty(Number.isFinite(val) && val > 0 ? val : 1);
+    const val = e.target.value.replace(/\D/g, ""); // solo numeri
+    setQtyInput(val);
+
+    // se campo vuoto, non forzare subito
+    if (val === "") return;
+
+    const n = parseInt(val, 10);
+    if (!isNaN(n) && n > 0 && n <= 99) setQty(n);
   }
 
-  // PDF etichetta singola
+  // PDF etichetta singola 62x29mm
   async function handleDownloadPDF() {
     if (!barcodeUrl) return;
     setPdfLoading(true);
-
-    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 10, 14, 7);
+    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 19, 8);
     const doc = (
       <Document>
         {[...Array(qty)].map((_, i) => (
@@ -101,8 +113,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
                 render={() => sku}
               />
               <Image src={barcodeUrl} style={{
-                width: LABEL_W - 40, // margine più grande (20px per lato)
-                height: 34,
+                width: LABEL_W - 22,
+                height: 44,
                 margin: "0 auto",
                 alignSelf: "center"
               }} />
@@ -112,7 +124,6 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
         ))}
       </Document>
     );
-
     const asPdf = pdf();
     asPdf.updateContainer(doc);
     const blob = await asPdf.toBlob();
@@ -130,11 +141,11 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }, 100);
   }
 
-  // Stampa diretta
+  // Stampa diretta 62x29mm
   function handleStampaDiretta() {
     if (!barcodeUrl) return;
     const fontPx = autoFont;
-    const win = window.open("", "_blank", "width=320,height=200");
+    const win = window.open("", "_blank", "width=300,height=140");
     if (win) {
       win.document.write(`
         <html>
@@ -149,17 +160,17 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
               box-shadow: 0 4px 16px 0 #0001;
               display:flex; flex-direction:column; align-items:center; justify-content:center;
               font-size:13px; margin:0 auto; background:#fafbfc;
-              padding: 8px 0;
+              padding: 4px 0;
             }
             .sku {
               font-family: monospace;
-              font-weight:bold; margin-bottom:2px;
+              font-weight:bold; margin-bottom:3px;
               font-size:${fontPx}px; white-space:nowrap;
-              overflow:hidden; text-overflow:clip; max-width:94%;
+              overflow:hidden; text-overflow:ellipsis; max-width:94%;
               line-height:1.1;
             }
-            .ean { font-size:14px; margin-top:3px; letter-spacing:2px;}
-            img { margin:0; width:180px; height:50px;}
+            .ean { font-size:13px; margin-top:2px; letter-spacing:2px;}
+            img { margin:0; width:${LABEL_W - 22}px; height:44px;}
           </style>
         </head>
         <body>
@@ -178,7 +189,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }
   }
 
-  // PDF A4, 24 etichette (3x8)
+  // PDF A4, 24 etichette (3x8, 70x35mm)
   function handleAnteprimaFoglio() {
     if (!barcodeUrl) return;
     const cols = 3;
@@ -204,7 +215,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
           const x = marginLeft + c * labelW;
           const y = marginTop + r * labelH;
 
-          // Bordo etichetta sottile grigio chiaro
+          // Bordo etichetta
           doc.setDrawColor(210);
           doc.rect(x, y, labelW, labelH);
 
@@ -213,14 +224,13 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
           doc.setFont("courier", "bold");
           doc.text(sku, x + labelW / 2, y + 11, { align: "center" });
 
-          // Barcode bello largo!
-          doc.addImage(barcodeUrl, "PNG", x + 10, y + 15, labelW - 20, 12); // 10mm margine per lato
-
+          // Barcode
+          doc.addImage(barcodeUrl, "PNG", x + 6, y + 14, labelW - 12, 13);
 
           // EAN
-          doc.setFontSize(13);
+          doc.setFontSize(12);
           doc.setFont("helvetica", "normal");
-          doc.text(ean, x + labelW / 2, y + labelH - 5, { align: "center" });
+          doc.text(ean, x + labelW / 2, y + labelH - 4, { align: "center" });
 
           idx++;
           q--;
@@ -236,9 +246,9 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="bg-white rounded-2xl shadow-xl px-5 py-6 w-full max-w-xs sm:max-w-[370px] relative flex flex-col items-center">
+      <div className="bg-white rounded-2xl shadow-xl px-5 py-6 w-full max-w-xs sm:max-w-[390px] relative flex flex-col items-center">
         <button className="absolute top-2 right-4 text-2xl text-neutral-400 hover:text-black" onClick={onClose}>×</button>
-        <h3 className="font-bold text-xl text-blue-700 mb-3 text-center">Genera Etichetta <span className="hidden sm:inline">(PDF)</span></h3>
+        <h3 className="font-bold text-xl text-blue-700 mb-3 text-center">Genera Etichetta</h3>
         
         {/* ANTEPRIMA */}
         <div className="mb-4 w-full flex flex-col items-center">
@@ -270,8 +280,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
                   src={barcodeUrl}
                   alt="barcode"
                   style={{
-                    width: LABEL_W - 32, // lascia 16px per lato di bianco (prova a ridurre ancora per più "aria")
-                    height: 36,          // un po’ meno alto se vuoi meno impattante
+                    width: LABEL_W - 22,
+                    height: 44,
                     background: "#fff",
                     display: "block",
                     margin: "0 auto",
@@ -287,14 +297,21 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
         <div className="flex items-center mb-4 w-full justify-center">
           <label className="mr-2 text-xs font-semibold">Q.tà etichette</label>
           <input
-            type="number"
+            type="text"
             min={1}
             max={99}
             inputMode="numeric"
-            value={qty}
+            value={qtyInput}
             onChange={handleQtyChange}
             className="border border-gray-300 rounded px-2 py-1 w-16 text-center font-bold text-lg bg-white shadow-sm focus:outline-cyan-500"
             style={{ fontSize: "17px" }}
+            pattern="\d*"
+            onBlur={() => {
+              // se campo lasciato vuoto o 0, ripristina a qty attuale o 1
+              if (!qtyInput || qtyInput === "0") {
+                setQtyInput(String(qty > 0 ? qty : 1));
+              }
+            }}
           />
         </div>
         <div className="flex gap-2 w-full">
