@@ -129,7 +129,14 @@ export default function DraftGestione() {
             <tbody>
               {foundRows.map((art, idx) => (
                 <tr key={idx} className="hover:bg-blue-50 transition">
-                  <td className="border px-1">{art.fulfillment_center}</td>
+                  <td className="border px-1">
+                    {art.fulfillment_center}
+                    {art.start_delivery && (
+                      <span className="ml-1 text-gray-500">
+                        ({new Date(art.start_delivery).toLocaleDateString("it-IT")})
+                      </span>
+                    )}
+                  </td>
                   <td className="border px-1 font-mono">{art.po_number}</td>
                   <td className="border px-1 font-mono">{art.model_number}</td>
                   <td className="border px-1">{art.vendor_product_id}</td>
@@ -150,7 +157,7 @@ export default function DraftGestione() {
                                 model_number: art.model_number,
                               },
                               fromDraft: true,
-                              barcode, // <-- Passa sempre il barcode per tornare con la ricerca attiva!
+                              barcode,
                             },
                           }
                         )
@@ -162,6 +169,7 @@ export default function DraftGestione() {
                 </tr>
               ))}
             </tbody>
+
           </table>
         )}
       </div>
