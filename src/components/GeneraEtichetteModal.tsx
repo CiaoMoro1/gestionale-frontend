@@ -43,13 +43,13 @@ const styles = StyleSheet.create({
     textOverflow: "ellipsis",
     overflow: "hidden",
     maxWidth: LABEL_W - 10,
-    fontSize: 21,
+    fontSize: 26,
   },
-  ean: { fontSize: 13, marginTop: 2, letterSpacing: 2 },
-  barcodeWrap: { margin: 0, width: LABEL_W - 8, height: 44, alignItems: "center" },
+  ean: { fontSize: 15, marginTop: 2, letterSpacing: 2 },
+  barcodeWrap: { margin: 0, width: LABEL_W - 8, height: 60, alignItems: "center" },
 });
 
-function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 21, minFont: number = 9) {
+function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 26, minFont: number = 10) {
   const charWidth = baseFont * 0.62;
   const requiredWidth = sku.length * charWidth;
   if (requiredWidth < containerWidth) return baseFont;
@@ -62,31 +62,28 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
   const [qtyInput, setQtyInput] = useState("1");
   const [barcodeUrl, setBarcodeUrl] = useState<string | null>(null);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [autoFont, setAutoFont] = useState(21);
+  const [autoFont, setAutoFont] = useState(26);
 
   useEffect(() => {
     setQtyInput(String(qty));
   }, [qty]);
 
   useEffect(() => {
-    if (sku) setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 21, 9));
+    if (sku) setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 26, 10));
   }, [sku]);
 
   useEffect(() => {
     if (ean) {
-      generateEAN13Barcode(ean, LABEL_W - 12, 44)
+      generateEAN13Barcode(ean, LABEL_W - 8, 60) // barcode più grande!
         .then(setBarcodeUrl)
         .catch(() => setBarcodeUrl(null));
     }
   }, [ean]);
 
   function handleQtyChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const val = e.target.value.replace(/\D/g, ""); // solo numeri
+    const val = e.target.value.replace(/\D/g, "");
     setQtyInput(val);
-
-    // se campo vuoto, non forzare subito
     if (val === "") return;
-
     const n = parseInt(val, 10);
     if (!isNaN(n) && n > 0 && n <= 99) setQty(n);
   }
@@ -95,7 +92,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
   async function handleDownloadPDF() {
     if (!barcodeUrl) return;
     setPdfLoading(true);
-    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 19, 8);
+    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
     const doc = (
       <Document>
         {[...Array(qty)].map((_, i) => (
@@ -113,8 +110,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
                 render={() => sku}
               />
               <Image src={barcodeUrl} style={{
-                width: LABEL_W - 22,
-                height: 44,
+                width: LABEL_W - 8,
+                height: 60,
                 margin: "0 auto",
                 alignSelf: "center"
               }} />
@@ -141,11 +138,17 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     }, 100);
   }
 
-  // Stampa diretta 62x29mm
+  // Stampa diretta 62x29mm, tutto centrato, barcode gigante
   function handleStampaDiretta() {
     if (!barcodeUrl) return;
-    const fontPx = autoFont;
-    const win = window.open("", "_blank", "width=300,height=140");
+    const fontPx = autoFont + 4; // più grande ancora
+    const labelWmm = 62;
+    const labelHmm = 29;
+    const labelWpx = LABEL_W;
+    const barcodeHeightPx = 60;
+    const barcodeWidthPx = labelWpx - 8;
+
+    const win = window.open("", "_blank", "width=320,height=160");
     if (win) {
       win.document.write(`
         <html>
@@ -153,34 +156,59 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
           <title>Stampa Etichetta</title>
           <meta name="viewport" content="width=device-width,initial-scale=1">
           <style>
-            body { margin:0; background:#fff; display:flex; align-items:center; justify-content:center; height:100vh;}
+            @media print {
+              @page { size: ${labelWmm}mm ${labelHmm}mm; margin: 0; }
+              body { margin:0; background:#fff; width:${labelWmm}mm; height:${labelHmm}mm; }
+            }
+            body {
+              margin:0; background:#fff; 
+              width:${labelWmm}mm; height:${labelHmm}mm;
+              display:flex; align-items:center; justify-content:center; 
+              min-height:100vh;
+            }
             .etichetta {
-              width:${LABEL_W}px; height:${LABEL_H}px; 
-              border:1px solid #d4d4d4; border-radius:7px;
-              box-shadow: 0 4px 16px 0 #0001;
+              width:${labelWmm}mm; height:${labelHmm}mm; 
               display:flex; flex-direction:column; align-items:center; justify-content:center;
-              font-size:13px; margin:0 auto; background:#fafbfc;
-              padding: 4px 0;
+              font-size:15px; background:#fafbfc;
+              padding:0;
             }
             .sku {
               font-family: monospace;
-              font-weight:bold; margin-bottom:3px;
-              font-size:${fontPx}px; white-space:nowrap;
-              overflow:hidden; text-overflow:ellipsis; max-width:94%;
-              line-height:1.1;
+              font-weight:bold;
+              font-size:${fontPx}px;
+              white-space:nowrap;
+              overflow:hidden; text-overflow:ellipsis; max-width:95%;
+              margin-bottom:2px;
+              letter-spacing:1px;
             }
-            .ean { font-size:13px; margin-top:2px; letter-spacing:2px;}
-            img { margin:0; width:${LABEL_W - 22}px; height:44px;}
+            .barcode-wrap {
+              width:${barcodeWidthPx}px; height:${barcodeHeightPx}px;
+              margin:0 auto; display:flex; align-items:center; justify-content:center;
+              background:#fff;
+            }
+            .ean {
+              font-size:15px; margin-top:1px; letter-spacing:2px;
+              font-family: monospace;
+            }
+            img {
+              display:block; 
+              width:100%; 
+              height:${barcodeHeightPx}px;
+              object-fit:contain;
+              background:#fff;
+            }
           </style>
         </head>
         <body>
           <div class="etichetta">
             <div class="sku">${sku}</div>
-            <img src="${barcodeUrl}" />
+            <div class="barcode-wrap">
+              <img src="${barcodeUrl}" alt="barcode" />
+            </div>
             <div class="ean">${ean}</div>
           </div>
           <script>
-            setTimeout(()=>{window.print();}, 300);
+            setTimeout(()=>{window.print();}, 200);
           </script>
         </body>
         </html>
@@ -264,7 +292,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             <div
               className="font-mono font-bold mb-1 text-center"
               style={{
-                fontSize: `${autoFont}px`,
+                fontSize: `${autoFont + 4}px`,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 minWidth: 0,
@@ -280,8 +308,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
                   src={barcodeUrl}
                   alt="barcode"
                   style={{
-                    width: LABEL_W - 22,
-                    height: 44,
+                    width: LABEL_W - 8,
+                    height: 60,
                     background: "#fff",
                     display: "block",
                     margin: "0 auto",
@@ -307,10 +335,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             style={{ fontSize: "17px" }}
             pattern="\d*"
             onBlur={() => {
-              // se campo lasciato vuoto o 0, ripristina a qty attuale o 1
-              if (!qtyInput || qtyInput === "0") {
-                setQtyInput(String(qty > 0 ? qty : 1));
-              }
+              if (!qtyInput || qtyInput === "0") setQtyInput(String(qty > 0 ? qty : 1));
             }}
           />
         </div>
