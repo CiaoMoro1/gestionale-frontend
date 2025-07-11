@@ -143,44 +143,48 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
   }
 
   // APRE PDF e stampa automatico (stampa perfetta su Brother, senza download)
-  async function handleStampaPDFDiretta() {
-    if (!barcodeUrl) return;
-    setPdfLoading(true);
-    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
-    const doc = (
-      <Document>
-        {[...Array(qty)].map((_, i) => (
-          <Page
-            key={i}
-            size={{ width: LABEL_W, height: LABEL_H }}
-            style={styles.page}
-          >
-            <View style={styles.label}>
-              <Text
-                style={{
-                  ...styles.sku,
-                  fontSize: fontSizeForPdf,
-                }}
-                render={() => sku}
-              />
-              <Image src={barcodeUrl} style={{
-                width: LABEL_W - 8,
-                height: 60,
-                margin: "0 auto",
-                alignSelf: "center"
-              }} />
-              <Text style={styles.ean}>{ean}</Text>
-            </View>
-          </Page>
-        ))}
-      </Document>
-    );
-    const asPdf = pdf();
-    asPdf.updateContainer(doc);
-    const blob = await asPdf.toBlob();
-    setPdfLoading(false);
+async function handleStampaPDFDiretta() {
+  if (!barcodeUrl) return;
+  setPdfLoading(true);
+  const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
+  const doc = (
+    <Document>
+      {[...Array(qty)].map((_, i) => (
+        <Page
+          key={i}
+          size={{ width: LABEL_W, height: LABEL_H }}
+          style={styles.page}
+        >
+          <View style={styles.label}>
+            <Text
+              style={{
+                ...styles.sku,
+                fontSize: fontSizeForPdf,
+              }}
+              render={() => sku}
+            />
+            <Image src={barcodeUrl} style={{
+              width: LABEL_W - 8,
+              height: 60,
+              margin: "0 auto",
+              alignSelf: "center"
+            }} />
+            <Text style={styles.ean}>{ean}</Text>
+          </View>
+        </Page>
+      ))}
+    </Document>
+  );
+  const asPdf = pdf();
+  asPdf.updateContainer(doc);
+  const blob = await asPdf.toBlob();
+  setPdfLoading(false);
 
-    const pdfUrl = URL.createObjectURL(blob);
+  const pdfUrl = URL.createObjectURL(blob);
+
+  // **APRE SOLO IL PDF, lascia che l’utente prema il tasto “stampa”**
+  window.open(pdfUrl, "_blank");
+
 
     // HTML intermedio per print automatico
     const printWin = window.open("", "_blank");
