@@ -41,6 +41,8 @@ export const navSections = [
     items: [
       { label: "Import/Export", icon: <ArrowDown size={24} strokeWidth={1.5} />, path: "/import" },
       { label: "Sync", icon: <ArrowDown size={24} strokeWidth={1.5} />, path: "/sync" },
+      { label: "Etichette Vendor", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/etichettevendor" }, // <--- AGGIUNTO QUI
+
     ],
   },
 ];

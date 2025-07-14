@@ -34,6 +34,8 @@ const ProductDetailWrapper = lazy(() => import("./routes/ProductDetailWrapper"))
 const Etichettati = lazy(() => import("./routes/Etichettati"));
 const Prelievo = lazy(() => import("./routes/Prelievo"));
 const OrdiniAmazonDashboard = lazy(() => import("./routes/ordini-amazon/dashboard"));
+const EtichetteVendor = lazy(() => import("./routes/ordini-amazon/etichettevendor"));
+
 
 // ⚡ QueryClient React Query v5+ (con error handler globale)
 const queryClient = new QueryClient({
@@ -124,6 +126,8 @@ function AppContent() {
               <Route path="/ordini-amazon/nuovi" element={<RiepilogoNuovi />} />
               <Route path="/ordini-amazon/draft" element={<DraftOrdini />} /> {/* <-- ECCO LA ROUTE */}
               <Route path="/ordini-amazon/completi" element={<CompletatiOrdini />} /> {/* <-- ECCO LA ROUTE */}
+              <Route path="/ordini-amazon/etichettevendor" element={<EtichetteVendor />} />
+
 
             </Routes>
           </Suspense>
