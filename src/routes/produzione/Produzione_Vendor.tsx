@@ -220,7 +220,7 @@ autoTable(doc, {
  async function openMovimentiLog(produzioneId: number) {
   setLogMovimentiOpen({ id: produzioneId, data: [] }); // apri subito il modale vuoto
   // fetch log
-  const res = await fetch(`/api/produzione/${produzioneId}/log`);
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log`);
   const data = await res.json();
   setLogMovimentiOpen({ id: produzioneId, data });
 }
@@ -257,7 +257,7 @@ autoTable(doc, {
   }, [radiciOpen, statiOpen]);
 
   useEffect(() => {
-    fetch(`/api/produzione`)
+    fetch(`${import.meta.env.VITE_API_URL}/api/produzione`)
       .then(r => r.json())
       .then((data: any) => setAllRows(data.data || data));
   }, [badgeAnim]);
@@ -296,7 +296,7 @@ autoTable(doc, {
   async function patchProduzione(id: number, body: Partial<ProduzioneRow & { password?: string }>) {
     setLoadingPatch(true);
     try {
-      const res = await fetch(`/api/produzione/${id}`, {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
@@ -317,7 +317,7 @@ autoTable(doc, {
 
 async function openCavallottoPdf(sku: string, formato: string) {
   // Non serve async, apri semplicemente la pagina HTML:
-  window.open(`/api/cavallotto/html?sku=${encodeURIComponent(sku)}&formato=${encodeURIComponent(formato)}`, "_blank");
+  window.open(`${import.meta.env.VITE_API_URL}/api/cavallotto/html?sku=${encodeURIComponent(sku)}&formato=${encodeURIComponent(formato)}`, "_blank");
   setCavallottoModal(null);
 }
 
@@ -354,7 +354,7 @@ async function openCavallottoPdf(sku: string, formato: string) {
 
   async function azioneMassiva(stato: string) {
     setLoadingPatch(true);
-    await fetch(`/api/produzione/bulk`, {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/bulk`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -371,7 +371,7 @@ async function openCavallottoPdf(sku: string, formato: string) {
   async function rimuoviDaProduzione() {
     if (selezionati.length === 0) return;
     setLoadingPatch(true);
-    await fetch(`/api/produzione/bulk`, {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/bulk`, {
       method: "DELETE",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
