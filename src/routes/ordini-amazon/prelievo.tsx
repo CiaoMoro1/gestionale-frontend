@@ -74,7 +74,7 @@ export default function DettaglioPrelievo() {
 
   // Carica date disponibili all'avvio
   useEffect(() => {
-    fetch("/api/prelievi/date-importabili")
+fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
       .then(res => res.json())
       .then(setDateDisponibili)
       .catch(() => setDateDisponibili([]));
@@ -82,7 +82,7 @@ export default function DettaglioPrelievo() {
 
   // Carica tutte le righe per la lista radici (indipendente dal filtro radice)
   useEffect(() => {
-    fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}`)
+    fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`)
       .then(res => res.json())
       .then((lista: PrelievoRow[]) => {
         setAllPrelieviData(lista);
@@ -91,7 +91,7 @@ export default function DettaglioPrelievo() {
 
   // Carica prelievi filtrati per radice
   useEffect(() => {
-    fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`)
+    fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`)
       .then(res => res.json())
       .then((lista: PrelievoRow[]) => setPrelievi(lista));
   }, [data, radice]);
@@ -117,7 +117,7 @@ export default function DettaglioPrelievo() {
   async function salvaModificaPrelievo(riscontroVal?: number) {
     if (!modaleArticolo) return;
     let riscontroToSend = typeof riscontroVal === "number" ? riscontroVal : riscontro;
-    await fetch(`/api/prelievi/${modaleArticolo.id}`, {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/${modaleArticolo.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -127,9 +127,10 @@ export default function DettaglioPrelievo() {
       })
     });
     // Aggiorna sia prelievi filtrati sia tutte le radici disponibili
-    const res1 = await fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
+    const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
     setPrelievi(await res1.json());
-    const res2 = await fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}`);
+    const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+    setAllPrelieviData(await res2.json());
     setAllPrelieviData(await res2.json());
     setModaleArticolo(null);
     setRiscontroError(false);
@@ -195,7 +196,7 @@ async function completaPending() {
   if (pendingIds.length > 0) {
     if (!window.confirm("Sei sicuro di voler segnare tutti i pending come MANCA?")) return;
 
-    await fetch("/api/prelievi/bulk", {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -208,19 +209,19 @@ async function completaPending() {
   }
 
   // **Pulizia sempre e comunque**
-  await fetch("/api/produzione/pulisci-da-stampare", { method: "POST" });
+  await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" })
 
   // Reload (come già fai)
-  const res1 = await fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
+  const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
   setPrelievi(await res1.json());
-  const res2 = await fetch(`/api/prelievi?data=${encodeURIComponent(data || "")}`);
+  const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
   setAllPrelieviData(await res2.json());
 }
 
 
   async function svuotaLista() {
     if (!window.confirm("Sei sicuro di voler svuotare tutta la lista prelievi? L'operazione è IRREVERSIBILE!")) return;
-    await fetch("/api/prelievi/svuota", { method: "DELETE" });
+    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/svuota`, { method: "DELETE" });
     setPrelievi([]);
     setAllPrelieviData([]);
     setToast({ msg: "Lista prelievi svuotata!", type: "success" });
@@ -240,7 +241,7 @@ async function completaPending() {
               const selected = e.target.value;
               if (!selected) return;
               setImportLoading(true);
-              await fetch("/api/prelievi/importa", {
+              await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/importa`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ data: selected })
