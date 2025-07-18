@@ -48,58 +48,69 @@ export default function MobileDrawer({ isOpen, onClose, session }: Props) {
           onClick={onClose}
         />
       )}
-      <aside
-        className={`fixed top-0 left-0 w-11/12 h-full bg-white shadow-md z-30 transform transition-transform duration-300 sm:hidden ${
-          isOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+<aside
+  className={`fixed top-0 left-0 w-11/12 h-full bg-white shadow-md z-30 transform transition-transform duration-300 sm:hidden ${
+    isOpen ? "translate-x-0" : "-translate-x-full"
+  }`}
+>
+  <div className="p-4 border-b flex justify-between items-center">
+    <h2 className="text-lg font-bold text-black/80">Menu</h2>
+    <button
+      onClick={onClose}
+      className="text-gray-600 focus:outline-none"
+    >
+      ✕
+    </button>
+  </div>
+
+  <nav
+    className="
+      flex flex-col items-start px-3 py-4 space-y-2
+      overflow-y-auto min-h-0 overscroll-contain
+      flex-1
+      max-h-[calc(100vh-64px)] pb-32 // 64px = altezza header, adatta se serve
+    "
+    style={{
+      overscrollBehavior: 'contain',
+    }}
+  >
+    <NavLink
+      label="Home"
+      icon={<Home size={24} strokeWidth={1.5} />}
+      path="/"
+      layout="horizontal"
+      onClick={onClose}
+    />
+
+    {navSections.map((section: NavSectionType) => (
+      <NavSection
+        key={section.label}
+        {...section}
+        layout="horizontal"
+        onNavigate={onClose}
+        badges={badgeMap}
+      />
+    ))}
+
+    {session ? (
+      <button
+        onClick={logout}
+        className="flex items-center gap-2 text-red-500 hover:underline mt-4 px-2"
       >
-        <div className="p-4 border-b flex justify-between items-center">
-          <h2 className="text-lg font-bold text-black/80">Menu</h2>
-          <button
-            onClick={onClose}
-            className="text-gray-600 focus:outline-none"
-          >
-            ✕
-          </button>
-        </div>
+        <LogOut size={18} /> Logout
+      </button>
+    ) : (
+      <Link
+        to="/login"
+        onClick={onClose}
+        className="flex items-center gap-2 text-green-600 hover:underline mt-4 px-2"
+      >
+        <LogOut size={18} /> Login
+      </Link>
+    )}
+  </nav>
+</aside>
 
-        <nav className="flex flex-col items-start px-3 py-4 space-y-2">
-          <NavLink
-            label="Home"
-            icon={<Home size={24} strokeWidth={1.5} />}
-            path="/"
-            layout="horizontal"
-            onClick={onClose}
-          />
-
-          {navSections.map((section: NavSectionType) => (
-            <NavSection
-              key={section.label}
-              {...section}
-              layout="horizontal"
-              onNavigate={onClose}
-              badges={badgeMap}    // <--- PASSA QUI
-            />
-          ))}
-
-          {session ? (
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 text-red-500 hover:underline mt-4 px-2"
-            >
-              <LogOut size={18} /> Logout
-            </button>
-          ) : (
-            <Link
-              to="/login"
-              onClick={onClose}
-              className="flex items-center gap-2 text-green-600 hover:underline mt-4 px-2"
-            >
-              <LogOut size={18} /> Login
-            </Link>
-          )}
-        </nav>
-      </aside>
     </>
   );
 }

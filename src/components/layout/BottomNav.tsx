@@ -9,7 +9,7 @@ export default function BottomNav({ onSearch }: { onSearch: () => void }) {
         icon={<Home size={24} strokeWidth={1.5} />}
         path="/"
         layout="vertical"
-        variant="bottom"   // 👈 AGGIUNGI QUI
+        variant="bottom"
       />
       <NavLink
         label="Ordini"
@@ -33,22 +33,20 @@ export default function BottomNav({ onSearch }: { onSearch: () => void }) {
         variant="bottom"
       />
 
+      {/* Bottone cerca: chiama onSearch passato dal parent */}
       <button
         onClick={onSearch}
         className="flex flex-col items-center justify-center text-xs transition-all duration-200 group"
         tabIndex={0}
         aria-label="Cerca"
-        >
+      >
         <div className="relative h-10 w-10 flex items-center justify-center">
-            {/* Bubble "attiva" se vuoi dare risalto */}
-            {/* <span className="absolute w-12 h-12 rounded-full bg-black/90 z-0 shadow-xl" /> */}
-            <Search size={24} strokeWidth={1.5} className="relative z-10 text-black/60 group-hover:text-black" />
+          <Search size={24} strokeWidth={1.5} className="relative z-10 text-black/60 group-hover:text-black" />
         </div>
         <span className="mt-1 text-[clamp(0.7rem,1.5vw,0.94rem)] font-semibold text-black/70 group-hover:text-black">
-            Cerca
+          Cerca
         </span>
-     </button>
-
+      </button>
     </nav>
   );
 }

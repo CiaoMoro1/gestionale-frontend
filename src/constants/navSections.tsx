@@ -4,6 +4,7 @@ import {
   ArrowLeftRight,
   ArrowDown,
   Boxes,
+  Factory,
 } from "lucide-react";
 
 export const navSections = [
@@ -21,6 +22,7 @@ export const navSections = [
     icon: <Boxes size={24} strokeWidth={1.5} />,
     items: [
       { label: "Dashboard", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/dashboard" },
+      { label: "Prelievo", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/prelievo" },
       { label: "Draft ⚡", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/draft" },
       { label: "Nuovi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/nuovi" },
       { label: "Parziali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/parziali" },
@@ -33,6 +35,13 @@ export const navSections = [
     items: [
       { label: "Prodotti", icon: <Package size={24} strokeWidth={1.5} />, path: "/prodotti" },
       { label: "Movimenti", icon: <ArrowLeftRight size={24} strokeWidth={1.5} />, path: "/movimenti" },
+    ],
+  },
+    {
+    label: "Produzione",
+    icon: <Factory size={24} strokeWidth={1.5} />,
+    items: [
+      { label: "Produzione Vendor", icon: <Factory size={24} strokeWidth={1.5} />, path: "/produzione-vendor" }
     ],
   },
   {

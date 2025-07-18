@@ -27,8 +27,8 @@ export default defineConfig({
           }
         ]
       },
-            workbox: {
-        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024, // 6 MB
+      workbox: {
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         runtimeCaching: [
           {
             urlPattern: ({ request }) => request.destination === 'image',
@@ -43,7 +43,15 @@ export default defineConfig({
           }
         ]
       }
-
     })
-  ]
+  ],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://localhost:5000', // Cambia se la porta è diversa!
+        changeOrigin: true,
+        secure: false,
+      }
+    }
+  }
 });

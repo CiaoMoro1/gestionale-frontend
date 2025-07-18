@@ -21,6 +21,8 @@ import DettaglioDestinazione from './routes/ordini-amazon/dettaglio';
 import Parziali from "./routes/ordini-amazon/parziali";
 import DraftOrdini from "./routes/ordini-amazon/draft";  // <--- AGGIUNGI QUESTO!
 import CompletatiOrdini from "./routes/ordini-amazon/completi";
+import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";
+
 
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
@@ -35,6 +37,8 @@ const Etichettati = lazy(() => import("./routes/Etichettati"));
 const Prelievo = lazy(() => import("./routes/Prelievo"));
 const OrdiniAmazonDashboard = lazy(() => import("./routes/ordini-amazon/dashboard"));
 const EtichetteVendor = lazy(() => import("./routes/ordini-amazon/etichettevendor"));
+const PrelievoAmazon = lazy(() => import("./routes/ordini-amazon/prelievo"));
+
 
 
 // ⚡ QueryClient React Query v5+ (con error handler globale)
@@ -127,6 +131,10 @@ function AppContent() {
               <Route path="/ordini-amazon/draft" element={<DraftOrdini />} /> {/* <-- ECCO LA ROUTE */}
               <Route path="/ordini-amazon/completi" element={<CompletatiOrdini />} /> {/* <-- ECCO LA ROUTE */}
               <Route path="/ordini-amazon/etichettevendor" element={<EtichetteVendor />} />
+              <Route path="/ordini-amazon/prelievo" element={<PrelievoAmazon />} />
+              <Route path="/produzione-vendor" element={<ProduzioneVendor />} />
+
+
 
 
             </Routes>
