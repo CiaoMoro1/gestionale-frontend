@@ -28,7 +28,7 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   // Genera barcode PNG ogni volta che cambia EAN
   useEffect(() => {
     if (!ean) return;
-    generateEAN13Barcode(ean, 58, 13)
+    generateEAN13Barcode(ean, 36, 13)
       .then(setBarcodeUrl)
       .catch(() => setBarcodeUrl(null));
   }, [ean]);
@@ -50,7 +50,8 @@ function handleStampaPdfEtichettaUnica() {
   if (!barcodeUrl) return;
 
   const labelW = 62; // mm
-  const labelH = 29; // mm
+  const labelH = 29; 
+
 
   const doc = new jsPDF({
     orientation: "landscape",
@@ -67,14 +68,14 @@ function handleStampaPdfEtichettaUnica() {
     doc.setFontSize(fontSize);
 
     // Barcode
-    doc.addImage(barcodeUrl, "PNG", 3, -3, labelW - 6, 34);
+    doc.addImage(barcodeUrl, "PNG", (labelW - 48) / 2, -4, 48, 36);
 
     // SKU centrato
     doc.text(sku, labelW / 2, 4, { align: "center" });
 
     // EAN più grande
     doc.setFontSize(14);
-    doc.setFont("helvetica", "normal");
+    doc.setFont("helvetica", "bold");
     doc.text(ean, labelW / 2, labelH - 2, { align: "center" });
   }
 
@@ -111,12 +112,15 @@ function handleStampaPdfEtichettaUnica() {
       const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
       doc.setFontSize(fontSize);
 
-      doc.addImage(barcodeUrl, "PNG", x + 3, y - 3, labelW - 6, 34);
-      doc.text(sku, x + labelW / 2, y + 4, { align: "center" });
+      const labelWt = 70;
+      const barcodeWidth = 48;
+      const barcodeX = x + (labelW - barcodeWidth) / 2; // centrato
+      doc.addImage(barcodeUrl, "PNG", barcodeX, y - 4, barcodeWidth, 36);
+      doc.text(sku, x + labelWt / 2, y + 4, { align: "center" });
 
       doc.setFontSize(14);
-      doc.setFont("helvetica", "normal");
-      doc.text(ean, x + labelW / 2, y + labelH - 6, { align: "center" });
+      doc.setFont("helvetica", "bold");
+      doc.text(ean, x + labelW / 2, y + labelH - 8, { align: "center" });
 
       idx++;
       q--;
