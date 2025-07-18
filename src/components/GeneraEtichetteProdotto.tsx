@@ -9,11 +9,15 @@ type Props = {
   ean: string;
 };
 
-// 62x29mm a 96dpi ≈ 234x110px
-const LABEL_W = 234;
-const LABEL_H = 110;
+const DPI = 300; // Usa 203 se la tua stampante non è Brother QL
+const LABEL_W_MM = 62;
+const LABEL_H_MM = 29;
+const MM_TO_INCH = 1 / 25.4;
 
-function shrinkFontToFit(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, baseSize = 24, minSize = 6) {
+const LABEL_W = Math.round(LABEL_W_MM * MM_TO_INCH * DPI); // 732 px
+const LABEL_H = Math.round(LABEL_H_MM * MM_TO_INCH * DPI); // 342 px
+
+function shrinkFontToFit(ctx: CanvasRenderingContext2D, text: string, maxWidth: number, baseSize = 60, minSize = 14) {
   let size = baseSize;
   ctx.font = `bold ${size}px monospace`;
   while (ctx.measureText(text).width > maxWidth && size > minSize) {
@@ -32,7 +36,7 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   // Genera barcode PNG
   useEffect(() => {
     if (!ean) return;
-    generateEAN13Barcode(ean, LABEL_W - 8, 60)
+    generateEAN13Barcode(ean, LABEL_W - Math.round(DPI * 0.36), Math.round(DPI * 0.68))
       .then(setBarcodeUrl)
       .catch(() => setBarcodeUrl(null));
   }, [ean]);
@@ -40,40 +44,49 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   // Preview etichetta su canvas, esporta PNG
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || !barcodeUrl) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, LABEL_W, LABEL_H);
+useEffect(() => {
+  const canvas = canvasRef.current;
+  if (!canvas || !barcodeUrl) return;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, LABEL_W, LABEL_H);
 
-    // Sfondo
-    ctx.fillStyle = "#fafbfc";
-    ctx.fillRect(0, 0, LABEL_W, LABEL_H);
+  // Sfondo
+  ctx.fillStyle = "#fafbfc";
+  ctx.fillRect(0, 0, LABEL_W, LABEL_H);
 
-    // Calcola font-size
-    let fontSize = shrinkFontToFit(ctx, sku, LABEL_W - 14, 24, 6);
-    ctx.font = `bold ${fontSize}px monospace`;
-    ctx.fillStyle = "#222";
-    ctx.textAlign = "center";      // <--- centro orizzontale
-    ctx.textBaseline = "top";      // in alto rispetto alla y data
-    ctx.fillText(sku, LABEL_W / 2, 8);  // <--- centro orizzontale, y=8 pixel dall’alto
+  // SKU
+  let fontSize = shrinkFontToFit(ctx, sku, LABEL_W - DPI * 0.6, 60, 14);
+  ctx.font = `bold ${fontSize}px monospace`;
+  ctx.fillStyle = "#222";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const skuY = Math.round(DPI * 0.13);
+  ctx.fillText(sku, LABEL_W / 2, skuY);
 
-    // Barcode
-    const barcodeImg = new window.Image();
-    barcodeImg.onload = () => {
-      ctx.drawImage(barcodeImg, 6, 26, LABEL_W - 4, 60);
+  // Barcode (deve essere disegnato PRIMA dell'EAN)
+const barcodeImg = new window.Image();
+barcodeImg.onload = () => {
+  // Nuove dimensioni barcode:
+  const barcodeH = 120; // o 100-120, NON di più!
+  const barcodeY = skuY + fontSize + 18; // subito dopo lo SKU (18px di gap)
+  const barcodeX = 30; // margine sinistro
+  const barcodeW = LABEL_W - 60; // margine destro uguale (30+30)
 
-      // EAN
-      ctx.font = "bold 24px monospace";
-      ctx.fillStyle = "#333";
-      ctx.textAlign = "center";
-      ctx.fillText(ean, LABEL_W / 2, 85);
+  ctx.drawImage(barcodeImg, barcodeX, barcodeY, barcodeW, barcodeH);
 
-      setCanvasUrl(canvas.toDataURL("image/png"));
-    };
-    barcodeImg.src = barcodeUrl;
-  }, [sku, ean, barcodeUrl]);
+    // EAN (solo DOPO aver disegnato il barcode!)
+  ctx.font = `bold ${Math.round(DPI * 0.16)}px monospace`; // 48px se DPI=300
+  ctx.fillStyle = "#333";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  const eanY = barcodeY + barcodeH + 10; // 10px di gap sotto barcode
+  ctx.fillText(ean, LABEL_W / 2, eanY);
+
+  setCanvasUrl(canvas.toDataURL("image/png"));
+};
+barcodeImg.src = barcodeUrl;
+}, [sku, ean, barcodeUrl]);
 
   // Gestione quantità
   useEffect(() => {
@@ -87,7 +100,7 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
     if (!isNaN(n) && n > 0 && n <= 99) setQty(n);
   }
 
-  // PDF foglio 24 etichette (come già avevi)
+  // PDF foglio 24 etichette
   function handleAnteprimaFoglio() {
     if (!barcodeUrl) return;
     const cols = 3;
@@ -156,6 +169,8 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
               background: "#fafbfc",
               marginBottom: 12,
               boxShadow: "0 1px 8px #0001",
+              maxWidth: 400, // responsive preview
+              height: "auto"
             }}
           />
           {canvasUrl && (
