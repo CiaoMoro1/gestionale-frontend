@@ -13,6 +13,7 @@ import { Link } from "react-router-dom";
 import SearchInput from "../components/SearchInput";
 import { ArrowUp } from "lucide-react";
 import { QuantityInput } from "../components/QuantityInput";
+import GeneraEtichetteModalProdotto from "../components/GeneraEtichetteProdotto";
 
 
 interface Inventory {
@@ -39,6 +40,9 @@ export default function Prodotti() {
   const [visibleCount, setVisibleCount] = useState(10);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const queryClient = useQueryClient();
+  const [modalOpen, setModalOpen] = useState(false);
+const [selectedSku, setSelectedSku] = useState<string | null>(null);
+const [selectedEan, setSelectedEan] = useState<string | null>(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => setDebouncedSearch(search), 300);
@@ -177,6 +181,19 @@ export default function Prodotti() {
                       productId={product.id}
                       initialQuantity={product.inventario ?? 0}
                     />
+                                                <div className="mt-2">
+                              <button
+                                className="px-2 py-1 text-xs rounded bg-cyan-700 text-white font-bold hover:bg-cyan-900 transition"
+                                onClick={() => {
+                                  setSelectedSku(product.sku ?? "");
+                                  setSelectedEan(product.ean ?? "");
+                                  setModalOpen(true);
+                                }}
+                                disabled={!product.sku || !product.ean}
+                              >
+                                🏷️ Genera etichette
+                              </button>
+                            </div>
                   </div>
                 </div>
               </div>
@@ -184,6 +201,16 @@ export default function Prodotti() {
           ))}
         </ul>
       )}
+
+{modalOpen && selectedSku && selectedEan && (
+  <GeneraEtichetteModalProdotto
+    open={modalOpen}
+    onClose={() => setModalOpen(false)}
+    sku={selectedSku}
+    ean={selectedEan}
+  />
+)}
+
 
       {!deferredSearch && filtered.length > visibleItems.length && (
         <div className="text-center">
