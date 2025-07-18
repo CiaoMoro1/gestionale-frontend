@@ -23,6 +23,20 @@ export default function HomePage() {
     { label: "Sync", path: "/sync", icon: <Package size={24} /> }
   ];
 
+  // 1. Callback quando trovi un barcode
+  const handleBarcodeFound = async (barcode: string) => {
+    setSearchOpen(false);
+    // Esempio 1: NAVIGA alla pagina prodotto, se il percorso è tipo /prodotti/:ean
+    // navigate(`/prodotti/${barcode}`);
+
+    // Esempio 2: Cerca nel database e mostra risultato
+    // const result = await fetchProductByBarcode(barcode);
+    // if (result) { ...mostra modale... }
+
+    // Per ora: navighiamo a una ricerca prodotti con ?ean=barcode
+    navigate(`/prodotti?ean=${encodeURIComponent(barcode)}`);
+  };
+
   return (
     <>
       <div className="space-y-4">
@@ -43,8 +57,11 @@ export default function HomePage() {
         </div>
       </div>
 
-      <SearchProductModal open={searchOpen} onClose={() => setSearchOpen(false)} />
-
+      <SearchProductModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        onBarcodeFound={handleBarcodeFound} // <-- AGGIUNGI QUESTO!
+      />
     </>
   );
 }
