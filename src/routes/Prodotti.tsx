@@ -13,7 +13,7 @@ import { Link } from "react-router-dom";
 import SearchInput from "../components/SearchInput";
 import { ArrowUp } from "lucide-react";
 import { QuantityInput } from "../components/QuantityInput";
-import GeneraEtichetteModalProdotto from "../components/GeneraEtichetteProdotto";
+import GeneraEtichetteModal from "../components/GeneraEtichetteModal";
 
 
 interface Inventory {
@@ -203,7 +203,7 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
       )}
 
 {modalOpen && selectedSku && selectedEan && (
-  <GeneraEtichetteModalProdotto
+  <GeneraEtichetteModal
     open={modalOpen}
     onClose={() => setModalOpen(false)}
     sku={selectedSku}

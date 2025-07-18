@@ -1,5 +1,4 @@
-import { useState, useEffect } from "react";
-import { Document, Page, View, Text, Image, StyleSheet, pdf } from "@react-pdf/renderer";
+import React, { useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import { generateEAN13Barcode } from "../utils/barcode-bwip";
 
@@ -10,81 +9,34 @@ type Props = {
   ean: string;
 };
 
-// 62x29mm a 96dpi ≈ 234x110px
-const LABEL_W = 234;
-const LABEL_H = 110;
-
-const styles = StyleSheet.create({
-  page: {
-    backgroundColor: "#fff",
-    width: LABEL_W,
-    height: LABEL_H,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 0,
-    margin: 0,
-  },
-  label: {
-    width: LABEL_W,
-    height: LABEL_H,
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "#fafbfc",
-    padding: 0,
-    margin: 0,
-  },
-  sku: {
-    fontWeight: 700,
-    marginBottom: 2,
-    whiteSpace: "nowrap",
-    textOverflow: "ellipsis",
-    overflow: "hidden",
-    maxWidth: LABEL_W - 10,
-    fontSize: 26,
-    letterSpacing: 1,
-  },
-  ean: { fontSize: 15, marginTop: 2, letterSpacing: 2 },
-  barcodeWrap: { width: LABEL_W - 8, height: 60, alignItems: "center", margin: 0 },
-});
-
-function computeAutoFontSize(sku: string, containerWidth: number, baseFont: number = 26, minFont: number = 10) {
-  const charWidth = baseFont * 0.62;
-  const requiredWidth = sku.length * charWidth;
-  if (requiredWidth < containerWidth) return baseFont;
-  const shrinkFont = Math.max(minFont, Math.floor(containerWidth / (sku.length * 0.62)));
-  return shrinkFont;
+// Funzione shrink font adattiva per jsPDF
+function shrinkFontToFitPDF(doc: jsPDF, text: string, maxWidth: number, baseSize = 13, minSize = 7) {
+  let fontSize = baseSize;
+  doc.setFontSize(fontSize);
+  while (doc.getTextWidth(text) > maxWidth && fontSize > minSize) {
+    fontSize--;
+    doc.setFontSize(fontSize);
+  }
+  return fontSize;
 }
 
-export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props) {
+export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }: Props) {
   const [qty, setQty] = useState(1);
   const [qtyInput, setQtyInput] = useState("1");
   const [barcodeUrl, setBarcodeUrl] = useState<string | null>(null);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [autoFont, setAutoFont] = useState(26);
 
-  // Auto-adatta font SKU
+  // Genera barcode PNG ogni volta che cambia EAN
   useEffect(() => {
-    setAutoFont(computeAutoFontSize(sku, LABEL_W - 12, 26, 10));
-  }, [sku]);
+    if (!ean) return;
+    generateEAN13Barcode(ean, 58, 13)
+      .then(setBarcodeUrl)
+      .catch(() => setBarcodeUrl(null));
+  }, [ean]);
 
-  // Quantità: permette di cancellare tutto per scrivere nuovo valore
+  // Gestione quantità
   useEffect(() => {
     setQtyInput(String(qty));
   }, [qty]);
-
-  // Genera il barcode PNG ogni volta che cambia l'EAN
-  useEffect(() => {
-    if (ean) {
-      generateEAN13Barcode(ean, LABEL_W - 8, 60)
-        .then(setBarcodeUrl)
-        .catch(() => setBarcodeUrl(null));
-    }
-  }, [ean]);
-
-  // Quantità: solo numeri > 0, max 99
   function handleQtyChange(e: React.ChangeEvent<HTMLInputElement>) {
     const val = e.target.value.replace(/\D/g, "");
     setQtyInput(val);
@@ -93,104 +45,48 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
     if (!isNaN(n) && n > 0 && n <= 99) setQty(n);
   }
 
-  // Scarica PDF etichette 62x29mm
-  async function handleDownloadPDF() {
+  // PDF ETICHETTA SINGOLA (62x29mm)
+  function handleStampaPdfEtichettaUnica() {
     if (!barcodeUrl) return;
-    setPdfLoading(true);
-    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
-    const doc = (
-      <Document>
-        {[...Array(qty)].map((_, i) => (
-          <Page
-            key={i}
-            size={{ width: LABEL_W, height: LABEL_H }}
-            style={styles.page}
-          >
-            <View style={styles.label}>
-              <Text
-                style={{
-                  ...styles.sku,
-                  fontSize: fontSizeForPdf,
-                }}
-                render={() => sku}
-              />
-              <Image src={barcodeUrl} style={{
-                width: LABEL_W - 8,
-                height: 60,
-                margin: "0 auto",
-                alignSelf: "center"
-              }} />
-              <Text style={styles.ean}>{ean}</Text>
-            </View>
-          </Page>
-        ))}
-      </Document>
-    );
-    const asPdf = pdf();
-    asPdf.updateContainer(doc);
-    const blob = await asPdf.toBlob();
-    setPdfLoading(false);
 
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `etichette_${sku}_${ean}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => {
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }, 100);
+    const labelW = 62; // mm
+    const labelH = 29; // mm
+
+    for (let i = 0; i < qty; i++) {
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: [labelW, labelH]
+      });
+
+      // SKU shrink-to-fit
+      doc.setFont("courier", "bold");
+      const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
+      doc.setFontSize(fontSize);
+
+      // Barcode
+      doc.addImage(barcodeUrl, "PNG", 3, -3, labelW - 6, 34);
+
+      // SKU centrato
+      doc.text(sku, labelW / 2, 4, { align: "center" });
+
+
+
+      // EAN più grande (se vuoi, aumenta qui!)
+      doc.setFontSize(14);
+      doc.setFont("helvetica", "normal");
+      doc.text(ean, labelW / 2, labelH - 2, { align: "center" });
+
+      window.open(doc.output("bloburl"), "_blank");
+    }
   }
 
-  // APRE SOLO IL PDF (stampa perfetta su Brother, nessun JS strano, compatibilità top su tablet/PC)
-  async function handleStampaPDFDiretta() {
-    if (!barcodeUrl) return;
-    setPdfLoading(true);
-    const fontSizeForPdf = computeAutoFontSize(sku, LABEL_W - 14, 24, 10);
-    const doc = (
-      <Document>
-        {[...Array(qty)].map((_, i) => (
-          <Page
-            key={i}
-            size={{ width: LABEL_W, height: LABEL_H }}
-            style={styles.page}
-          >
-            <View style={styles.label}>
-              <Text
-                style={{
-                  ...styles.sku,
-                  fontSize: fontSizeForPdf,
-                }}
-                render={() => sku}
-              />
-              <Image src={barcodeUrl} style={{
-                width: LABEL_W - 8,
-                height: 60,
-                margin: "0 auto",
-                alignSelf: "center"
-              }} />
-              <Text style={styles.ean}>{ean}</Text>
-            </View>
-          </Page>
-        ))}
-      </Document>
-    );
-    const asPdf = pdf();
-    asPdf.updateContainer(doc);
-    const blob = await asPdf.toBlob();
-    setPdfLoading(false);
-
-    const pdfUrl = URL.createObjectURL(blob);
-    window.open(pdfUrl, "_blank"); // LASCIA all'utente il click su stampa!
-  }
-
-  // PDF A4, 24 etichette (3x8, 70x35mm)
+  // PDF FOGLIO 24 ETICHETTE (70x35mm ciascuna)
   function handleAnteprimaFoglio() {
     if (!barcodeUrl) return;
     const cols = 3;
     const rows = 8;
-    const labelW = 70; // mm
+    const labelW = 70; // mm (singola etichetta su foglio)
     const labelH = 35; // mm
     const marginTop = 5; // mm
 
@@ -210,21 +106,22 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
           const x = c * labelW;
           const y = marginTop + r * labelH;
 
-          doc.setDrawColor(210);
-          doc.rect(x, y, labelW, labelH);
-
-          // SKU
-          doc.setFontSize(13);
+          // SKU shrink-to-fit per ogni etichetta!
           doc.setFont("courier", "bold");
-          doc.text(sku, x + labelW / 2, y + 11, { align: "center" });
+          const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
+          doc.setFontSize(fontSize);
+
+
 
           // Barcode
-          doc.addImage(barcodeUrl, "PNG", x + 6, y + 14, labelW - 12, 13);
+          doc.addImage(barcodeUrl, "PNG", x + 3, y - 8, labelW - 6, 48);
+
+         doc.text(sku, x + labelW / 2, y + 4, { align: "center" });
 
           // EAN
-          doc.setFontSize(12);
+          doc.setFontSize(15);
           doc.setFont("helvetica", "normal");
-          doc.text(ean, x + labelW / 2, y + labelH - 4, { align: "center" });
+          doc.text(ean, x + labelW / 2, y + labelH - 2, { align: "center" });
 
           idx++;
           q--;
@@ -247,8 +144,8 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
           <div
             className="border border-gray-200 shadow-sm rounded-lg bg-gray-50 py-2 px-3 flex flex-col items-center"
             style={{
-              width: LABEL_W,
-              height: LABEL_H,
+              width: 248,
+              height: 110,
               boxShadow: "0 1px 8px #0001",
               margin: "0 auto",
             }}
@@ -256,7 +153,7 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             <div
               className="font-mono font-bold mb-1 text-center"
               style={{
-                fontSize: `${autoFont}px`,
+                fontSize: `22px`,
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 minWidth: 0,
@@ -267,20 +164,20 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
             >
               {sku}
             </div>
-              {barcodeUrl && (
-                <img
-                  src={barcodeUrl}
-                  alt="barcode"
-                  style={{
-                    width: LABEL_W - 8,
-                    height: 60,
-                    background: "#fff",
-                    display: "block",
-                    margin: "0 auto",
-                    objectFit: "contain",
-                  }}
-                />
-              )}
+            {barcodeUrl && (
+              <img
+                src={barcodeUrl}
+                alt="barcode"
+                style={{
+                  width: 198,
+                  height: 40,
+                  background: "#fff",
+                  display: "block",
+                  margin: "0 auto",
+                  objectFit: "contain",
+                }}
+              />
+            )}
             <div className="text-base tracking-widest text-center mt-1">{ean}</div>
           </div>
         </div>
@@ -303,27 +200,20 @@ export default function GeneraEtichetteModal({ open, onClose, sku, ean }: Props)
         </div>
         <div className="flex gap-2 w-full">
           <button
-            className="w-1/2 py-2 font-bold rounded-lg shadow bg-blue-600 text-white hover:bg-blue-800 transition text-sm"
-            disabled={pdfLoading}
-            onClick={handleDownloadPDF}
+            className="w-1/2 py-2 font-bold rounded-lg shadow bg-green-700 text-white hover:bg-green-900 transition text-sm"
+            disabled={!barcodeUrl}
+            onClick={handleStampaPdfEtichettaUnica}
           >
-            {pdfLoading ? "Creazione PDF..." : "Scarica PDF"}
+            Stampa singola etichetta (PDF)
           </button>
           <button
-            className="w-1/2 py-2 font-bold rounded-lg shadow bg-green-600 text-white hover:bg-green-800 transition text-sm"
-            onClick={handleStampaPDFDiretta}
+            className="w-1/2 py-2 font-bold rounded-lg shadow bg-cyan-700 text-white hover:bg-cyan-900 transition text-sm"
             disabled={!barcodeUrl}
+            onClick={handleAnteprimaFoglio}
           >
-            Stampa subito (PDF)
+            Genera PDF (foglio 24 etichette)
           </button>
         </div>
-        <button
-          className="w-full mt-3 py-2 font-bold rounded-lg shadow bg-cyan-600 text-white hover:bg-cyan-800 transition text-sm"
-          onClick={handleAnteprimaFoglio}
-          disabled={!barcodeUrl}
-        >
-          Genera PDF (foglio 24 etichette)
-        </button>
       </div>
     </div>
   );
