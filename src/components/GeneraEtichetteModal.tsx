@@ -46,92 +46,88 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   }
 
   // PDF ETICHETTA SINGOLA (62x29mm)
-  function handleStampaPdfEtichettaUnica() {
-    if (!barcodeUrl) return;
+function handleStampaPdfEtichettaUnica() {
+  if (!barcodeUrl) return;
 
-    const labelW = 62; // mm
-    const labelH = 29; // mm
+  const labelW = 62; // mm
+  const labelH = 29; // mm
 
-    for (let i = 0; i < qty; i++) {
-      const doc = new jsPDF({
-        orientation: "landscape",
-        unit: "mm",
-        format: [labelW, labelH]
-      });
+  const doc = new jsPDF({
+    orientation: "landscape",
+    unit: "mm",
+    format: [labelW, labelH]
+  });
 
-      // SKU shrink-to-fit
+  for (let i = 0; i < qty; i++) {
+    if (i > 0) doc.addPage([labelW, labelH], "landscape");
+
+    // SKU shrink-to-fit
+    doc.setFont("courier", "bold");
+    const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
+    doc.setFontSize(fontSize);
+
+    // Barcode
+    doc.addImage(barcodeUrl, "PNG", 3, -3, labelW - 6, 34);
+
+    // SKU centrato
+    doc.text(sku, labelW / 2, 4, { align: "center" });
+
+    // EAN più grande
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "normal");
+    doc.text(ean, labelW / 2, labelH - 2, { align: "center" });
+  }
+
+  window.open(doc.output("bloburl"), "_blank");
+}
+
+  // PDF FOGLIO 24 ETICHETTE (70x35mm ciascuna)
+ function handleAnteprimaFoglio() {
+  if (!barcodeUrl) return;
+  const cols = 3;
+  const rows = 8;
+  const labelW = 70; // mm
+  const labelH = 35; // mm
+  const marginTop = 10; // mm margine sopra (e quindi sotto)
+
+  const doc = new jsPDF({
+    orientation: "portrait",
+    unit: "mm",
+    format: "a4"
+  });
+
+  let q = qty;
+  let idx = 0;
+  for (let page = 0; q > 0; page++) {
+  if (page > 0) doc.addPage();
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (idx >= qty) break;
+      const x = c * labelW;
+      const y = marginTop + r * labelH;
+
+      // === Etichetta ===
       doc.setFont("courier", "bold");
       const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
       doc.setFontSize(fontSize);
 
-      // Barcode
-      doc.addImage(barcodeUrl, "PNG", 3, -3, labelW - 6, 34);
+      doc.addImage(barcodeUrl, "PNG", x + 3, y - 3, labelW - 6, 34);
+      doc.text(sku, x + labelW / 2, y + 4, { align: "center" });
 
-      // SKU centrato
-      doc.text(sku, labelW / 2, 4, { align: "center" });
-
-
-
-      // EAN più grande (se vuoi, aumenta qui!)
       doc.setFontSize(14);
       doc.setFont("helvetica", "normal");
-      doc.text(ean, labelW / 2, labelH - 2, { align: "center" });
+      doc.text(ean, x + labelW / 2, y + labelH - 6, { align: "center" });
 
-      window.open(doc.output("bloburl"), "_blank");
+      idx++;
+      q--;
+      if (q <= 0) break;
     }
+    if (q <= 0) break;
   }
+}
+  window.open(doc.output("bloburl"), "_blank");
+}
 
-  // PDF FOGLIO 24 ETICHETTE (70x35mm ciascuna)
-  function handleAnteprimaFoglio() {
-    if (!barcodeUrl) return;
-    const cols = 3;
-    const rows = 8;
-    const labelW = 70; // mm (singola etichetta su foglio)
-    const labelH = 35; // mm
-    const marginTop = 5; // mm
-
-    const doc = new jsPDF({
-      orientation: "portrait",
-      unit: "mm",
-      format: "a4"
-    });
-
-    let q = qty;
-    let idx = 0;
-    for (let page = 0; q > 0; page++) {
-      if (page > 0) doc.addPage();
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          if (idx >= qty) break;
-          const x = c * labelW;
-          const y = marginTop + r * labelH;
-
-          // SKU shrink-to-fit per ogni etichetta!
-          doc.setFont("courier", "bold");
-          const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
-          doc.setFontSize(fontSize);
-
-
-
-          // Barcode
-          doc.addImage(barcodeUrl, "PNG", x + 3, y - 8, labelW - 6, 48);
-
-         doc.text(sku, x + labelW / 2, y + 4, { align: "center" });
-
-          // EAN
-          doc.setFontSize(15);
-          doc.setFont("helvetica", "normal");
-          doc.text(ean, x + labelW / 2, y + labelH - 2, { align: "center" });
-
-          idx++;
-          q--;
-          if (q <= 0) break;
-        }
-        if (q <= 0) break;
-      }
-    }
-    window.open(doc.output("bloburl"), "_blank");
-  }
 
   if (!open) return null;
 
