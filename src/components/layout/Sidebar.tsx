@@ -38,7 +38,10 @@ export default function Sidebar() {
         <img src={Logo} alt="Logo" className="h-10" />
       </div>
 
-      <nav className="flex-1 flex flex-col items-start justify-start space-y-2 pt-6 w-full">
+      <nav className="flex-1 flex flex-col items-start justify-start space-y-2 pt-6 w-full
+      overflow-y-auto min-h-0 max-h-[calc(100vh-80px-56px)]
+      overscroll-contain
+        ">
         <NavLink
           label="Home"
           icon={<Home size={24} strokeWidth={1.5} />}

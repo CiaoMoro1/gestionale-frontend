@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import jsPDF from "jspdf";
 import { generateEAN13Barcode } from "../utils/barcode-bwip";
+import { supabase } from "../lib/supabase"; // <--- IMPORTANTE!
 
 type Props = {
   open: boolean;
@@ -24,6 +25,29 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   const [qty, setQty] = useState(1);
   const [qtyInput, setQtyInput] = useState("1");
   const [barcodeUrl, setBarcodeUrl] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null); // <-- Stato per l'immagine
+
+  // Carica l'immagine prodotto da supabase (SOLO PREVIEW)
+useEffect(() => {
+  if (!sku) {
+    setImageUrl(null);
+    return;
+  }
+  const fetchImage = async () => {
+    try {
+      const { data } = await supabase
+        .from("products")
+        .select("image_url")
+        .eq("sku", sku)
+        .single();
+      setImageUrl(data?.image_url || null);
+    } catch {
+      setImageUrl(null);
+    }
+  };
+  fetchImage();
+}, [sku]);
+
 
   // Genera barcode PNG ogni volta che cambia EAN
   useEffect(() => {
@@ -46,99 +70,94 @@ export default function GeneraEtichetteModalProdotto({ open, onClose, sku, ean }
   }
 
   // PDF ETICHETTA SINGOLA (62x29mm)
-function handleStampaPdfEtichettaUnica() {
-  if (!barcodeUrl) return;
+  function handleStampaPdfEtichettaUnica() {
+    if (!barcodeUrl) return;
 
-  const labelW = 62; // mm
-  const labelH = 29; // mm
-  const marginY = 3; // mm
-  const usableH = labelH - marginY * 2;
+    const labelW = 62; // mm
+    const labelH = 29; // mm
+    const marginY = 3; // mm
+    const usableH = labelH - marginY * 2;
 
-  const doc = new jsPDF({
-    orientation: "landscape",
-    unit: "mm",
-    format: [labelW, labelH]
-  });
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: [labelW, labelH]
+    });
 
-  for (let i = 0; i < qty; i++) {
-    if (i > 0) doc.addPage([labelW, labelH], "landscape");
+    for (let i = 0; i < qty; i++) {
+      if (i > 0) doc.addPage([labelW, labelH], "landscape");
 
+      // Barcode
+      const barcodeWidth = 48;
+      const barcodeHeight = 36;
+      const barcodeX = (labelW - barcodeWidth) / 2;
+      const barcodeY = marginY + ((usableH - barcodeHeight) / 2);
+      doc.addImage(barcodeUrl, "PNG", barcodeX, barcodeY, barcodeWidth, barcodeHeight);
 
-
-       // Barcode
-    const barcodeWidth = 48;
-    const barcodeHeight = 36;
-    const barcodeX = (labelW - barcodeWidth) / 2;
-    const barcodeY = marginY + ((usableH - barcodeHeight) / 2); // centra nella fascia
-    doc.addImage(barcodeUrl, "PNG", barcodeX, barcodeY, barcodeWidth, barcodeHeight);
-    
-    // SKU
-    doc.setFont("courier", "bold");
-    const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
-    doc.setFontSize(fontSize);
-    doc.text(sku, labelW / 2, marginY + 3, { align: "center" });
-
- 
-
-    // EAN
-    doc.setFontSize(14);
-    doc.setFont("helvetica", "normal");
-    doc.text(ean, labelW / 2, labelH - marginY, { align: "center" }); // 3mm dal fondo
-  }
-
-  window.open(doc.output("bloburl"), "_blank");
-}
-
-  // PDF FOGLIO 24 ETICHETTE (70x35mm ciascuna)
- function handleAnteprimaFoglio() {
-  if (!barcodeUrl) return;
-  const cols = 3;
-  const rows = 8;
-  const labelW = 70; // mm
-  const labelH = 35; // mm
-  const marginTop = 10; // mm margine sopra (e quindi sotto)
-
-  const doc = new jsPDF({
-    orientation: "portrait",
-    unit: "mm",
-    format: "a4"
-  });
-
-  let q = qty;
-  let idx = 0;
-  for (let page = 0; q > 0; page++) {
-  if (page > 0) doc.addPage();
-  for (let r = 0; r < rows; r++) {
-    for (let c = 0; c < cols; c++) {
-      if (idx >= qty) break;
-      const x = c * labelW;
-      const y = marginTop + r * labelH;
-
-      // === Etichetta ===
+      // SKU
       doc.setFont("courier", "bold");
       const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
       doc.setFontSize(fontSize);
+      doc.text(sku, labelW / 2, marginY + 3, { align: "center" });
 
-      const labelWt = 70;
-      const barcodeWidth = 48;
-      const barcodeX = x + (labelW - barcodeWidth) / 2; // centrato
-      doc.addImage(barcodeUrl, "PNG", barcodeX, y - 4, barcodeWidth, 36);
-      doc.text(sku, x + labelWt / 2, y + 4, { align: "center" });
-
+      // EAN
       doc.setFontSize(14);
-      doc.setFont("helvetica", "bold");
-      doc.text(ean, x + labelW / 2, y + labelH - 8, { align: "center" });
-
-      idx++;
-      q--;
-      if (q <= 0) break;
+      doc.setFont("helvetica", "normal");
+      doc.text(ean, labelW / 2, labelH - marginY, { align: "center" });
     }
-    if (q <= 0) break;
-  }
-}
-  window.open(doc.output("bloburl"), "_blank");
-}
 
+    window.open(doc.output("bloburl"), "_blank");
+  }
+
+  // PDF FOGLIO 24 ETICHETTE (70x35mm ciascuna)
+  function handleAnteprimaFoglio() {
+    if (!barcodeUrl) return;
+    const cols = 3;
+    const rows = 8;
+    const labelW = 70; // mm
+    const labelH = 35; // mm
+    const marginTop = 10; // mm margine sopra (e quindi sotto)
+
+    const doc = new jsPDF({
+      orientation: "portrait",
+      unit: "mm",
+      format: "a4"
+    });
+
+    let q = qty;
+    let idx = 0;
+    for (let page = 0; q > 0; page++) {
+      if (page > 0) doc.addPage();
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          if (idx >= qty) break;
+          const x = c * labelW;
+          const y = marginTop + r * labelH;
+
+          // SKU shrink-to-fit per ogni etichetta
+          doc.setFont("courier", "bold");
+          const fontSize = shrinkFontToFitPDF(doc, sku, labelW - 8, 15, 7);
+          doc.setFontSize(fontSize);
+
+          const barcodeWidth = 48;
+          const barcodeX = x + (labelW - barcodeWidth) / 2;
+          doc.addImage(barcodeUrl, "PNG", barcodeX, y - 4, barcodeWidth, 36);
+
+          doc.text(sku, x + labelW / 2, y + 4, { align: "center" });
+
+          doc.setFontSize(14);
+          doc.setFont("helvetica", "bold");
+          doc.text(ean, x + labelW / 2, y + labelH - 8, { align: "center" });
+
+          idx++;
+          q--;
+          if (q <= 0) break;
+        }
+        if (q <= 0) break;
+      }
+    }
+    window.open(doc.output("bloburl"), "_blank");
+  }
 
   if (!open) return null;
 
@@ -147,6 +166,19 @@ function handleStampaPdfEtichettaUnica() {
       <div className="bg-white rounded-2xl shadow-xl px-5 py-6 w-full max-w-xs sm:max-w-[390px] relative flex flex-col items-center">
         <button className="absolute top-2 right-4 text-2xl text-neutral-400 hover:text-black" onClick={onClose}>×</button>
         <h3 className="font-bold text-xl text-blue-700 mb-3 text-center">Genera Etichetta</h3>
+        
+        {/* IMMAGINE PRODOTTO SOLO NELLA MODALE */}
+        {imageUrl && (
+          <div className="mb-3 flex justify-center">
+            <img
+              src={imageUrl}
+              alt="Immagine prodotto"
+              className="max-w-[140px] max-h-[100px] rounded-2xl border shadow"
+              style={{ objectFit: "contain", background: "#fff" }}
+            />
+          </div>
+        )}
+
         <div className="mb-4 w-full flex flex-col items-center">
           <div
             className="border border-gray-200 shadow-sm rounded-lg bg-gray-50 py-2 px-3 flex flex-col items-center"
