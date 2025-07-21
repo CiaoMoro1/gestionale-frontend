@@ -208,15 +208,32 @@ async function completaPending() {
     alert("Non ci sono articoli pending da completare.");
   }
 
-  // **Pulizia sempre e comunque**
-  await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" })
+  // 🔄 In ogni caso, forziamo una sync della produzione per tutti i prelievi
+const resPrelievi = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+const tuttiPrelievi: PrelievoRow[] = await resPrelievi.json();
 
-  // Reload (come già fai)
+  if (tuttiPrelievi.length > 0) {
+    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ids: tuttiPrelievi.map(p => p.id),
+        fields: {} // anche se non cambia niente, serve a far girare sync_produzione()
+      })
+    });
+  }
+
+  // Pulizia sempre e comunque
+  await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
+
+  // Reload
   const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
   setPrelievi(await res1.json());
+
   const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
   setAllPrelieviData(await res2.json());
 }
+
 
 
   async function svuotaLista() {
