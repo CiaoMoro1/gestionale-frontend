@@ -71,6 +71,9 @@ export default function DettaglioPrelievo() {
   const [dateDisponibili, setDateDisponibili] = useState<string[]>([]);
   const [importLoading, setImportLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
+  const [progressActive, setProgressActive] = useState(false);
+  const [progressPerc, setProgressPerc] = useState(0); // 0-100
+  const [progressText, setProgressText] = useState<string>(""); // testo es: "Importazione..."
 
   // Chiudi menu radici cliccando fuori
   useEffect(() => {
@@ -126,6 +129,43 @@ fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
     setRiscontroError(false);
     setShake(false);
   }
+
+  function ProgressBar({ perc, text }: { perc: number, text: string }) {
+    return (
+      <div className="fixed top-0 left-0 w-full z-[120] pointer-events-none">
+        <div className="w-full flex flex-col items-center">
+          <div className="mt-2 mb-1 text-sm font-bold text-cyan-800 animate-pulse bg-white/80 px-2 py-1 rounded-xl shadow">
+            {text}
+          </div>
+          <div className="relative w-[88vw] max-w-[540px] h-3 rounded-xl overflow-hidden bg-cyan-100 shadow">
+            <div
+              className="absolute top-0 left-0 h-full bg-gradient-to-r from-cyan-400 to-cyan-600 transition-all duration-300"
+              style={{
+                width: perc + "%",
+                minWidth: perc > 0 ? "12%" : "0"
+              }}
+            />
+            <div
+              className="absolute top-0 left-0 h-full w-full animate-bar-stripes"
+              style={{ background: "repeating-linear-gradient(90deg,#d5f3fc 0 10px,transparent 10px 20px)" }}
+            />
+          </div>
+        </div>
+        <style>{`
+          @keyframes bar-stripes {
+            0% { background-position-x: 0;}
+            100% { background-position-x: 40px;}
+          }
+          .animate-bar-stripes {
+            animation: bar-stripes 0.7s linear infinite;
+            opacity: 0.18;
+          }
+        `}</style>
+      </div>
+    );
+  }
+
+  
 
   async function salvaModificaPrelievo(riscontroVal?: number) {
     if (!modaleArticolo) return;
@@ -235,23 +275,36 @@ async function completaPending() {
     return out;
   }
 
+    // --- PROGRESS BAR BATCH ---
+  setProgressActive(true);
+  setProgressPerc(0);
+  setProgressText("Completamento prelievi in corso...");
+
   if (tuttiPrelievi.length > 0) {
     const batches = chunk(tuttiPrelievi.map(p => p.id), 100);
-    for (const batch of batches) {
+    for (let idx = 0; idx < batches.length; idx++) {
+      const batch = batches[idx];
       await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ids: batch,
-          fields: { note: "" } // campo finto per accettazione backend
+          fields: { note: "" }
         })
       });
-      await new Promise(r => setTimeout(r, 100)); // breve pausa tra batch
+      setProgressPerc(Math.round(((idx + 1) / batches.length) * 85));
+      setProgressText(`Completamento ${idx + 1} di ${batches.length}...`);
+      await new Promise(r => setTimeout(r, 100));
     }
+    setProgressPerc(92);
+    setProgressText("Pulizia produzione in corso...");
   }
 
-  // Pulizia sempre e comunque
   await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
+  setProgressPerc(100);
+  setProgressText("Completato!");
+  setTimeout(() => setProgressActive(false), 800);
+
 
   // Reload dati
   const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
@@ -283,13 +336,25 @@ async function completaPending() {
               const selected = e.target.value;
               if (!selected) return;
               setImportLoading(true);
+
+              // ATTIVA barra
+              setProgressActive(true);
+              setProgressPerc(15);
+              setProgressText("Importazione prelievi in corso...");
+
               await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/importa`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ data: selected })
               });
-              window.location.reload();
+              setProgressPerc(99);
+              setTimeout(() => {
+                setProgressPerc(100);
+                setTimeout(() => setProgressActive(false), 600);
+                window.location.reload();
+              }, 400);
             }}
+
             defaultValue=""
           >
             <option value="" disabled>Seleziona una data</option>
@@ -306,6 +371,7 @@ async function completaPending() {
   // ---- SCHERMATA PRELIEVI ----
   return (
     <div className="w-full max-w-[1100px] mx-auto px-2 pb-16 font-sans">
+      {progressActive && <ProgressBar perc={progressPerc} text={progressText} />}
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 mb-3 justify-between w-full">
