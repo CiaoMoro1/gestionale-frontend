@@ -17,6 +17,17 @@ type PrelievoRow = {
   note?: string;
 };
 
+function normalizza(str: string): string {
+  return str
+    .toLowerCase()
+    .replace(/[-_\.]/g, " ")
+    .replace(/[^a-z0-9 ]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+
 function Toast({ message, type, onClose }: { message: string, type: "success" | "error", onClose: () => void }) {
   useEffect(() => {
     const t = setTimeout(onClose, 2300);
@@ -97,11 +108,13 @@ fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
   }, [data, radice]);
 
   const filteredSuggestions = search.length > 0
-    ? prelievi.filter(a =>
-        a.sku.toLowerCase().includes(search.toLowerCase()) ||
-        a.ean.toLowerCase().includes(search.toLowerCase())
-      ).slice(0, 8)
-    : [];
+  ? prelievi.filter(a => {
+      const target = normalizza(a.sku + " " + a.ean);
+      const queryWords = normalizza(search).split(" ").filter(Boolean);
+      // Tutte le parole della query devono essere contenute nel target
+      return queryWords.every((word: string) => target.includes(word));
+    }).slice(0, 8)
+  : [];
 
   const allRadici = Array.from(new Set(allPrelieviData.map(r => r.radice))).filter(Boolean);
 
@@ -140,9 +153,11 @@ fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
   function handleSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!search.trim()) return;
-    const found = prelievi.find(
-      a => a.sku === search.trim() || a.ean === search.trim()
-    );
+    const queryWords = normalizza(search).split(" ").filter(Boolean);
+    const found = prelievi.find(a => {
+      const target = normalizza(a.sku + " " + a.ean);
+      return queryWords.every((word: string) => target.includes(word));
+    });
     if (found) openModaleArticolo(found);
     setSearch("");
     setShowSuggestions(false);

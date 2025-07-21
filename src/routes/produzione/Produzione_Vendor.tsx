@@ -78,11 +78,20 @@ export default function ProduzioneVendor() {
  const [cavallottoModal, setCavallottoModal] = useState<string | null>(null);
 const [cavallottoLoading,] = useState(false);
 const [exportMassivoOpen, setExportMassivoOpen] = useState(false);
+const [itemsToShow, setItemsToShow] = useState(20);
 
 
 function estraiMisura(sku: string): string {
   const parts = sku.split("-");
   return parts.length > 1 ? parts[parts.length - 1] : "";
+}
+
+function normalizza(str: string) {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, " ") // tutto ciò che non è lettera o numero diventa spazio
+    .replace(/\s+/g, " ")        // spazi multipli --> uno solo
+    .trim();
 }
 
 // Funzione che torna una coppia di numeri dalla misura
@@ -266,13 +275,20 @@ autoTable(doc, {
     let filtrate = allRows;
     if (statoProduzione) filtrate = filtrate.filter(r => r.stato_produzione === statoProduzione);
     if (radice) filtrate = filtrate.filter(r => r.radice === radice);
-    if (search) filtrate = filtrate.filter(r =>
-      r.sku.toLowerCase().includes(search.toLowerCase()) ||
-      r.ean.toLowerCase().includes(search.toLowerCase())
-    );
+
+    if (search) {
+      const queryWords = normalizza(search).split(" ");
+      filtrate = filtrate.filter(row => {
+        const target = normalizza(row.sku + " " + row.ean);
+        return queryWords.every((word: string) => target.includes(word));
+      });
+    }
+
     setRows(filtrate);
     setSelezionati([]);
+    setItemsToShow(20); // NEW: resetta la paginazione ogni volta che cambi filtro/ricerca
   }, [allRows, statoProduzione, radice, search]);
+
 
   // Sync scroll top/bottom
   useEffect(() => {
@@ -665,7 +681,7 @@ async function openCavallottoPdf(sku: string, formato: string) {
             </tr>
           </thead>
           <tbody>
-            {rows.map(r =>
+            {rows.slice(0, itemsToShow).map(r =>
               <tr key={r.id} className="border-b border-gray-100 hover:bg-cyan-50/40 transition-all">
                 <td>
                   <input type="checkbox"
@@ -860,6 +876,19 @@ async function openCavallottoPdf(sku: string, formato: string) {
               </tr>
             )}
           </tbody>
+
+          {rows.length > itemsToShow && (
+            <tr>
+              <td colSpan={10} className="text-center py-5">
+                <button
+                  onClick={() => setItemsToShow(x => x + 20)}
+                  className="px-6 py-2 rounded-xl bg-cyan-600 text-white font-bold hover:bg-cyan-800 shadow"
+                >
+                  Carica altri
+                </button>
+              </td>
+            </tr>
+          )}
         </table>
       </div>
       
