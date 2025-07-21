@@ -131,7 +131,7 @@ fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
     setPrelievi(await res1.json());
     const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
     setAllPrelieviData(await res2.json());
-    setAllPrelieviData(await res2.json());
+    // 🔴 CHIUDI MODALE QUI
     setModaleArticolo(null);
     setRiscontroError(false);
     setShake(false);
@@ -208,33 +208,43 @@ async function completaPending() {
     alert("Non ci sono articoli pending da completare.");
   }
 
-  // 🔄 In ogni caso, forziamo una sync della produzione per tutti i prelievi
-const resPrelievi = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-const tuttiPrelievi: PrelievoRow[] = await resPrelievi.json();
+  // 🔄 In ogni caso, forziamo una sync della produzione per tutti i prelievi in batch da 100
+  const resPrelievi = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+  const tuttiPrelievi: PrelievoRow[] = await resPrelievi.json();
+
+  function chunk<T>(arr: T[], size: number): T[][] {
+    let out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) {
+      out.push(arr.slice(i, i + size));
+    }
+    return out;
+  }
 
   if (tuttiPrelievi.length > 0) {
-    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ids: tuttiPrelievi.map(p => p.id),
-        fields: {} // anche se non cambia niente, serve a far girare sync_produzione()
-      })
-    });
+    const batches = chunk(tuttiPrelievi.map(p => p.id), 100);
+    for (const batch of batches) {
+      await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: batch,
+          fields: { note: "" } // campo finto per accettazione backend
+        })
+      });
+      await new Promise(r => setTimeout(r, 100)); // breve pausa tra batch
+    }
   }
 
   // Pulizia sempre e comunque
   await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
 
-  // Reload
+  // Reload dati
   const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
   setPrelievi(await res1.json());
 
   const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
   setAllPrelieviData(await res2.json());
 }
-
-
 
   async function svuotaLista() {
     if (!window.confirm("Sei sicuro di voler svuotare tutta la lista prelievi? L'operazione è IRREVERSIBILE!")) return;
