@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef } from "react";
-import { ChevronRight, Plus, Search, Trash } from "lucide-react";
+import { ChevronRight, Plus, Trash } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 type PrelievoRow = {
