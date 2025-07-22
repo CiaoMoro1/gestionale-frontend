@@ -86,11 +86,18 @@ function estraiMisura(sku: string): string {
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
+function matchAllWords(target: string, queryWords: string[]) {
+  const targetWords = normalizza(target).split(" ");
+  return queryWords.every(qw =>
+    targetWords.some(tw => tw === qw || tw.startsWith(qw))
+  );
+}
+
 function normalizza(str: string) {
   return (str || "")
     .toLowerCase()
-    .replace(/[^a-z0-9]/gi, " ") // tutto ciò che non è lettera o numero diventa spazio
-    .replace(/\s+/g, " ")        // spazi multipli --> uno solo
+    .replace(/[^a-z0-9]/gi, " ")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -277,18 +284,19 @@ autoTable(doc, {
     if (radice) filtrate = filtrate.filter(r => r.radice === radice);
 
     if (search) {
-      const queryWords = normalizza(search).split(" ");
-      filtrate = filtrate.filter(row => {
-        const target = normalizza(row.sku + " " + row.ean);
-        return queryWords.every((word: string) => target.includes(word));
-      });
+      const queryWords = normalizza(search).split(" ").filter(Boolean);
+      filtrate = filtrate.filter(row =>
+        matchAllWords(row.sku + " " + row.ean, queryWords)
+      );
     }
 
     setRows(filtrate);
     setSelezionati([]);
-    setItemsToShow(20); // NEW: resetta la paginazione ogni volta che cambi filtro/ricerca
+    setItemsToShow(20);
   }, [allRows, statoProduzione, radice, search]);
 
+  const ciSonoFiltri = !!statoProduzione || !!radice || !!search;
+  const righeDaMostrare = ciSonoFiltri ? rows : rows.slice(0, itemsToShow);
 
   // Sync scroll top/bottom
   useEffect(() => {
@@ -680,18 +688,18 @@ async function openCavallottoPdf(sku: string, formato: string) {
 
             </tr>
           </thead>
-          <tbody>
-            {rows.slice(0, itemsToShow).map(r =>
-              <tr key={r.id} className="border-b border-gray-100 hover:bg-cyan-50/40 transition-all">
-                <td>
-                  <input type="checkbox"
-                    checked={selezionati.includes(r.id)}
-                    onChange={e =>
-                      setSelezionati(s => e.target.checked ? [...s, r.id] : s.filter(id => id !== r.id))
-                    }
-                  />
-                </td>
-                <td className="px-3 py-2 font-mono font-bold">{r.sku}</td>
+            <tbody>
+              {righeDaMostrare.map(r =>
+                <tr key={r.id} className="border-b border-gray-100 hover:bg-cyan-50/40 transition-all">
+                  <td>
+                    <input type="checkbox"
+                      checked={selezionati.includes(r.id)}
+                      onChange={e =>
+                        setSelezionati(s => e.target.checked ? [...s, r.id] : s.filter(id => id !== r.id))
+                      }
+                    />
+                  </td>
+                  <td className="px-3 py-2 font-mono font-bold">{r.sku}</td>
                   <td className="px-3 py-2 text-center font-bold text-base text-blue-800 relative">
                     <div className="flex flex-col items-center">
                       <span style={{ fontSize: "1.7em", lineHeight: 1 }}>
@@ -716,7 +724,6 @@ async function openCavallottoPdf(sku: string, formato: string) {
                           }
                         })()}
                       </span>
-                      {/* Badge Modifica manuale */}
                       {r.modificata_manualmente && (
                         <span
                           className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-yellow-100 text-yellow-900 rounded-full text-xs font-bold border border-yellow-300 animate-badge-pop whitespace-nowrap"
@@ -729,135 +736,117 @@ async function openCavallottoPdf(sku: string, formato: string) {
                       )}
                     </div>
                   </td>
-
-
-
-                <td className="px-3 py-2 text-center align-middle font-bold text-base text-blue-800">
-                  <div className="flex flex-col items-center gap-1">
-                    <span className="text-xs text-gray-400 font-medium italic">
-                      {(() => {
-                        const allOfThis = allRows.filter(
-                          rr =>
-                            rr.sku === r.sku &&
-                            rr.ean === r.ean &&
-                            rr.start_delivery === r.start_delivery
-                        );
-                        // Calcola lavorati
-                        const statoOrder = [
-                          "Stampato", "Calandrato", "Cucito", "Confezionato", "Trasferito"
-                        ];
-                        const statoLabel: Record<string, string> = {
-                          "Stampato": "Stampati",
-                          "Calandrato": "Calandrati",
-                          "Cucito": "Cuciti",
-                          "Confezionato": "Confezionati",
-                          "Trasferito": "Trasferiti"
-                        };
-
-                        const parti = [];
-
-                        // Per ogni stato lavorato, aggiungi la quantità se > 0
-                        statoOrder.forEach(st => {
-                          const sum = allOfThis
-                            .filter(x => x.stato_produzione === st)
-                            .reduce((tot, x) => tot + (x.da_produrre || 0), 0);
-                          if (sum > 0) {
+                  <td className="px-3 py-2 text-center align-middle font-bold text-base text-blue-800">
+                    <div className="flex flex-col items-center gap-1">
+                      <span className="text-xs text-gray-400 font-medium italic">
+                        {(() => {
+                          const allOfThis = allRows.filter(
+                            rr =>
+                              rr.sku === r.sku &&
+                              rr.ean === r.ean &&
+                              rr.start_delivery === r.start_delivery
+                          );
+                          const statoOrder = [
+                            "Stampato", "Calandrato", "Cucito", "Confezionato", "Trasferito"
+                          ];
+                          const statoLabel: Record<string, string> = {
+                            "Stampato": "Stampati",
+                            "Calandrato": "Calandrati",
+                            "Cucito": "Cuciti",
+                            "Confezionato": "Confezionati",
+                            "Trasferito": "Trasferiti"
+                          };
+                          const parti = [];
+                          statoOrder.forEach(st => {
+                            const sum = allOfThis
+                              .filter(x => x.stato_produzione === st)
+                              .reduce((tot, x) => tot + (x.da_produrre || 0), 0);
+                            if (sum > 0) {
+                              if (parti.length > 0) parti.push(" + ");
+                              parti.push(
+                                <span key={st}>{sum} {statoLabel[st]}</span>
+                              );
+                            }
+                          });
+                          const daStampareRow = allOfThis.find(x => x.stato_produzione === "Da Stampare");
+                          const daStampare = daStampareRow?.da_produrre ?? 0;
+                          const plus = daStampareRow?.plus ?? 0;
+                          const daStampareEffettivo = plus > 0 ? daStampare - plus : daStampare;
+                          if (daStampareEffettivo > 0) {
                             if (parti.length > 0) parti.push(" + ");
                             parti.push(
-                              <span key={st}>{sum} {statoLabel[st]}</span>
+                              <span key="ds" className="text-blue-900 font-bold">{daStampareEffettivo} Da Stampare</span>
                             );
                           }
-                        });
-
-                        // Da Stampare
-                        const daStampareRow = allOfThis.find(x => x.stato_produzione === "Da Stampare");
-                        const daStampare = daStampareRow?.da_produrre ?? 0;
-                        const plus = daStampareRow?.plus ?? 0;
-                        const daStampareEffettivo = plus > 0 ? daStampare - plus : daStampare;
-                        if (daStampareEffettivo > 0) {
-                          if (parti.length > 0) parti.push(" + ");
-                          parti.push(
-                            <span key="ds" className="text-blue-900 font-bold">{daStampareEffettivo} Da Stampare</span>
-                          );
-                        }
-                        if (plus > 0) {
-                          if (parti.length > 0) parti.push(" + ");
-                          parti.push(
-                            <span key="plusval" className="text-cyan-700 font-bold">{plus} da plus</span>
-                          );
-                        }
-
-                        return parti.length > 0 ? parti : <span>0</span>;
-                      })()}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      {r.stato_produzione === "Da Stampare" ? (
-                        <input
-                          type="number"
-                          min={0}
-                          defaultValue={r.da_produrre}
-                          style={{ width: 70, textAlign: "center", fontWeight: 700 }}
-                          className="input input-bordered px-2 py-1 rounded-xl text-blue-800 font-bold"
-                          onBlur={e => {
-                            const nuovoVal = parseInt(e.target.value, 10) || 0;
-                            if (nuovoVal !== r.da_produrre) patchProduzione(r.id, { da_produrre: nuovoVal });
-                          }}
-                          onKeyDown={e => {
-                            if (e.key === "Enter") e.currentTarget.blur();
-                          }}
-                        />
-                      ) : (
-                        <>
-                          <button
-                            title="Modifica quantità (richiede password)"
-                            className="relative p-1 rounded-full glass hover:bg-blue-100 transition"
-                            onClick={() => handleDaProdurreEdit(r)}
-                          >
-                            <Edit className="w-5 h-5 text-cyan-600" />
-                            <span className="absolute -top-1.5 -right-1.5 text-[12px]">
-                              <Lock className="w-4 h-4 text-cyan-600" />
-                            </span>
-                          </button>
-                        </>
-                      )}
+                          if (plus > 0) {
+                            if (parti.length > 0) parti.push(" + ");
+                            parti.push(
+                              <span key="plusval" className="text-cyan-700 font-bold">{plus} da plus</span>
+                            );
+                          }
+                          return parti.length > 0 ? parti : <span>0</span>;
+                        })()}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {r.stato_produzione === "Da Stampare" ? (
+                          <input
+                            type="number"
+                            min={0}
+                            defaultValue={r.da_produrre}
+                            style={{ width: 70, textAlign: "center", fontWeight: 700 }}
+                            className="input input-bordered px-2 py-1 rounded-xl text-blue-800 font-bold"
+                            onBlur={e => {
+                              const nuovoVal = parseInt(e.target.value, 10) || 0;
+                              if (nuovoVal !== r.da_produrre) patchProduzione(r.id, { da_produrre: nuovoVal });
+                            }}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") e.currentTarget.blur();
+                            }}
+                          />
+                        ) : (
+                          <>
+                            <button
+                              title="Modifica quantità (richiede password)"
+                              className="relative p-1 rounded-full glass hover:bg-blue-100 transition"
+                              onClick={() => handleDaProdurreEdit(r)}
+                            >
+                              <Edit className="w-5 h-5 text-cyan-600" />
+                              <span className="absolute -top-1.5 -right-1.5 text-[12px]">
+                                <Lock className="w-4 h-4 text-cyan-600" />
+                              </span>
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </td>
-
-
-
-
-
-                <td className="px-3 py-2 text-center" style={{ minWidth: 160 }}>
-                  <span
-                    className="inline-block cursor-pointer"
-                    tabIndex={0}
-                    onClick={() => setStatoProduzioneOpenId(r.id)}
-                    style={{ outline: "none" }}
-                  >
-                    {badgeStato(r.stato_produzione)}
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-center">
-                  {badgeNota(r)}
-                </td>
-
-                <td className="px-3 py-2 text-center">
-                  {badgeCavallotti(!!r.cavallotti, () => patchProduzione(r.id, { cavallotti: !r.cavallotti }))}
-                  {r.cavallotti && (
-                    <button
-                      className="ml-2 px-2 py-1 bg-cyan-100 border border-cyan-300 rounded-xl text-cyan-800 text-xs font-semibold hover:bg-cyan-200"
-                      title="Stampa Cavallotto"
-                      onClick={() => setCavallottoModal(r.sku)}
+                  </td>
+                  <td className="px-3 py-2 text-center" style={{ minWidth: 160 }}>
+                    <span
+                      className="inline-block cursor-pointer"
+                      tabIndex={0}
+                      onClick={() => setStatoProduzioneOpenId(r.id)}
+                      style={{ outline: "none" }}
                     >
-                      🏷️ PDF
-                    </button>
-                  )}
-                </td>
-                
-                <td className="px-3 py-2 font-mono">{r.ean}</td>
-                <td className="px-3 py-2">{r.radice}</td>
-
+                      {badgeStato(r.stato_produzione)}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {badgeNota(r)}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    {badgeCavallotti(!!r.cavallotti, () => patchProduzione(r.id, { cavallotti: !r.cavallotti }))}
+                    {r.cavallotti && (
+                      <button
+                        className="ml-2 px-2 py-1 bg-cyan-100 border border-cyan-300 rounded-xl text-cyan-800 text-xs font-semibold hover:bg-cyan-200"
+                        title="Stampa Cavallotto"
+                        onClick={() => setCavallottoModal(r.sku)}
+                      >
+                        🏷️ PDF
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 font-mono">{r.ean}</td>
+                  <td className="px-3 py-2">{r.radice}</td>
                   <td className="px-3 py-2 text-center">
                     <button
                       className="rounded-full p-2 bg-gray-100 hover:bg-blue-100 transition shadow"
@@ -867,28 +856,29 @@ async function openCavallottoPdf(sku: string, formato: string) {
                       <Info size={19} className="text-blue-700" />
                     </button>
                   </td>
-
-              </tr>
-            )}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={9} className="text-center text-gray-400 py-6 text-lg">Nessun articolo in produzione trovato.</td>
-              </tr>
-            )}
-          </tbody>
-
-          {rows.length > itemsToShow && (
-            <tr>
-              <td colSpan={10} className="text-center py-5">
-                <button
-                  onClick={() => setItemsToShow(x => x + 20)}
-                  className="px-6 py-2 rounded-xl bg-cyan-600 text-white font-bold hover:bg-cyan-800 shadow"
-                >
-                  Carica altri
-                </button>
-              </td>
-            </tr>
-          )}
+                </tr>
+              )}
+              {righeDaMostrare.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="text-center text-gray-400 py-6 text-lg">
+                    Nessun articolo in produzione trovato.
+                  </td>
+                </tr>
+              )}
+              {/* Bottone Carica altri solo se NON ci sono filtri */}
+              {!ciSonoFiltri && rows.length > itemsToShow && (
+                <tr>
+                  <td colSpan={10} className="text-center py-5">
+                    <button
+                      onClick={() => setItemsToShow(x => x + 20)}
+                      className="px-6 py-2 rounded-xl bg-cyan-600 text-white font-bold hover:bg-cyan-800 shadow"
+                    >
+                      Carica altri
+                    </button>
+                  </td>
+                </tr>
+              )}
+            </tbody>
         </table>
       </div>
       
