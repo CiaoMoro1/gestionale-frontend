@@ -46,26 +46,21 @@ export default function ParzialiOrdini() {
       ).then((r) => r.json());
       setRiepiloghi(rieps);
 
-      for (const r of rieps) {
-        fetch(
+      await Promise.all(rieps.map(async (r: Riepilogo) => {
+        const articoliArr = await fetch(
           `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${r.po_list.join(",")}`
-        )
-          .then((r) => r.json())
-          .then((arr: Articolo[]) => {
-            setArticoli((old) => ({ ...old, [r.id]: arr }));
-          });
+        ).then(r => r.json());
+        setArticoli(old => ({ ...old, [r.id]: articoliArr }));
 
-        fetch(
+        const parzArr = await fetch(
           `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali?riepilogo_id=${r.id}`
-        )
-          .then((r) => r.json())
-          .then((arr: Parziale[]) => {
-            setParziali((old) => ({
-              ...old,
-              [r.id]: arr.filter((p) => p.confermato),
-            }));
-          });
-      }
+        ).then(r => r.json());
+        setParziali(old => ({
+          ...old,
+          [r.id]: parzArr.filter((p: Parziale) => p.confermato),
+        }));
+      }));
+
       setLoading(false);
     }
     load();

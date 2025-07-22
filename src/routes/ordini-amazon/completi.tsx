@@ -33,6 +33,24 @@ function formatDate(dt: string) {
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
 }
 
+
+async function fetchAllItemsByPO(po_list: string[]) {
+  let all: Articolo[] = [];
+  let offset = 0;
+  const limit = 200;
+  while (true) {
+    const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${po_list.join(",")}&offset=${offset}&limit=${limit}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!Array.isArray(data) || data.length === 0) break;
+    all = [...all, ...data];
+    if (data.length < limit) break;
+    offset += limit;
+  }
+  return all;
+}
+
+
 export default function CompletatiOrdini() {
   const [dati, setDati] = useState<Riepilogo[]>([]);
   const [articoli, setArticoli] = useState<{ [id: number]: Articolo[] }>({});
@@ -45,7 +63,7 @@ export default function CompletatiOrdini() {
   // Modale PO
   const [poModal, setPoModal] = useState<{ open: boolean; poList: any[]; titolo: string }>({ open: false, poList: [], titolo: "" });
 
-  useEffect(() => {
+   useEffect(() => {
     async function load() {
       setLoading(true);
       const rieps = await fetch(
@@ -62,18 +80,16 @@ export default function CompletatiOrdini() {
 
       setDati(rieps);
 
-      for (const r of rieps) {
-        fetch(
-          `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${r.po_list.join(",")}`
-        )
-          .then(r => r.json())
-          .then((arr: Articolo[]) => {
-            setArticoli(old => ({
-              ...old,
-              [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number))
-            }));
-          });
-      }
+      await Promise.all(
+        rieps.map(async (r: Riepilogo) => {
+          const arr = await fetchAllItemsByPO(r.po_list);
+          setArticoli(old => ({
+            ...old,
+            [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number))
+          }));
+        })
+      );
+
       setLoading(false);
     }
     load();
@@ -196,7 +212,7 @@ export default function CompletatiOrdini() {
 
       {loading ? (
         <div className="text-center text-neutral-400 py-12 animate-pulse">
-          Caricamento...
+          Attendi sto Caricando i Completi...
         </div>
       ) : Object.keys(groupedByDate).length === 0 ? (
         <div className="text-center text-neutral-400 py-12">

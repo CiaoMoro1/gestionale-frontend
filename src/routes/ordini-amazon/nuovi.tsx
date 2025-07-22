@@ -16,19 +16,40 @@ type Riepilogo = {
   stato_ordine: string;
 };
 
+const PAGE_SIZE = 100;
+
 export default function RiepilogoNuovi() {
   const [dati, setDati] = useState<Riepilogo[]>([]);
+  const [offset, setOffset] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Stato per la data selezionata
   const [dataSelezionata, setDataSelezionata] = useState<string | null>(null);
 
+  // Caricamento dati con paginazione
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/nuovi`)
-      .then((res) => res.json())
-      .then(setDati)
-      .catch(console.error);
-  }, []);
+    setIsLoading(true);
+    setError(null);
+    fetch(
+      `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/nuovi?offset=${offset}&limit=${PAGE_SIZE}`
+    )
+      .then((res) => {
+        if (!res.ok) throw new Error("Errore di rete");
+        return res.json();
+      })
+      .then((nuovi) => {
+        setDati(nuovi);
+        setHasMore(nuovi.length === PAGE_SIZE);
+        setIsLoading(false);
+      })
+      .catch(() => {
+        setError("Errore durante il caricamento dei dati");
+        setIsLoading(false);
+      });
+  }, [offset]);
 
   // Trova tutte le date uniche
   const dateUniche = Array.from(new Set(dati.map(d => d.start_delivery))).sort();
@@ -47,6 +68,14 @@ export default function RiepilogoNuovi() {
       url += `?data=${encodeURIComponent(dataSelezionata)}`;
     }
     window.open(url, "_blank");
+  }
+
+  // --- Gestione paginazione ---
+  function paginaPrecedente() {
+    setOffset((off) => Math.max(off - PAGE_SIZE, 0));
+  }
+  function paginaSuccessiva() {
+    setOffset((off) => off + PAGE_SIZE);
   }
 
   return (
@@ -91,14 +120,20 @@ export default function RiepilogoNuovi() {
       </div>
 
       {/* --- Lista ordini --- */}
-      {dati.length === 0 ? (
+      {isLoading ? (
         <div className="text-center text-neutral-400 py-12 animate-pulse">
           Caricamento...
         </div>
+      ) : error ? (
+        <div className="text-center text-red-600 py-12">{error}</div>
+      ) : dati.length === 0 ? (
+        <div className="text-center text-neutral-400 py-12">
+          Nessun ordine trovato.
+        </div>
       ) : (
         dati
-          .filter(g => 
-            dateUniche.length > 1 
+          .filter(g =>
+            dateUniche.length > 1
               ? !dataSelezionata || g.start_delivery === dataSelezionata
               : true
           )
@@ -164,11 +199,28 @@ export default function RiepilogoNuovi() {
             </div>
           ))
       )}
-      {dati.length === 0 ? null : (
-        <div className="text-xs text-center text-neutral-400 pb-8 mt-6">
-          Ultimo aggiornamento: {new Date().toLocaleString()}
-        </div>
-      )}
+
+      {/* --- Navigazione pagine --- */}
+      <div className="flex justify-center gap-4 my-4">
+        <button
+          className="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold"
+          onClick={paginaPrecedente}
+          disabled={offset === 0 || isLoading}
+        >
+          &larr; Pagina precedente
+        </button>
+        <button
+          className="px-4 py-2 rounded bg-gray-200 text-gray-700 font-semibold"
+          onClick={paginaSuccessiva}
+          disabled={!hasMore || isLoading}
+        >
+          Pagina successiva &rarr;
+        </button>
+      </div>
+
+      <div className="text-xs text-center text-neutral-400 pb-8 mt-6">
+        Ultimo aggiornamento: {new Date().toLocaleString()}
+      </div>
     </div>
   );
 }

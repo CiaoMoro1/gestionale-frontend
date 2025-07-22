@@ -2,19 +2,7 @@ import { useEffect, useState, useRef } from "react";
 import { ChevronRight, Plus, Trash } from "lucide-react";
 import { useParams } from "react-router-dom";
 
-type PrelievoRow = {
-  id: number;
-  stato: string;
-  sku: string;
-  ean: string;
-  centri: Record<string, number>;
-  qty: number;
-  riscontro: number | null;
-  plus: number | null;
-  radice: string;
-  note?: string;
-};
-
+// ========== UTILS ==========
 function normalizza(str: string) {
   return (str || "")
     .toLowerCase()
@@ -28,6 +16,8 @@ function matchAllWords(target: string, queryWords: string[]) {
     targetWords.some(tw => tw === qw || tw.startsWith(qw))
   );
 }
+
+// ========== COMPONENTI UI ==========
 
 function Toast({ message, type, onClose }: { message: string, type: "success" | "error", onClose: () => void }) {
   useEffect(() => {
@@ -52,6 +42,19 @@ function Toast({ message, type, onClose }: { message: string, type: "success" | 
   );
 }
 
+type PrelievoRow = {
+  id: number;
+  stato: string;
+  sku: string;
+  ean: string;
+  centri: Record<string, number>;
+  qty: number;
+  riscontro: number | null;
+  plus: number | null;
+  radice: string;
+  note?: string;
+};
+
 export default function DettaglioPrelievo() {
   const { data } = useParams<{ data: string }>();
   const [prelievi, setPrelievi] = useState<PrelievoRow[]>([]);
@@ -64,12 +67,6 @@ export default function DettaglioPrelievo() {
   const [search, setSearch] = useState("");
   const [radice, setRadice] = useState<string>("");
   const [radiciOpen, setRadiciOpen] = useState(false);
-  const [, setShake] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const radiciBoxRef = useRef<HTMLDivElement>(null);
-
-  const [dateDisponibili, setDateDisponibili] = useState<string[]>([]);
-  const [importLoading, setImportLoading] = useState(false);
   const [toast, setToast] = useState<{ msg: string, type: "success" | "error" } | null>(null);
   const [progressActive, setProgressActive] = useState(false);
   const [progressPerc, setProgressPerc] = useState(0);
@@ -77,6 +74,19 @@ export default function DettaglioPrelievo() {
 
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
 
+  // --- Responsive/Paginazione su totali ---
+  const PAGE_SIZE = 10;
+  const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
+
+  // Import date logic
+  const [dateDisponibili, setDateDisponibili] = useState<string[]>([]);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importData, setImportData] = useState<string | null>(null);
+
+  const inputRef = useRef<HTMLInputElement>(null);
+  const radiciBoxRef = useRef<HTMLDivElement>(null);
+
+  // --- Chiudi dropdown radici cliccando fuori
   useEffect(() => {
     function handleClick(e: MouseEvent) {
       if (radiciBoxRef.current && !radiciBoxRef.current.contains(e.target as Node)) {
@@ -87,6 +97,7 @@ export default function DettaglioPrelievo() {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [radiciOpen]);
 
+  // --- Carica date disponibili per import
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/date-importabili`)
       .then(res => res.json())
@@ -94,39 +105,50 @@ export default function DettaglioPrelievo() {
       .catch(() => setDateDisponibili([]));
   }, []);
 
+  // --- Carica tutte le righe (per radici disponibili)
   useEffect(() => {
+    if (data) setImportData(data); // Salva la data scelta all'avvio
     fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`)
       .then(res => res.json())
-      .then((lista: PrelievoRow[]) => {
-        setAllPrelieviData(lista);
-      });
+      .then((lista: PrelievoRow[]) => setAllPrelieviData(lista));
   }, [data]);
 
+  // --- Carica prelievi filtrati per radice
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`)
       .then(res => res.json())
       .then((lista: PrelievoRow[]) => setPrelievi(lista));
+    setItemsToShow(PAGE_SIZE); // reset paginazione quando cambi radice
   }, [data, radice]);
 
+  // Deseleziona tutto quando cambi filtro
   useEffect(() => {
     setSelectedIds([]);
   }, [radice, data, search]);
 
+  // --- Ricava tutte le radici
   const allRadici = Array.from(new Set(allPrelieviData.map(r => r.radice))).filter(Boolean);
 
-  // FILTRO COME IN PRODUZIONE!
+  // --- Filtro ricerca
   const queryWords = normalizza(search).split(" ").filter(Boolean);
-  const prelieviToShow = search.length > 0
+  let prelieviToShow = search.length > 0
     ? prelievi.filter(r => matchAllWords(r.sku + " " + r.ean, queryWords))
     : prelievi;
 
+  // --- Applica paginazione SOLO quando il filtro radice è su "Totali"
+  const isTotali = !radice;
+  const canPaginate = isTotali && prelieviToShow.length > itemsToShow;
+  if (isTotali && !search) {
+    prelieviToShow = prelieviToShow.slice(0, itemsToShow);
+  }
+
+  // --- MODALE ARTICOLO ---
   function openModaleArticolo(row: PrelievoRow) {
     setModaleArticolo(row);
     setRiscontro(row.riscontro ?? row.qty);
     setPlus(row.plus ?? 0);
     setNote(row.note ?? "");
     setRiscontroError(false);
-    setShake(false);
   }
 
   function ProgressBar({ perc, text }: { perc: number, text: string }) {
@@ -182,7 +204,6 @@ export default function DettaglioPrelievo() {
     setAllPrelieviData(await res2.json());
     setModaleArticolo(null);
     setRiscontroError(false);
-    setShake(false);
   }
 
   function handleRiscontroChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -191,8 +212,6 @@ export default function DettaglioPrelievo() {
     if (value !== null && value > max) {
       setRiscontro(max);
       setRiscontroError(true);
-      setShake(true);
-      setTimeout(() => setShake(false), 400);
       setTimeout(() => setRiscontroError(false), 1000);
     } else if (value !== null && value < 0) {
       setRiscontro(0);
@@ -201,6 +220,8 @@ export default function DettaglioPrelievo() {
       setRiscontroError(false);
     }
   }
+
+  // --- AZIONI MASSIVE ---
 
   async function completaFiltrati() {
     const pendingIds = prelieviToShow
@@ -211,24 +232,17 @@ export default function DettaglioPrelievo() {
       alert("Non ci sono articoli pending da completare in questo filtro.");
       return;
     }
-
     if (!window.confirm("Vuoi segnare tutti i pending filtrati come MANCA?")) return;
 
-    setProgressActive(true);
-    setProgressPerc(20);
-    setProgressText("Completamento prelievi filtrati…");
+    setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi filtrati…");
 
     await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ids: pendingIds,
-        fields: { riscontro: 0 }
-      })
+      body: JSON.stringify({ ids: pendingIds, fields: { riscontro: 0 } })
     });
 
-    setProgressPerc(80);
-    setProgressText("Pulizia produzione (filtrati)…");
+    setProgressPerc(80); setProgressText("Pulizia produzione (filtrati)…");
 
     if (radice) {
       await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
@@ -243,9 +257,7 @@ export default function DettaglioPrelievo() {
         body: JSON.stringify({ ids: pendingIds })
       });
     }
-
-    setProgressPerc(100);
-    setProgressText("Completato!");
+    setProgressPerc(100); setProgressText("Completato!");
     setTimeout(() => setProgressActive(false), 800);
 
     const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
@@ -260,21 +272,15 @@ export default function DettaglioPrelievo() {
     if (ids.length === 0) return;
     if (!window.confirm("Vuoi segnare come MANCA i selezionati?")) return;
 
-    setProgressActive(true);
-    setProgressPerc(20);
-    setProgressText("Completamento prelievi selezionati…");
+    setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi selezionati…");
 
     await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ids,
-        fields: { riscontro: 0 }
-      })
+      body: JSON.stringify({ ids, fields: { riscontro: 0 } })
     });
 
-    setProgressPerc(80);
-    setProgressText("Pulizia produzione (selezionati)…");
+    setProgressPerc(80); setProgressText("Pulizia produzione (selezionati)…");
 
     await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
       method: "POST",
@@ -282,8 +288,7 @@ export default function DettaglioPrelievo() {
       body: JSON.stringify({ ids })
     });
 
-    setProgressPerc(100);
-    setProgressText("Completato!");
+    setProgressPerc(100); setProgressText("Completato!");
     setTimeout(() => setProgressActive(false), 800);
 
     const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
@@ -307,21 +312,15 @@ export default function DettaglioPrelievo() {
       await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ids: pendingIds,
-          fields: { riscontro: 0 }
-        })
+        body: JSON.stringify({ ids: pendingIds, fields: { riscontro: 0 } })
       });
     } else {
       alert("Non ci sono articoli pending da completare.");
     }
 
-    setProgressActive(true);
-    setProgressPerc(90);
-    setProgressText("Pulizia produzione…");
+    setProgressActive(true); setProgressPerc(90); setProgressText("Pulizia produzione…");
     await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
-    setProgressPerc(100);
-    setProgressText("Completato!");
+    setProgressPerc(100); setProgressText("Completato!");
     setTimeout(() => setProgressActive(false), 800);
 
     const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
@@ -339,6 +338,7 @@ export default function DettaglioPrelievo() {
     setToast({ msg: "Lista prelievi svuotata!", type: "success" });
   }
 
+  // --- SCHERMATA IMPORTA DATA (se prelievi vuoti) ---
   if (!importLoading && prelievi.length === 0) {
     return (
       <div className="min-h-[60vh] flex flex-col items-center justify-center">
@@ -352,9 +352,8 @@ export default function DettaglioPrelievo() {
               const selected = e.target.value;
               if (!selected) return;
               setImportLoading(true);
-              setProgressActive(true);
-              setProgressPerc(15);
-              setProgressText("Importazione prelievi in corso...");
+              setImportData(selected);
+              setProgressActive(true); setProgressPerc(15); setProgressText("Importazione prelievi in corso...");
               await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/importa`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -382,16 +381,19 @@ export default function DettaglioPrelievo() {
 
   // ---- SCHERMATA PRELIEVI ----
   return (
-    <div className="w-full max-w-[1100px] mx-auto px-2 pb-16 font-sans">
+    <div className="w-full max-w-[1100px] mx-auto px-1 pb-10 font-sans">
       {progressActive && <ProgressBar perc={progressPerc} text={progressText} />}
       {toast && <Toast message={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 mb-3 justify-between w-full">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-8 mb-3 justify-between w-full pt-2">
         <div className="flex items-center gap-2 min-w-0">
           <span className="font-bold text-blue-700 text-2xl">📦</span>
           <div className="flex flex-col min-w-0">
             <span className="font-semibold text-base text-blue-900 truncate">Prelievo</span>
-            <span className="text-xs text-neutral-500 truncate">Data: {data}</span>
+            <span className="text-xs text-neutral-500 truncate">
+              Data: {data || importData || "-"}
+            </span>
           </div>
         </div>
         <div className="flex gap-2 items-center ml-auto flex-wrap">
@@ -477,8 +479,8 @@ export default function DettaglioPrelievo() {
             .animate-fade-in { animation: fade-in 0.2s; }
           `}</style>
         </div>
-        {/* Ricerca (filtra direttamente la tabella) */}
-        <div className="flex-1">
+        {/* Ricerca */}
+        <div className="flex-1 min-w-[180px]">
           <label className="block text-xs font-semibold mb-1">Cerca per SKU o EAN</label>
           <input
             type="text"
@@ -492,12 +494,12 @@ export default function DettaglioPrelievo() {
       </div>
 
       {/* Tabella Prelievi */}
-      <div className="rounded-2xl shadow border bg-white/80 px-1 sm:px-2 py-2 mb-8 overflow-x-auto">
+      <div className="rounded-2xl shadow border bg-white/80 px-0 py-2 mb-8 overflow-x-auto">
         <div className="w-full overflow-x-auto">
-          <table className="w-full min-w-[700px] text-[16px] sm:text-[18px]">
+          <table className="w-full min-w-[700px] text-[15px] sm:text-[17px]">
             <thead>
               <tr className="border-b border-gray-300">
-                <th className="px-3 py-2 text-center w-[44px]">
+                <th className="px-2 py-2 text-center w-[44px]">
                   <input
                     type="checkbox"
                     checked={selectedIds.length > 0 && selectedIds.length === prelieviToShow.length}
@@ -510,13 +512,13 @@ export default function DettaglioPrelievo() {
                     }}
                   />
                 </th>
-                <th className="px-4 py-2 text-left" style={{ minWidth: 100 }}>Stato</th>
-                <th className="px-4 py-2 text-left">SKU</th>
-                <th className="px-4 py-2 text-center">Totale</th>
-                <th className="px-4 py-2 text-center">Riscontro</th>
-                <th className="px-4 py-2 text-center">Plus</th>
-                <th className="px-4 py-2 text-left">EAN</th>
-                <th className="sticky right-0 z-10 bg-white/95 border-l-2 border-base-200 shadow-lg px-4 py-2">Azioni</th>
+                <th className="px-2 py-2 text-left" style={{ minWidth: 80 }}>Stato</th>
+                <th className="px-2 py-2 text-left">SKU</th>
+                <th className="px-2 py-2 text-center">Totale</th>
+                <th className="px-2 py-2 text-center">Riscontro</th>
+                <th className="px-2 py-2 text-center">Plus</th>
+                <th className="px-2 py-2 text-left">EAN</th>
+                <th className="sticky right-0 z-10 bg-white/95 border-l-2 border-base-200 shadow-lg px-2 py-2">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -530,7 +532,7 @@ export default function DettaglioPrelievo() {
                       border-b border-gray-200 last:border-b-0
                     `}
                   >
-                    <td className="px-3 py-2 text-center">
+                    <td className="px-2 py-2 text-center">
                       <input
                         type="checkbox"
                         checked={selectedIds.includes(r.id)}
@@ -543,7 +545,7 @@ export default function DettaglioPrelievo() {
                         }}
                       />
                     </td>
-                    <td className="px-4 py-2">
+                    <td className="px-2 py-2">
                       <div
                         className={`rounded-xl py-2 font-bold text-[13px] flex items-center justify-center
                           ${
@@ -556,17 +558,17 @@ export default function DettaglioPrelievo() {
                                 : "bg-gray-100 text-gray-700 border border-gray-300"
                           }
                         `}
-                        style={{ minWidth: 100, letterSpacing: 1.1 }}
+                        style={{ minWidth: 80, letterSpacing: 1.1 }}
                       >
                         {(r.stato === "in verifica" ? "pending" : r.stato).toUpperCase()}
                       </div>
                     </td>
                     <td className="font-mono px-2 py-2">{r.sku}</td>
-                    <td className="text-center font-semibold px-4 py-2">{r.qty}</td>
-                    <td className="text-center px-4 py-2">{r.riscontro ?? ""}</td>
-                    <td className="text-center px-4 py-2">{r.plus ?? ""}</td>
-                    <td className="font-mono px-4 py-2">{r.ean}</td>
-                    <td className="sticky right-0 z-10 bg-white/95 border-l-2 border-base-200 shadow-lg text-center min-w-[54px] px-4 py-2">
+                    <td className="text-center font-semibold px-2 py-2">{r.qty}</td>
+                    <td className="text-center px-2 py-2">{r.riscontro ?? ""}</td>
+                    <td className="text-center px-2 py-2">{r.plus ?? ""}</td>
+                    <td className="font-mono px-2 py-2">{r.ean}</td>
+                    <td className="sticky right-0 z-10 bg-white/95 border-l-2 border-base-200 shadow-lg text-center min-w-[54px] px-2 py-2">
                       <button
                         className="rounded-full p-2 shadow bg-blue-500 text-white hover:bg-blue-700"
                         onClick={() => openModaleArticolo(r)}
@@ -588,6 +590,14 @@ export default function DettaglioPrelievo() {
             </tbody>
           </table>
         </div>
+        {canPaginate && (
+          <div className="flex justify-center mt-4">
+            <button
+              className="px-6 py-2 bg-cyan-700 text-white rounded-xl shadow font-bold text-base hover:bg-cyan-900"
+              onClick={() => setItemsToShow(n => n + 20)}
+            >Mostra altri</button>
+          </div>
+        )}
       </div>
 
       {/* MODALE MODIFICA */}
@@ -682,6 +692,20 @@ export default function DettaglioPrelievo() {
           </div>
         </div>
       )}
+      <style>
+        {`
+        @media (max-width: 850px) {
+          .font-sans { font-size: 15px; }
+          table { font-size: 13.5px; }
+          th, td { padding: 7px 5px !important; }
+        }
+        @media (max-width: 600px) {
+          .font-sans { font-size: 13px; }
+          table { font-size: 12.3px; }
+          th, td { padding: 5px 3px !important; }
+        }
+        `}
+      </style>
     </div>
   );
 }
