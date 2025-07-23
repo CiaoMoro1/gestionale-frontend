@@ -9,6 +9,10 @@ const DashboardAmazonVendor: React.FC = () => {
   const [log, setLog] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Job queue state
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+
   // Stato riepilogo ordini
   const [orders, setOrders] = useState<any[]>([]);
   const navigate = useNavigate();
@@ -19,6 +23,45 @@ const DashboardAmazonVendor: React.FC = () => {
       .then(res => res.json())
       .then(setOrders);
   }, []);
+
+  // Polling stato job (quando c'è un job_id)
+  useEffect(() => {
+    if (!jobId) return;
+    setLog(["Job inviato, attendo completamento..."]);
+    setJobStatus("pending");
+
+    const interval = setInterval(async () => {
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/jobs/${jobId}/status`);
+      const data = await res.json();
+      setJobStatus(data.status);
+
+      if (data.status === "done" || data.status === "failed") {
+        clearInterval(interval);
+        setLoading(false);
+
+        if (data.status === "done") {
+          const result = data.result || {};
+          setLog([
+            `✅ Importazione completata!`,
+            `${result.importati ?? 0} articoli importati correttamente.`,
+            `(${result.po_unici ?? 0} PO/ordini unici importati)`,
+            ...(result.doppioni?.length ? ["⚠️ Doppioni saltati:", ...result.doppioni] : []),
+            ...(result.errors?.length ? ["❌ Errori:", ...result.errors] : []),
+          ]);
+          // Ricarica riepilogo dopo upload
+          fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/dashboard`)
+            .then(res => res.json())
+            .then(setOrders);
+        } else {
+          setLog([`❌ Errore: ${data.error || "Errore sconosciuto"}`]);
+        }
+      } else {
+        setLog([`⏳ Job in corso... (${data.status})`]);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [jobId]);
 
   // Upload file Excel
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -35,6 +78,7 @@ const DashboardAmazonVendor: React.FC = () => {
     }
     setLoading(true);
     setLog(["Caricamento in corso..."]);
+    setJobId(null);
 
     const formData = new FormData();
     formData.append("file", file);
@@ -52,40 +96,26 @@ const DashboardAmazonVendor: React.FC = () => {
       }
 
       const data = await res.json();
-      if (data.status === "ok") {
-        setLog([
-          `✅ Importazione completata!`,
-          `${data.importati} articoli importati correttamente.`,
-          `(${data.po_unici} PO/ordini unici importati)`,
-          ...(data.doppioni?.length ? ["⚠️ Doppioni saltati:", ...data.doppioni] : []),
-          ...(data.errors?.length ? ["❌ Errori:", ...data.errors] : []),
-        ]);
-        // Ricarica riepilogo dopo upload
-        fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/dashboard`)
-          .then(res => res.json())
-          .then(setOrders);
+      if (data.job_id) {
+        setJobId(data.job_id); // Polling job!
       } else {
-        setLog([`❌ Errore: ${data.errors?.join(", ") || "Errore sconosciuto"}`]);
+        setLog([`❌ Errore: ${data.error || "Errore sconosciuto"}`]);
+        setLoading(false);
       }
     } catch (err: any) {
       setLog([`❌ Errore durante l’upload: ${err.message}`]);
+      setLoading(false);
     }
-    setLoading(false);
   };
 
-  // Helpers per gruppi dashboard (ora ragiona per parziali!)
+  // Helpers per gruppi dashboard (come prima)
   function filterGroup(t: number) {
     switch (t) {
-      case 1: // nuovi non gestiti: nessun parziale
-        return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale == null);
-      case 2: // nuovi con almeno un parziale e colli non confermati
-        return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
-      case 3: // parziali con tutti colli confermati
-        return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) === (o.colli_totali ?? 0));
-      case 4: // parziali con almeno un collo non confermato
-        return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
-      default:
-        return [];
+      case 1: return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale == null);
+      case 2: return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
+      case 3: return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) === (o.colli_totali ?? 0));
+      case 4: return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
+      default: return [];
     }
   }
 
@@ -124,7 +154,11 @@ const DashboardAmazonVendor: React.FC = () => {
               "Carica ordini"
             )}
           </Button>
-
+            {jobStatus && (
+              <div className="text-xs text-gray-500 mt-1">
+                Stato job: {jobStatus}
+              </div>
+            )}
           {log.length > 0 && (
             <div className="bg-muted rounded p-3 mt-4 text-sm space-y-1 max-h-52 overflow-auto">
               {log.map((line, idx) => (
@@ -135,7 +169,7 @@ const DashboardAmazonVendor: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* DASHBOARD riepilogo modern glass */}
+      {/* DASHBOARD riepilogo */}
       <div className="mt-10 space-y-8">
         <DashboardGroup
           title="1) Ordini nuovi non ancora gestiti"
@@ -158,7 +192,6 @@ const DashboardAmazonVendor: React.FC = () => {
           navigate={navigate}
         />
       </div>
-      {/* Extra glassmorphism gradient */}
       <style>
         {`
         .glass {

@@ -186,25 +186,48 @@ export default function DettaglioPrelievo() {
     );
   }
 
-  async function salvaModificaPrelievo(riscontroVal?: number) {
-    if (!modaleArticolo) return;
-    let riscontroToSend = typeof riscontroVal === "number" ? riscontroVal : riscontro;
-    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/${modaleArticolo.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        riscontro: riscontroToSend ?? null,
-        plus: plus ?? null,
-        note: note ?? ""
-      })
-    });
-    const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
-    setPrelievi(await res1.json());
-    const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-    setAllPrelieviData(await res2.json());
-    setModaleArticolo(null);
-    setRiscontroError(false);
+async function salvaModificaPrelievo(riscontroVal?: number) {
+  if (!modaleArticolo) return;
+  let riscontroToSend = typeof riscontroVal === "number" ? riscontroVal : riscontro;
+
+  // PATCH singolo prelievo
+  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/${modaleArticolo.id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      riscontro: riscontroToSend ?? null,
+      plus: plus ?? null,
+      note: note ?? ""
+    })
+  });
+
+  // NUOVO: gestione errore di validazione backend!
+  if (!res.ok) {
+    let msg = "Errore di validazione!";
+    try {
+      const err = await res.json();
+      msg = err.error || msg;
+    } catch {}
+    setToast({ msg, type: "error" });
+    return; // NON aggiornare il resto dello stato!
   }
+
+  // Se tutto ok, aggiorna la lista
+  const res1 = await fetch(
+    `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`
+  );
+  setPrelievi(await res1.json());
+
+  const res2 = await fetch(
+    `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`
+  );
+  setAllPrelieviData(await res2.json());
+
+  setModaleArticolo(null);
+  setRiscontroError(false);
+  setToast({ msg: "Prelievo aggiornato!", type: "success" }); // opzionale, feedback positivo
+}
+
 
   function handleRiscontroChange(e: React.ChangeEvent<HTMLInputElement>) {
     const max = modaleArticolo?.qty ?? 0;

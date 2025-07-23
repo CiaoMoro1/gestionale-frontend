@@ -36,6 +36,8 @@ export default function ParzialiOrdini() {
   const [articoli, setArticoli] = useState<{ [id: number]: Articolo[] }>({});
   const [parziali, setParziali] = useState<{ [id: number]: Parziale[] }>({});
   const [loading, setLoading] = useState(true);
+  const [closingOrderId, setClosingOrderId] = useState<number | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -46,20 +48,22 @@ export default function ParzialiOrdini() {
       ).then((r) => r.json());
       setRiepiloghi(rieps);
 
-      await Promise.all(rieps.map(async (r: Riepilogo) => {
-        const articoliArr = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${r.po_list.join(",")}`
-        ).then(r => r.json());
-        setArticoli(old => ({ ...old, [r.id]: articoliArr }));
+      await Promise.all(
+        rieps.map(async (r: Riepilogo) => {
+          const articoliArr = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${r.po_list.join(",")}`
+          ).then((r) => r.json());
+          setArticoli((old) => ({ ...old, [r.id]: articoliArr }));
 
-        const parzArr = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali?riepilogo_id=${r.id}`
-        ).then(r => r.json());
-        setParziali(old => ({
-          ...old,
-          [r.id]: parzArr.filter((p: Parziale) => p.confermato),
-        }));
-      }));
+          const parzArr = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali?riepilogo_id=${r.id}`
+          ).then((r) => r.json());
+          setParziali((old) => ({
+            ...old,
+            [r.id]: parzArr.filter((p: Parziale) => p.confermato),
+          }));
+        })
+      );
 
       setLoading(false);
     }
@@ -82,18 +86,25 @@ export default function ParzialiOrdini() {
     return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
   }
 
-  async function handleToggleGestito(riepilogoId: number, numeroParziale: number, statoAttuale?: boolean) {
+  async function handleToggleGestito(
+    riepilogoId: number,
+    numeroParziale: number,
+    statoAttuale?: boolean
+  ) {
     const nuovoStato = !statoAttuale;
 
-    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali/gestito`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        riepilogo_id: riepilogoId,
-        numero_parziale: numeroParziale,
-        gestito: nuovoStato,
-      }),
-    });
+    await fetch(
+      `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali/gestito`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          riepilogo_id: riepilogoId,
+          numero_parziale: numeroParziale,
+          gestito: nuovoStato,
+        }),
+      }
+    );
 
     setParziali((prev) => {
       const aggiornati = { ...prev };
@@ -104,8 +115,53 @@ export default function ParzialiOrdini() {
     });
   }
 
+  // --- NUOVO: chiusura ordine senza reload ---
+  async function chiudiOrdine(riep: Riepilogo) {
+    setClosingOrderId(riep.id);
+    try {
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/chiudi`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            center: riep.fulfillment_center,
+            data: riep.start_delivery,
+          }),
+        }
+      );
+      if (!res.ok) throw new Error("Errore chiusura ordine");
+
+      // Aggiorna stato locale: rimuovi l’ordine dalla lista, togli i suoi parziali/articoli
+      setRiepiloghi((old) => old.filter((x) => x.id !== riep.id));
+      setParziali((old) => {
+        const copy = { ...old };
+        delete copy[riep.id];
+        return copy;
+      });
+      setArticoli((old) => {
+        const copy = { ...old };
+        delete copy[riep.id];
+        return copy;
+      });
+      setSuccessMsg("Ordine chiuso con successo!");
+      setTimeout(() => setSuccessMsg(null), 2000);
+    } catch (err: any) {
+      alert("Errore durante la chiusura ordine: " + (err.message || err));
+    } finally {
+      setClosingOrderId(null);
+    }
+  }
+
   return (
     <div className="max-w-4xl mx-auto py-6 px-2 md:px-6">
+      {/* Toast di successo */}
+      {successMsg && (
+        <div className="fixed top-8 left-1/2 -translate-x-1/2 px-4 py-2 bg-green-100 text-green-800 font-bold rounded shadow z-50">
+          {successMsg}
+        </div>
+      )}
+
       <h1 className="text-xl md:text-2xl font-bold mb-6 tracking-tight text-gray-800">
         Ordini Parziali
       </h1>
@@ -123,7 +179,10 @@ export default function ParzialiOrdini() {
       )}
 
       {riepiloghi.map((riep) => (
-        <div key={riep.id} className="bg-white rounded-2xl shadow p-4 md:p-7 mb-10 flex flex-col">
+        <div
+          key={riep.id}
+          className="bg-white rounded-2xl shadow p-4 md:p-7 mb-10 flex flex-col"
+        >
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-2 gap-2">
             <div>
@@ -157,15 +216,27 @@ export default function ParzialiOrdini() {
               <tbody>
                 {(riep.po_list || []).map((po) => {
                   const listaArticoli = articoli[riep.id] || [];
-                  const articoliPO = listaArticoli.filter(a => a.po_number === po);
-                  const qtyConf = getQtyConfirmedPerPo(po, parziali[riep.id] || []);
-                  const qtyOrd = articoliPO.reduce((sum, x) => sum + (x.qty_ordered || 0), 0);
+                  const articoliPO = listaArticoli.filter(
+                    (a) => a.po_number === po
+                  );
+                  const qtyConf = getQtyConfirmedPerPo(
+                    po,
+                    parziali[riep.id] || []
+                  );
+                  const qtyOrd = articoliPO.reduce(
+                    (sum, x) => sum + (x.qty_ordered || 0),
+                    0
+                  );
                   const full = qtyConf === qtyOrd && qtyOrd > 0;
 
                   return (
                     <tr key={po} className="border-t text-xs md:text-base">
                       <td className="p-1 font-mono break-all">{po}</td>
-                      <td className={`p-1 text-center font-bold ${full ? "text-green-600" : "text-blue-700"}`}>
+                      <td
+                        className={`p-1 text-center font-bold ${
+                          full ? "text-green-600" : "text-blue-700"
+                        }`}
+                      >
                         {qtyConf}/{qtyOrd}
                         {full && (
                           <span className="ml-2 text-green-600">
@@ -192,45 +263,52 @@ export default function ParzialiOrdini() {
               </div>
             )}
             {(parziali[riep.id] || []).map((p, idx) => (
-            <div
-              key={p.numero_parziale}
-              className="py-3 border-b border-gray-100 text-[15px]"
-            >
-              {/* Riga 1: numero parziale + data */}
-              <div className="grid grid-cols-2">
-                <span className="text-blue-700 font-bold">
-                  {idx + 1}° Parziale
-                </span>
-                <span className="text-xs text-gray-400 text-right">
-                  {formatDate(p.created_at)}
-                </span>
-              </div>
+              <div
+                key={p.numero_parziale}
+                className="py-3 border-b border-gray-100 text-[15px]"
+              >
+                {/* Riga 1: numero parziale + data */}
+                <div className="grid grid-cols-2">
+                  <span className="text-blue-700 font-bold">
+                    {idx + 1}° Parziale
+                  </span>
+                  <span className="text-xs text-gray-400 text-right">
+                    {formatDate(p.created_at)}
+                  </span>
+                </div>
 
-              {/* Riga 2: Gestito + Visualizza */}
-              <div className="grid grid-cols-2 mt-2">
-                <button
-                  onClick={() => handleToggleGestito(riep.id, p.numero_parziale, p.gestito)}
-                  className={`px-2 py-1 rounded-full text-xs font-bold w-fit transition ${
-                    p.gestito
-                      ? "bg-green-100 text-green-700 hover:bg-green-200"
-                      : "bg-red-100 text-red-700 hover:bg-red-200"
-                  }`}
-                  title="Segna come gestito/non gestito"
-                >
-                  {p.gestito ? "Gestito: SÌ" : "Gestito: NO"}
-                </button>
+                {/* Riga 2: Gestito + Visualizza */}
+                <div className="grid grid-cols-2 mt-2">
+                  <button
+                    onClick={() =>
+                      handleToggleGestito(
+                        riep.id,
+                        p.numero_parziale,
+                        p.gestito
+                      )
+                    }
+                    className={`px-2 py-1 rounded-full text-xs font-bold w-fit transition ${
+                      p.gestito
+                        ? "bg-green-100 text-green-700 hover:bg-green-200"
+                        : "bg-red-100 text-red-700 hover:bg-red-200"
+                    }`}
+                    title="Segna come gestito/non gestito"
+                  >
+                    {p.gestito ? "Gestito: SÌ" : "Gestito: NO"}
+                  </button>
 
-                <div className="text-right">
-                  <VisualizzaParzialeModal
-                    dati={typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati}
-                    center={riep.fulfillment_center}
-                    numeroParziale={p.numero_parziale}
-                    data={riep.start_delivery}
-                  />
+                  <div className="text-right">
+                    <VisualizzaParzialeModal
+                      dati={
+                        typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati
+                      }
+                      center={riep.fulfillment_center}
+                      numeroParziale={p.numero_parziale}
+                      data={riep.start_delivery}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
-
             ))}
 
             {/* Azioni finali */}
@@ -254,23 +332,28 @@ export default function ParzialiOrdini() {
                     ? "opacity-40 cursor-not-allowed"
                     : "hover:bg-green-700"
                 }`}
-                disabled={!parziali[riep.id] || parziali[riep.id].length === 0}
+                disabled={
+                  !parziali[riep.id] ||
+                  parziali[riep.id].length === 0 ||
+                  closingOrderId === riep.id
+                }
                 onClick={() => {
-                  if (window.confirm("Sei sicuro di voler chiudere l’ordine?")) {
-                    fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip/chiudi`, {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({
-                        center: riep.fulfillment_center,
-                        data: riep.start_delivery,
-                      }),
-                    }).then(() => window.location.reload());
+                  if (
+                    window.confirm("Sei sicuro di voler chiudere l’ordine?")
+                  ) {
+                    chiudiOrdine(riep);
                   }
                 }}
                 title="Chiudi Ordine (tutte le quantità devono essere confermate)"
               >
-                <CheckCircle size={20} />
-                <span>Chiudi Ordine</span>
+                {closingOrderId === riep.id ? (
+                  <span className="animate-pulse">Chiusura...</span>
+                ) : (
+                  <>
+                    <CheckCircle size={20} />
+                    <span>Chiudi Ordine</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

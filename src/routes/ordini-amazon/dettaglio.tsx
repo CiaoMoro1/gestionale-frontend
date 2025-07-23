@@ -84,15 +84,46 @@ export default function DettaglioDestinazione() {
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
   const [skuSearchError, setSkuSearchError] = useState("");
-  const [showSuggestions, setShowSuggestions] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const filteredSuggestions = skuSearch.length > 0
-    ? articoli.filter(a =>
-      a.model_number.toLowerCase().includes(skuSearch.toLowerCase()) ||
-      a.vendor_product_id.toLowerCase().includes(skuSearch.toLowerCase())
-    ).slice(0, 8)
-    : [];
+  const PAGE_SIZE = 10; // visualizza 10 alla volta
+  const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
+  
+
+function normalizza(str: string) {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchAllWords(target: string, queryWords: string[]) {
+  const targetWords = normalizza(target).split(" ");
+  return queryWords.every(qw =>
+    targetWords.some(tw => tw === qw || tw.startsWith(qw))
+  );
+}
+
+
+  // Filtro ricerca globale
+const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+
+const articoliFiltrati = queryWords.length === 0
+  ? articoli
+  : articoli.filter(a =>
+      matchAllWords(
+        [a.model_number, a.vendor_product_id].join(" "),
+        queryWords
+      )
+    );
+
+  // Solo X articoli, tranne se ricerca attiva
+  const articoliToShow = skuSearch.length > 0
+    ? articoliFiltrati
+    : articoliFiltrati.slice(0, itemsToShow);
+
+  const canShowMore = skuSearch.length === 0 && articoliFiltrati.length > itemsToShow;
 
   // --- Reload universale: carica TUTTO, batchando
   const reloadAll = useCallback(async () => {
@@ -288,7 +319,6 @@ export default function DettaglioDestinazione() {
       setBarcodeModalOpen(false);
       setSkuSearch("");
       setSkuSearchError("");
-      setShowSuggestions(false);
     } else {
       setError("Articolo non trovato! Riprova.");
     }
@@ -309,25 +339,11 @@ export default function DettaglioDestinazione() {
       setModaleArticolo(found);
       setSkuSearch("");
       setSkuSearchError("");
-      setShowSuggestions(false);
     } else {
       setSkuSearchError("Articolo non trovato");
     }
   }
-  function handleSkuInputChange(e: React.ChangeEvent<HTMLInputElement>) {
-    setSkuSearch(e.target.value);
-    setSkuSearchError("");
-    setShowSuggestions(true);
-  }
-  function handleSkuSuggestionClick(a: Articolo) {
-    setModaleArticolo(a);
-    setSkuSearch(a.model_number);
-    setShowSuggestions(false);
-    setSkuSearchError("");
-  }
-  function handleSkuBlur() {
-    setTimeout(() => setShowSuggestions(false), 120);
-  }
+
 
   // --------- UI HELPERS ---------
   function getResiduoInput(idx: number): number {
@@ -447,27 +463,11 @@ export default function DettaglioDestinazione() {
               type="text"
               placeholder="Cerca per SKU o EAN"
               value={skuSearch}
-              ref={inputRef}
-              onChange={handleSkuInputChange}
-              onFocus={() => setShowSuggestions(true)}
-              onBlur={handleSkuBlur}
+              onChange={e => setSkuSearch(e.target.value)}
               className="rounded-lg border border-cyan-400 px-3 py-2 text-[15px] outline-cyan-700 w-full font-medium"
               disabled={isBusy}
             />
-            {showSuggestions && filteredSuggestions.length > 0 && (
-              <ul className="absolute z-40 left-0 right-0 mt-1 bg-white border rounded-lg shadow max-h-52 overflow-auto">
-                {filteredSuggestions.map(a => (
-                  <li
-                    key={a.model_number}
-                    className="px-3 py-2 hover:bg-cyan-100 cursor-pointer text-sm flex flex-col"
-                    onMouseDown={() => handleSkuSuggestionClick(a)}
-                  >
-                    <span className="font-mono">{a.model_number}</span>
-                    <span className="text-gray-500">{a.vendor_product_id}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
+          
           </div>
           <button
             type="submit"
@@ -511,7 +511,7 @@ export default function DettaglioDestinazione() {
             </tr>
           </thead>
           <tbody>
-            {articoli.map((art) => {
+            {articoliToShow.map((art) => {
               const totStorici = totaleStorici(art.model_number);
               const wip = totaleWip(art.model_number);
               const confermata = totStorici + wip;
@@ -570,6 +570,16 @@ export default function DettaglioDestinazione() {
             })}
           </tbody>
         </table>
+        {canShowMore && (
+          <div className="flex justify-center my-3">
+            <button
+              className="px-5 py-2 bg-cyan-700 text-white rounded-xl font-bold hover:bg-cyan-900"
+              onClick={() => setItemsToShow(s => s + PAGE_SIZE)}
+            >
+              Visualizza altri
+            </button>
+          </div>
+        )}
       </div>
 
       {/* MODALE INSERIMENTO PARZIALI */}
