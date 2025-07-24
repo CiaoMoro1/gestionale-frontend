@@ -255,23 +255,23 @@ export default function ParzialiOrdini() {
 
 
 {(() => {
-  // Recupera gli articoli e i parziali di questo ordine
+  // Prendi solo gli articoli validi per i PO dell’ordine
   const listaArticoli = articoli[riep.id] || [];
-  const listaParziali = parziali[riep.id] || [];
+  const articoliFiltrati = listaArticoli.filter(a => riep.po_list.includes(a.po_number) && (a.qty_ordered || 0) > 0);
 
-  // 1. Calcola il valore ordinato
-  const valoreOrdinato = listaArticoli.reduce(
-    (sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)),
-    0
+  // Calcola valore ordinato solo su questi
+  const valoreOrdinato = articoliFiltrati.reduce(
+    (sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)), 0
   );
 
-  // 2. Prepara una mappa rapida di costo per lookup: chiave = po_number + model_number
+  // Map per costo lookup
   const costoArticoloMap = new Map<string, number>();
-  listaArticoli.forEach(x => {
+  articoliFiltrati.forEach(x => {
     costoArticoloMap.set(`${x.po_number}|${x.model_number}`, Number(x.cost) || 0);
   });
 
-  // 3. Calcola il valore confermato solo dai parziali confermati!
+  // Calcola valore confermato su tutti i parziali
+  const listaParziali = parziali[riep.id] || [];
   let valoreConfermato = 0;
   for (const parz of listaParziali) {
     const dati = typeof parz.dati === "string" ? JSON.parse(parz.dati) : parz.dati;
@@ -281,11 +281,12 @@ export default function ParzialiOrdini() {
     }
   }
 
-  // 4. Percentuale
   const percCosto = valoreOrdinato > 0 ? Math.min(Math.round((valoreConfermato / valoreOrdinato) * 100), 100) : 0;
 
-  // 5. Visualizza la barra solo se ho articoli e valore ordinato
-  return listaArticoli.length > 0 && valoreOrdinato > 0 && (
+  // Debug se vuoi
+  // console.log('PO:', riep.po_list, 'Articoli filtrati:', articoliFiltrati, 'Ordinato:', valoreOrdinato, 'Confermato:', valoreConfermato);
+
+  return articoliFiltrati.length > 0 && valoreOrdinato > 0 && (
     <div className="my-3">
       <div className="flex items-center justify-between mb-1 text-xs text-gray-600">
         <span>
@@ -304,13 +305,14 @@ export default function ParzialiOrdini() {
           {percCosto}%
         </div>
       </div>
+      {valoreOrdinato === 0 && (
+        <div className="text-xs text-red-500 mt-2">
+          Attenzione: alcuni PO potrebbero non avere articoli validi con costo o quantità ordinata.
+        </div>
+      )}
     </div>
   );
 })()}
-
-
-
-
 
           {/* Lista Parziali */}
           <div className="border-t pt-3 mt-3">
