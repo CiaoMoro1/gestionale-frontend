@@ -33,7 +33,23 @@ function formatDate(dt: string) {
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
 }
 
+// 1️⃣ Utility fetch con retry automatico
+async function fetchWithRetry(url: string, tries = 3, delayMs = 800): Promise<any> {
+  let lastError;
+  for (let i = 0; i < tries; i++) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error("HTTP error " + res.status);
+      return await res.json();
+    } catch (err) {
+      lastError = err;
+      if (i < tries - 1) await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
+  }
+  throw lastError;
+}
 
+// 2️⃣ Chunk array utility per batching PO
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const result: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -42,6 +58,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return result;
 }
 
+// 3️⃣ Funzione fetch completa con retry e deduplica
 async function fetchAllItemsByPO(po_list: string[]) {
   let all: Articolo[] = [];
   const BATCH_SIZE = 10; // Limite backend
@@ -54,8 +71,7 @@ async function fetchAllItemsByPO(po_list: string[]) {
     let batchCount = 0;
     while (batchCount < MAX_BATCHES) {
       const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
-      const res = await fetch(url);
-      const data = await res.json();
+      const data = await fetchWithRetry(url, 3, 800);
       if (!Array.isArray(data) || data.length === 0) break;
       all = [...all, ...data];
       if (data.length < limit) break;
@@ -74,8 +90,6 @@ async function fetchAllItemsByPO(po_list: string[]) {
   return all;
 }
 
-
-
 export default function CompletatiOrdini() {
   const [dati, setDati] = useState<Riepilogo[]>([]);
   const [articoli, setArticoli] = useState<{ [id: number]: Articolo[] }>({});
@@ -84,11 +98,9 @@ export default function CompletatiOrdini() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>({});
   const [search, setSearch] = useState("");
-
-  // Modale PO
   const [poModal, setPoModal] = useState<{ open: boolean; poList: any[]; titolo: string }>({ open: false, poList: [], titolo: "" });
 
-   useEffect(() => {
+  useEffect(() => {
     async function load() {
       setLoading(true);
       const rieps = await fetch(
@@ -107,11 +119,15 @@ export default function CompletatiOrdini() {
 
       await Promise.all(
         rieps.map(async (r: Riepilogo) => {
-          const arr = await fetchAllItemsByPO(r.po_list);
-          setArticoli(old => ({
-            ...old,
-            [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number))
-          }));
+          try {
+            const arr = await fetchAllItemsByPO(r.po_list);
+            setArticoli(old => ({
+              ...old,
+              [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number))
+            }));
+          } catch (err) {
+            alert("Errore nel caricamento di alcuni articoli. Riprova tra poco.");
+          }
         })
       );
 
@@ -161,9 +177,7 @@ export default function CompletatiOrdini() {
     doc.output("dataurlnewwindow");
   }
 
-  // Mostra Modale PO
   function showPoModal(articoliGruppo: Articolo[], titolo: string) {
-    // Raggruppa per PO con quantità totali
     const poDettaglio: Record<string, { ordinata: number; confermata: number }> = {};
     articoliGruppo.forEach(a => {
       const po = a.po_number || "-";
@@ -180,7 +194,6 @@ export default function CompletatiOrdini() {
     });
   }
 
-  // Raggruppa per data (start_delivery)
   const groupedByDate: { [data: string]: Riepilogo[] } = {};
   dati.forEach(r => {
     if (
@@ -191,7 +204,6 @@ export default function CompletatiOrdini() {
     groupedByDate[r.start_delivery].push(r);
   });
 
-  // Filtri
   const centriUnici = Array.from(new Set(dati.map(d => d.fulfillment_center))).sort();
   const dateUniche = Array.from(new Set(dati.map(d => d.start_delivery))).sort().reverse();
 
@@ -245,7 +257,7 @@ export default function CompletatiOrdini() {
         </div>
       ) : (
         Object.entries(groupedByDate).map(([dataRiep, rieps]) => {
-          // Totale raggruppamento per header
+          // Totali raggruppamento
           const totaleGruppoOrdinato = rieps.reduce(
             (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_ordered || 0), 0)),
             0
@@ -262,11 +274,9 @@ export default function CompletatiOrdini() {
             (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_confirmed || 0) * (Number(a.cost) || 0)), 0)),
             0
           );
-          // Tutti gli articoli di questo gruppo
 
           return (
             <div key={dataRiep} className="mb-8 bg-gray-50 rounded-2xl shadow border">
-              {/* Intestazione raggruppamento */}
               <button
                 className="w-full text-left px-4 py-3 flex justify-between items-center bg-gray-100 rounded-t-2xl focus:outline-none"
                 onClick={() =>
@@ -295,7 +305,6 @@ export default function CompletatiOrdini() {
                 </div>
                 {expanded[dataRiep] ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
               </button>
-              {/* Lista ordini di quel gruppo data */}
               {expanded[dataRiep] && (
                 <div className="p-2">
                   {rieps
@@ -422,7 +431,6 @@ export default function CompletatiOrdini() {
                               </tbody>
                             </table>
 
-                            {/* Totale ordine */}
                             <div className="flex flex-col sm:flex-row gap-2 justify-between items-center border-t mt-3 pt-2">
                               <div className="font-semibold text-sm text-neutral-700">
                                 Totale ordinato: <span className="text-blue-700">{totOrd}</span> | Totale confermato: <span className="text-green-700">{totConf}</span>
