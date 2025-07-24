@@ -30,6 +30,8 @@
     "quagga": "^0.12.1",
     "react": "^19.0.0",
     "react-barcode": "^1.6.1",
+    "react-date-range": "^2.0.1",
+    "react-day-picker": "^9.8.0",
     "react-dom": "^19.0.0",
     "react-dropzone": "^14.3.8",
     "react-hot-toast": "^2.5.2",

@@ -29,6 +29,7 @@ type Articolo = {
   model_number: string;
   qty_ordered: number;
   qty_confirmed: number;
+  cost?: number | string;  // <-- aggiungi questa riga!
 };
 
 export default function ParzialiOrdini() {
@@ -251,6 +252,65 @@ export default function ParzialiOrdini() {
               </tbody>
             </table>
           </div>
+
+
+{(() => {
+  // Recupera gli articoli e i parziali di questo ordine
+  const listaArticoli = articoli[riep.id] || [];
+  const listaParziali = parziali[riep.id] || [];
+
+  // 1. Calcola il valore ordinato
+  const valoreOrdinato = listaArticoli.reduce(
+    (sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)),
+    0
+  );
+
+  // 2. Prepara una mappa rapida di costo per lookup: chiave = po_number + model_number
+  const costoArticoloMap = new Map<string, number>();
+  listaArticoli.forEach(x => {
+    costoArticoloMap.set(`${x.po_number}|${x.model_number}`, Number(x.cost) || 0);
+  });
+
+  // 3. Calcola il valore confermato solo dai parziali confermati!
+  let valoreConfermato = 0;
+  for (const parz of listaParziali) {
+    const dati = typeof parz.dati === "string" ? JSON.parse(parz.dati) : parz.dati;
+    for (const r of dati) {
+      const key = `${r.po_number}|${r.model_number}`;
+      valoreConfermato += (r.quantita || 0) * (costoArticoloMap.get(key) || 0);
+    }
+  }
+
+  // 4. Percentuale
+  const percCosto = valoreOrdinato > 0 ? Math.min(Math.round((valoreConfermato / valoreOrdinato) * 100), 100) : 0;
+
+  // 5. Visualizza la barra solo se ho articoli e valore ordinato
+  return listaArticoli.length > 0 && valoreOrdinato > 0 && (
+    <div className="my-3">
+      <div className="flex items-center justify-between mb-1 text-xs text-gray-600">
+        <span>
+          Valore ordinato: <span className="text-blue-700 font-bold">€ {valoreOrdinato.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</span>
+        </span>
+        <span>
+          Valore confermato: <span className="text-green-700 font-bold">€ {valoreConfermato.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</span>
+        </span>
+      </div>
+      <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
+        <div
+          className="h-5 rounded-full bg-green-500 transition-all"
+          style={{ width: `${percCosto}%` }}
+        ></div>
+        <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
+          {percCosto}%
+        </div>
+      </div>
+    </div>
+  );
+})()}
+
+
+
+
 
           {/* Lista Parziali */}
           <div className="border-t pt-3 mt-3">
