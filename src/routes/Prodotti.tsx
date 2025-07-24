@@ -11,10 +11,9 @@ import {
 import { supabase } from "../lib/supabase";
 import { Link } from "react-router-dom";
 import SearchInput from "../components/SearchInput";
-import { ArrowUp } from "lucide-react";
+import { ArrowUp, Loader2 } from "lucide-react";
 import { QuantityInput } from "../components/QuantityInput";
 import GeneraEtichetteModal from "../components/GeneraEtichetteModal";
-
 
 interface Inventory {
   inventario: number | null;
@@ -33,19 +32,41 @@ interface Product extends ProductRaw {
   inventario: number;
 }
 
+const PAGE_SIZE = 25;
+
+// ---- Utility (identico a produzione) ----
+function normalize(str: string): string {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function matchAllWords(target: string, queryWords: string[]) {
+  const targetWords = normalize(target).split(" ");
+  return queryWords.every(qw =>
+    targetWords.some(tw => tw === qw || tw.startsWith(qw))
+  );
+}
+
 export default function Prodotti() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const deferredSearch = useDeferredValue(debouncedSearch);
-  const [visibleCount, setVisibleCount] = useState(10);
+  const [page, setPage] = useState(0);
   const [showScrollToTop, setShowScrollToTop] = useState(false);
   const queryClient = useQueryClient();
   const [modalOpen, setModalOpen] = useState(false);
-const [selectedSku, setSelectedSku] = useState<string | null>(null);
-const [selectedEan, setSelectedEan] = useState<string | null>(null);
+  const [selectedSku, setSelectedSku] = useState<string | null>(null);
+  const [selectedEan, setSelectedEan] = useState<string | null>(null);
+
+  // Cavallotto
+  const [cavallottoModal, setCavallottoModal] = useState<string | null>(null);
+  const [cavallottoLoading, setCavallottoLoading] = useState(false);
 
   useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedSearch(search), 300);
+    const timeout = setTimeout(() => setDebouncedSearch(search), 180);
     return () => clearTimeout(timeout);
   }, [search]);
 
@@ -73,7 +94,7 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-    const { data, isLoading, error } = useQuery<Product[]>({
+  const productsQuery = useQuery<Product[], Error>({
     queryKey: ["products"],
     queryFn: async () => {
       const { data, error } = await supabase
@@ -86,38 +107,57 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
           price,
           inventory_product_id_fkey (inventario)
         `);
-
       if (error) throw error;
-
-      // Typizza la mappa!
       return (data as ProductRaw[] | null)?.map((p) => ({
         ...p,
         inventario: Array.isArray(p.inventory_product_id_fkey)
           ? p.inventory_product_id_fkey[0]?.inventario ?? 0
           : (p.inventory_product_id_fkey?.inventario ?? 0),
       })) ?? [];
-    },
+    }
   });
 
-  const normalize = (str: string) =>
-    str.toLowerCase().replace(/[^a-z0-9]/gi, " ").split(/\s+/).join(" ");
+  const { data: products = [], isLoading, error } = productsQuery;
 
+  // --- Ricerca PRODUZIONE STYLE ---
   const normalizedSearch = normalize(deferredSearch);
-  const tokens = normalizedSearch.split(" ");
+  const tokens = normalizedSearch.split(" ").filter(Boolean);
   const isSearching = debouncedSearch !== deferredSearch;
 
-  const filtered = useMemo(() => {
-    return (data ?? [])
-      .filter((p) => {
-        const full = normalize(`${p.sku ?? ""} ${p.product_title ?? ""} ${p.ean ?? ""}`);
-        return tokens.every((token) => full.includes(token));
-      })
-      .sort((a, b) => (a.product_title ?? "").localeCompare(b.product_title ?? ""));
-  }, [data, tokens]);
+  const filtered: Product[] = useMemo(() => {
+    if (!products) return [];
+    if (!tokens.length) return products;
+    return products.filter((p: Product) => {
+      const full = `${p.sku ?? ""} ${p.product_title ?? ""} ${p.ean ?? ""}`;
+      return matchAllWords(full, tokens);
+    });
+  }, [products, tokens]);
 
-  const visibleItems = deferredSearch
-    ? filtered
-    : filtered.slice(0, visibleCount);
+  // Pagination logic
+  const paginated = useMemo(() => {
+    if (deferredSearch) return filtered;
+    return filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  }, [filtered, deferredSearch, page]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+
+  // Reset page to 0 if search or results change
+  useEffect(() => {
+    setPage(0);
+  }, [deferredSearch, filtered.length]);
+
+  // --- Cavallotto PDF (modale) ---
+  function openCavallottoPdf(sku: string, formato: string) {
+    setCavallottoLoading(true);
+    window.open(
+      `${import.meta.env.VITE_API_URL}/api/cavallotto/html?sku=${encodeURIComponent(sku)}&formato=${encodeURIComponent(formato)}`,
+      "_blank"
+    );
+    setTimeout(() => {
+      setCavallottoLoading(false);
+      setCavallottoModal(null);
+    }, 900);
+  }
 
   if (isLoading)
     return <div className="p-6 text-black text-center">Caricamento prodotti...</div>;
@@ -135,11 +175,11 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
       </div>
 
       <div className="flex items-center justify-between mb-2 px-1">
-        <SearchInput className="w-full max-w-xl" 
+        <SearchInput className="w-full max-w-xl"
           value={search}
           onChange={(val) => {
             setSearch(val);
-            setVisibleCount(10);
+            setPage(0);
           }}
           placeholder=" Cerca per SKU, nome o EAN..."
         />
@@ -154,7 +194,7 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
         </p>
       ) : (
         <ul className="grid gap-4 sm:grid-cols-1 md:grid-cols-2">
-          {visibleItems.map((product) => (
+          {paginated.map((product: Product) => (
             <li
               key={product.id}
               className="bg-white rounded-xl border border-gray-100 p-4 shadow transition"
@@ -181,19 +221,26 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
                       productId={product.id}
                       initialQuantity={product.inventario ?? 0}
                     />
-                                                <div className="mt-2">
-                              <button
-                                className="px-2 py-1 text-xs rounded bg-cyan-700 text-white font-bold hover:bg-cyan-900 transition"
-                                onClick={() => {
-                                  setSelectedSku(product.sku ?? "");
-                                  setSelectedEan(product.ean ?? "");
-                                  setModalOpen(true);
-                                }}
-                                disabled={!product.sku || !product.ean}
-                              >
-                                🏷️ Genera etichette
-                              </button>
-                            </div>
+                    <div className="mt-2 flex gap-2">
+                      <button
+                        className="px-2 py-1 text-xs rounded bg-cyan-700 text-white font-bold hover:bg-cyan-900 transition"
+                        onClick={() => {
+                          setSelectedSku(product.sku ?? "");
+                          setSelectedEan(product.ean ?? "");
+                          setModalOpen(true);
+                        }}
+                        disabled={!product.sku || !product.ean}
+                      >
+                        🏷️ Genera etichette
+                      </button>
+                      <button
+                        className="px-2 py-1 text-xs rounded bg-indigo-700 text-white font-bold hover:bg-indigo-900 transition"
+                        onClick={() => setCavallottoModal(product.sku ?? "")}
+                        disabled={!product.sku}
+                      >
+                        🖨️ Genera cavallotto
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -202,23 +249,61 @@ const [selectedEan, setSelectedEan] = useState<string | null>(null);
         </ul>
       )}
 
-{modalOpen && selectedSku && selectedEan && (
-  <GeneraEtichetteModal
-    open={modalOpen}
-    onClose={() => setModalOpen(false)}
-    sku={selectedSku}
-    ean={selectedEan}
-  />
-)}
+      {modalOpen && selectedSku && selectedEan && (
+        <GeneraEtichetteModal
+          open={modalOpen}
+          onClose={() => setModalOpen(false)}
+          sku={selectedSku}
+          ean={selectedEan}
+        />
+      )}
 
+      {/* MODALE CAVALLOTTO */}
+      {cavallottoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xs text-center relative">
+            <button
+              className="absolute top-2 right-3 text-2xl text-gray-300 hover:text-black"
+              onClick={() => setCavallottoModal(null)}
+            >×</button>
+            <div className="mb-4 font-bold text-lg text-blue-800">Stampa Cavallotto</div>
+            <div className="mb-4">Scegli il formato</div>
+            <div className="flex flex-col gap-2 mb-3">
+              {["A5", "A4", "A3"].map(formato => (
+                <button
+                  key={formato}
+                  className="bg-cyan-100 hover:bg-cyan-200 border border-cyan-300 text-cyan-800 font-semibold py-2 rounded-xl"
+                  onClick={() => openCavallottoPdf(cavallottoModal, formato)}
+                  disabled={cavallottoLoading}
+                >
+                  {formato}
+                </button>
+              ))}
+            </div>
+            {cavallottoLoading && <Loader2 className="mx-auto animate-spin text-cyan-600" />}
+          </div>
+        </div>
+      )}
 
-      {!deferredSearch && filtered.length > visibleItems.length && (
-        <div className="text-center">
+      {/* Paginazione solo se NON stai cercando */}
+      {!deferredSearch && filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-center mt-6 gap-3">
           <button
-            onClick={() => setVisibleCount((prev) => prev + 10)}
-            className="text-gray-600 mt-4 hover:underline"
+            onClick={() => setPage((p) => Math.max(p - 1, 0))}
+            className="px-3 py-1 bg-gray-200 rounded-l-lg font-bold hover:bg-gray-300 disabled:opacity-40"
+            disabled={page === 0}
           >
-            Mostra altri 10 prodotti
+            ⬅️
+          </button>
+          <span className="text-gray-600 text-sm">
+            Pagina {page + 1} / {totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(p + 1, totalPages - 1))}
+            className="px-3 py-1 bg-gray-200 rounded-r-lg font-bold hover:bg-gray-300 disabled:opacity-40"
+            disabled={page >= totalPages - 1}
+          >
+            ➡️
           </button>
         </div>
       )}
