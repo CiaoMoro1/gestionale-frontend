@@ -51,9 +51,7 @@ export default function ParzialiOrdini() {
 
       await Promise.all(
         rieps.map(async (r: Riepilogo) => {
-          const articoliArr = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${r.po_list.join(",")}`
-          ).then((r) => r.json());
+          const articoliArr = await fetchAllItemsByPO(r.po_list);
           setArticoli((old) => ({ ...old, [r.id]: articoliArr }));
 
           const parzArr = await fetch(
@@ -70,6 +68,50 @@ export default function ParzialiOrdini() {
     }
     load();
   }, []);
+
+
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
+async function fetchAllItemsByPO(po_list: string[]) {
+  let all: Articolo[] = [];
+  const BATCH_SIZE = 10; // stesso valore del backend!
+  const MAX_BATCHES = 100; // sicurezza: max 20.000 righe (10x200x100)
+  const poGroups = chunkArray(po_list, BATCH_SIZE);
+
+  for (const group of poGroups) {
+    let offset = 0;
+    const limit = 200;
+    let batchCount = 0;
+    while (batchCount < MAX_BATCHES) {
+      const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < limit) break;
+      offset += limit;
+      batchCount += 1;
+    }
+  }
+  // Deduplica finale
+  const seen = new Set();
+  all = all.filter(item => {
+    const key = `${item.po_number}|${item.model_number}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return all;
+}
+
+
 
   function getQtyConfirmedPerPo(po_number: string, parz: Parziale[]) {
     let tot = 0;

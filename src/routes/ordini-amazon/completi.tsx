@@ -34,21 +34,46 @@ function formatDate(dt: string) {
 }
 
 
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
 async function fetchAllItemsByPO(po_list: string[]) {
   let all: Articolo[] = [];
-  let offset = 0;
-  const limit = 200;
-  while (true) {
-    const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${po_list.join(",")}&offset=${offset}&limit=${limit}`;
-    const res = await fetch(url);
-    const data = await res.json();
-    if (!Array.isArray(data) || data.length === 0) break;
-    all = [...all, ...data];
-    if (data.length < limit) break;
-    offset += limit;
+  const BATCH_SIZE = 10; // Limite backend
+  const MAX_BATCHES = 100; // Massimo batch di sicurezza
+  const poGroups = chunkArray(po_list, BATCH_SIZE);
+
+  for (const group of poGroups) {
+    let offset = 0;
+    const limit = 200;
+    let batchCount = 0;
+    while (batchCount < MAX_BATCHES) {
+      const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!Array.isArray(data) || data.length === 0) break;
+      all = [...all, ...data];
+      if (data.length < limit) break;
+      offset += limit;
+      batchCount += 1;
+    }
   }
+  // Deduplica finale
+  const seen = new Set();
+  all = all.filter(item => {
+    const key = `${item.po_number}|${item.model_number}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   return all;
 }
+
 
 
 export default function CompletatiOrdini() {
