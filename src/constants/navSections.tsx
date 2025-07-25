@@ -27,6 +27,7 @@ export const navSections = [
       { label: "Nuovi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/nuovi" },
       { label: "Parziali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/parziali" },
       { label: "Completi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/completi" },
+      { label: "Fatture", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturevendor" },
     ],
   },
   {

@@ -38,6 +38,8 @@ const Prelievo = lazy(() => import("./routes/Prelievo"));
 const OrdiniAmazonDashboard = lazy(() => import("./routes/ordini-amazon/dashboard"));
 const EtichetteVendor = lazy(() => import("./routes/ordini-amazon/etichettevendor"));
 const PrelievoAmazon = lazy(() => import("./routes/ordini-amazon/prelievo"));
+const FattureVendor = lazy(() => import("./routes/ordini-amazon/fatturevendor"));
+
 
 
 
@@ -133,6 +135,8 @@ function AppContent() {
               <Route path="/ordini-amazon/etichettevendor" element={<EtichetteVendor />} />
               <Route path="/ordini-amazon/prelievo" element={<PrelievoAmazon />} />
               <Route path="/produzione-vendor" element={<ProduzioneVendor />} />
+              <Route path="/ordini-amazon/fatturevendor" element={<FattureVendor />} />
+
 
 
 
