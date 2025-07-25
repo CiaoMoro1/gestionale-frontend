@@ -258,41 +258,40 @@ function getJobIdForItem(item: { fulfillment_center: string, start_delivery: str
   }
 
   // --- GENERA FATTURA E POLLING JOB ---
-  const generaFattura = async (item: RiepilogoFattura) => {
-    try {
-        setJobPolling(getJobIdForItem(item)); // AGGIUNGI QUESTA RIGA!
-        const toastId = toast.loading("Generazione in corso...");
-        const res = await axios.post(`${API_BASE_URL}/api/fatture_amazon_vendor/genera`, {
-        centro: item.fulfillment_center,
-        start_delivery: item.start_delivery,
-        po_list: item.po_list
-        });
+const generaFattura = async (item: RiepilogoFattura) => {
+  try {
+    setJobPolling(getJobIdForItem(item));
+    const toastId = toast.loading("Generazione in corso...");
+    const res = await axios.post(`${API_BASE_URL}/api/fatture_amazon_vendor/genera`, {
+      centro: item.fulfillment_center,
+      start_delivery: item.start_delivery,
+      po_list: item.po_list
+    });
 
-        const jobId = res.data?.job_id;
-        if (!jobId) throw new Error("Job ID non restituito!");
+    const jobId = res.data?.job_id;
+    if (!jobId) throw new Error("Job ID non restituito!");
 
-        toast.dismiss(toastId);
-        toast.success("Job avviato! In attesa completamento...");
-        setJobPolling(jobId);
+    toast.dismiss(toastId);
+    toast.success("Job avviato! In attesa completamento...");
+    setJobPolling(jobId);
 
-        const status = await pollJobStatus(jobId);
-        if (status === "done") {
-        toast.success("✅ Fattura generata con successo");
-        await refetchFatture();           // aggiorna Fatture Generate
-        await refetchFatturePronte();     // AGGIUNGI QUESTO: aggiorna Ordini Completati (da fatturare)
-        } else if (status === "failed") {
-        toast.error("❌ Errore durante la generazione della fattura");
-        } else {
-        toast.error("⏱ Timeout: stato job non aggiornato");
-        }
-    } catch (e) {
-        toast.error("Errore nella generazione");
-        console.error(e);
-    } finally {
-        setConferma(null);
-        setJobPolling(null);
+    const status = await pollJobStatus(jobId);
+    if (status === "done") {
+      toast.success("✅ Fattura generata con successo");
+      await refetchFatture();
+      await refetchFatturePronte();
+    } else if (status === "failed") {
+      toast.error("❌ Errore durante la generazione della fattura");
+    } else {
+      toast.error("⏱ Timeout: stato job non aggiornato");
     }
-    };
+  } catch (e) {
+    toast.error("Errore nella generazione");
+    console.error(e);
+  } finally {
+    setJobPolling(null); // solo questa riga qui!
+  }
+};
 
   const pollJobStatus = async (jobId: string): Promise<"done" | "failed" | "timeout"> => {
     const timeout = 20000;
@@ -717,7 +716,10 @@ function getJobIdForItem(item: { fulfillment_center: string, start_delivery: str
             <div className="mb-2">Articoli accettati: <strong>{getTotConfermato(conferma)}</strong></div>
             <div className="mb-4">Valore stimato: <strong>€ {conferma.valore_totale.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</strong></div>
             <div className="flex gap-3 justify-end">
-              <Button onClick={() => generaFattura(conferma)} className="bg-blue-700 hover:bg-blue-900">
+              <Button onClick={() => {
+                setConferma(null);         // Chiude SUBITO il modale
+                generaFattura(conferma);  // Avvia la generazione in background
+                }} className="bg-blue-700 hover:bg-blue-900">
                 Conferma
               </Button>
               <button className="btn" onClick={() => setConferma(null)}>
