@@ -1,5 +1,7 @@
 import React, { useState, useRef } from "react";
 
+const API_BASE_URL = import.meta.env.VITE_API_URL;
+
 type Nota = {
   id: number;
   data_nota: string;
@@ -48,7 +50,7 @@ export default function NoteCreditoResoPage() {
     setNote([]);
     setSelectedIds([]);
     // Upload file
-    const resp = await fetch("/api/notecredito_amazon_reso/upload", {
+      const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/upload`, {
       method: "POST",
       body: formData,
     });
@@ -60,7 +62,7 @@ export default function NoteCreditoResoPage() {
   const pollJob = (jid: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     const interval = setInterval(async () => {
-      const resp = await fetch(`/api/jobs/${jid}/status`);
+      const resp = await fetch(`${API_BASE_URL}/api/jobs/${jid}/status`);
       const data: JobStatus = await resp.json();
       setJobStatus(data);
       if (data.status === "done" || data.status === "failed") {
@@ -73,20 +75,20 @@ export default function NoteCreditoResoPage() {
 
   // 3. Carica lista note
   const fetchNoteList = async () => {
-    const resp = await fetch(`/api/notecredito_amazon_reso/list`);
+    const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list`);
     const data: Nota[] = await resp.json();
     setNote(data || []);
   };
 
   // 4. Download singolo XML
   const downloadXML = (id: number) => {
-    window.open(`/api/notecredito_amazon_reso/download/${id}`, "_blank");
+    window.open(`${API_BASE_URL}/api/notecredito_amazon_reso/download/${id}`, "_blank");
   };
 
   // 5. Download ZIP
   const downloadZIP = async () => {
     if (!selectedIds.length) return;
-    const resp = await fetch(`/api/notecredito_amazon_reso/download_zip`, {
+    const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/download_zip`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ids: selectedIds }),
