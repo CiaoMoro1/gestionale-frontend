@@ -6,8 +6,22 @@ import {
   Boxes,
   Factory,
 } from "lucide-react";
+import { ReactNode } from "react";
 
-export const navSections = [
+export type NavItem = {
+  label: string;
+  icon: ReactNode;
+  path?: string;
+  items?: NavItem[];
+};
+
+export type NavSectionType = {
+  label: string;
+  icon: ReactNode;
+  items: NavItem[];
+};
+
+export const navSections: NavSectionType[] = [
   {
     label: "Ordini Sito",
     icon: <ClipboardList size={24} strokeWidth={1.5} />,
@@ -27,7 +41,14 @@ export const navSections = [
       { label: "Nuovi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/nuovi" },
       { label: "Parziali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/parziali" },
       { label: "Completi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/completi" },
-      { label: "Fatture", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturevendor" },
+      {
+        label: "Amministrazione",
+        icon: <Boxes size={24} strokeWidth={1.5} />,
+        items: [
+          { label: "Fatture", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturevendor" },
+          { label: "Note Credito - Reso", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/notecreditoreso" },
+        ]
+      },
     ],
   },
   {
@@ -38,7 +59,7 @@ export const navSections = [
       { label: "Movimenti", icon: <ArrowLeftRight size={24} strokeWidth={1.5} />, path: "/movimenti" },
     ],
   },
-    {
+  {
     label: "Produzione",
     icon: <Factory size={24} strokeWidth={1.5} />,
     items: [
@@ -51,8 +72,7 @@ export const navSections = [
     items: [
       { label: "Import/Export", icon: <ArrowDown size={24} strokeWidth={1.5} />, path: "/import" },
       { label: "Sync", icon: <ArrowDown size={24} strokeWidth={1.5} />, path: "/sync" },
-      { label: "Etichette Vendor", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/etichettevendor" }, // <--- AGGIUNTO QUI
-
+      { label: "Etichette Vendor", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/etichettevendor" },
     ],
   },
 ];

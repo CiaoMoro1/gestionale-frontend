@@ -22,6 +22,8 @@ import Parziali from "./routes/ordini-amazon/parziali";
 import DraftOrdini from "./routes/ordini-amazon/draft";  // <--- AGGIUNGI QUESTO!
 import CompletatiOrdini from "./routes/ordini-amazon/completi";
 import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";
+import NoteCreditoResoPage from "./routes/ordini-amazon/notecreditoreso";
+
 
 
 // Lazy load delle route
@@ -136,6 +138,8 @@ function AppContent() {
               <Route path="/ordini-amazon/prelievo" element={<PrelievoAmazon />} />
               <Route path="/produzione-vendor" element={<ProduzioneVendor />} />
               <Route path="/ordini-amazon/fatturevendor" element={<FattureVendor />} />
+              <Route path="/ordini-amazon/notecreditoreso" element={<NoteCreditoResoPage />} />
+
 
 
 
