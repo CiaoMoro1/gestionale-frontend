@@ -25,12 +25,11 @@ export default function LabelActions({
   apiLoading,
   mergePdfBase64Array,
 }: LabelActionsProps) {
-  // Determina colore badge in base allo stato
-  const statoBadge = stato_ordine === "etichette"
-    ? { label: "Etichette stampate", className: "bg-green-100 text-green-700" }
-    : { label: "Prelievo", className: "bg-yellow-100 text-yellow-800" };
+  const statoBadge =
+    stato_ordine === "etichette"
+      ? { label: "Etichette stampate", className: "bg-green-100 text-green-700" }
+      : { label: "Prelievo", className: "bg-yellow-100 text-yellow-800" };
 
-  // Funzione per gestire visualizzazione e merge PDF
   const handleView = async () => {
     setIsMerging(true);
     if (etichetta.labels.length <= 1) {
@@ -43,19 +42,18 @@ export default function LabelActions({
         setMergedPdf(merged);
         setIsMerging(false);
         setModalPdfOpen(true);
-      } catch (e) {
-        alert("Errore durante l'unione delle etichette PDF");
+      } catch (err) {
+        // niente alert bloccante: log e fallback
+        console.error("Errore durante l'unione delle etichette PDF:", err);
         setIsMerging(false);
       }
     }
   };
 
-  // Non mostrare niente se non ci sono etichette
   if (!etichetta.labels.length) return null;
 
   return (
     <div className="flex flex-wrap gap-3 justify-center items-center mt-6">
-      {/* Bottone stampa */}
       <button
         className="flex items-center gap-2 bg-green-700 hover:bg-green-800 text-white px-5 py-3 rounded-xl shadow text-fluid-base font-semibold"
         onClick={onPrint}
@@ -63,7 +61,7 @@ export default function LabelActions({
       >
         <Printer size={22} /> Stampa etichette
       </button>
-      {/* Bottone visualizza */}
+
       <button
         className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-3 rounded-xl shadow text-fluid-base font-semibold"
         onClick={handleView}
@@ -71,7 +69,7 @@ export default function LabelActions({
       >
         <FileText size={22} /> {isMerging ? "Unione PDF..." : "Visualizza etichette"}
       </button>
-      {/* Bottone elimina */}
+
       <button
         className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-5 py-3 rounded-xl shadow text-fluid-base font-semibold"
         onClick={onDelete}
@@ -79,7 +77,7 @@ export default function LabelActions({
       >
         <Trash2 size={22} /> Elimina etichetta
       </button>
-      {/* Stato ordine badge */}
+
       <div className={`ml-4 text-sm font-bold px-3 py-2 rounded-xl ${statoBadge.className}`}>
         Stato ordine: {statoBadge.label}
       </div>

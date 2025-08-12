@@ -8,11 +8,12 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 type Articolo = {
-  model_number: string;
-  vendor_product_id: string;
+  model_number: string;        // SKU
+  vendor_product_id: string;   // EAN
   qty_ordered: number;
   po_number: string;
 };
+
 type RigaParziale = {
   model_number: string;
   quantita: number;
@@ -21,58 +22,95 @@ type RigaParziale = {
   confermato: boolean;
   numero_parziale?: number; // per getParzialiStorici
 };
+
 type RigaInput = { id: string; quantita: number | ""; collo: number };
+
 type ColloRiepilogo = {
   collo: number;
   righe: { model_number: string; quantita: number }[];
   confermato: boolean;
 };
 
+type WipResponse =
+  | RigaParziale[]
+  | {
+      parziali?: RigaParziale[];
+      confermaCollo?: Record<number, boolean>;
+    };
+
+type LocationState = {
+  barcode?: string;
+  from?: "nuovi" | "parziali";
+  fromDraft?: boolean;
+  autoOpen?: { po_number: string; model_number: string } | undefined;
+};
+
 const PAGE_LIMIT = 200;
+const PAGE_SIZE = 10; // visualizza 10 alla volta
 
 function sleep(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-async function fetchAllBatched(
-  urlBase: string,
-  key: string | null = null
-): Promise<any[]> {
-  let all: any[] = [];
+// fetch paginato + opzionale chiave
+async function fetchAllBatched<T>(urlBase: string, key: string | null = null): Promise<T[]> {
+  const all: T[] = [];
   let offset = 0;
   const limit = PAGE_LIMIT;
+  // loop batching
+
   while (true) {
     const url = urlBase.includes("?")
       ? `${urlBase}&offset=${offset}&limit=${limit}`
       : `${urlBase}?offset=${offset}&limit=${limit}`;
     const res = await fetch(url);
     const json = await res.json();
-    let lista: any[] = [];
-    if (Array.isArray(json)) lista = json;
-    else if (key && Array.isArray(json[key])) lista = json[key];
-    else if (json && key && json[key]) lista = json[key];
-    all = [...all, ...lista];
+    let lista: T[] = [];
+    if (Array.isArray(json)) lista = json as T[];
+    else if (key && Array.isArray(json[key])) lista = json[key] as T[];
+    else if (json && key && json[key]) lista = json[key] as T[];
+    all.push(...lista);
     if (lista.length < limit) break;
     offset += limit;
-    await sleep(150); // <--- AGGIUNGI QUESTO ritardo tra i batch!
+    await sleep(150);
   }
   return all;
 }
 
+// Per typed access a lastAutoTable
+interface JsPDFWithAutoTable extends jsPDF {
+  lastAutoTable?: { finalY: number };
+}
+
+// ---- ricerca utils
+function normalizza(str: string) {
+  return (str || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+function matchAllWords(target: string, queryWords: string[]) {
+  const targetWords = normalizza(target).split(" ");
+  return queryWords.every(qw =>
+    targetWords.some(tw => tw === qw || tw.startsWith(qw))
+  );
+}
 
 export default function DettaglioDestinazione() {
   const { center, data } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const barcode = location.state?.barcode;
-  const from = location.state?.from === "nuovi" ? "nuovi" : "parziali";
-  const fromDraft = location.state?.fromDraft;
+  const state = (location.state || {}) as LocationState;
+  const barcode = state.barcode;
+  const from = state.from === "nuovi" ? "nuovi" : "parziali";
+  const fromDraft = state.fromDraft;
 
   // Stati principali
   const [articoli, setArticoli] = useState<Articolo[]>([]);
   const [parziali, setParziali] = useState<RigaParziale[]>([]);
   const [parzialiStorici, setParzialiStorici] = useState<RigaParziale[]>([]);
-  const [confermaCollo, setConfermaCollo] = useState<{ [collo: number]: boolean }>({});
+  const [confermaCollo, setConfermaCollo] = useState<Record<number, boolean>>({});
   const [modaleArticolo, setModaleArticolo] = useState<Articolo | null>(null);
   const [inputs, setInputs] = useState<RigaInput[]>([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
   const [shakeIdx, setShakeIdx] = useState<number | null>(null);
@@ -81,42 +119,28 @@ export default function DettaglioDestinazione() {
   const [confirmAction, setConfirmAction] = useState<null | "reset" | "parziale" | "chiudi">(null);
   const [isBusy, setIsBusy] = useState(false);
 
+  // Cavallotto (nuovo)
+  const [cavallottoModal, setCavallottoModal] = useState<string | null>(null);
+  const [cavallottoLoading, setCavallottoLoading] = useState(false);
+
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
   const [skuSearchError, setSkuSearchError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const PAGE_SIZE = 10; // visualizza 10 alla volta
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
-  
-
-function normalizza(str: string) {
-  return (str || "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]/gi, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function matchAllWords(target: string, queryWords: string[]) {
-  const targetWords = normalizza(target).split(" ");
-  return queryWords.every(qw =>
-    targetWords.some(tw => tw === qw || tw.startsWith(qw))
-  );
-}
-
 
   // Filtro ricerca globale
-const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+  const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
 
-const articoliFiltrati = queryWords.length === 0
-  ? articoli
-  : articoli.filter(a =>
-      matchAllWords(
-        [a.model_number, a.vendor_product_id].join(" "),
-        queryWords
-      )
-    );
+  const articoliFiltrati = queryWords.length === 0
+    ? articoli
+    : articoli.filter(a =>
+        matchAllWords(
+          [a.model_number, a.vendor_product_id].join(" "),
+          queryWords
+        )
+      );
 
   // Solo X articoli, tranne se ricerca attiva
   const articoliToShow = skuSearch.length > 0
@@ -129,7 +153,7 @@ const articoliFiltrati = queryWords.length === 0
   const reloadAll = useCallback(async () => {
     if (!center || !data) return;
     // Articoli
-    const articoliBatch = await fetchAllBatched(
+    const articoliBatch = await fetchAllBatched<Articolo>(
       `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/dettaglio-destinazione?center=${center}&data=${data}`,
       "articoli"
     );
@@ -137,14 +161,14 @@ const articoliFiltrati = queryWords.length === 0
     setArticoli(articoliBatch);
 
     // Storici
-    const storici = await fetchAllBatched(
+    const storici = await fetchAllBatched<RigaParziale>(
       `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-storici?center=${center}&data=${data}`
     );
     setParzialiStorici(storici);
 
     // WIP
     const wipResp = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`);
-    const wipJson = await wipResp.json();
+    const wipJson = (await wipResp.json()) as WipResponse;
     if (Array.isArray(wipJson)) {
       setParziali(wipJson);
       setConfermaCollo({});
@@ -159,19 +183,19 @@ const articoliFiltrati = queryWords.length === 0
 
   // Ricerca manuale e auto-open
   useEffect(() => {
-    const auto = location.state?.autoOpen;
+    const auto = state.autoOpen;
     if (auto && articoli.length > 0) {
       const found = articoli.find(
         a => a.po_number === auto.po_number && a.model_number === auto.model_number
       );
       if (found) {
         setModaleArticolo(found);
-        // Pulisci location.state SOLO l’autoOpen
-        navigate(".", { replace: true, state: { ...location.state, autoOpen: undefined } });
+        // Pulisci solo autoOpen
+        navigate(".", { replace: true, state: { ...state, autoOpen: undefined } });
       }
     }
-    // eslint-disable-next-line
-  }, [location.state, articoli]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state, articoli]);
 
   // Quando apro modaleArticolo, prepopolo inputs
   useEffect(() => {
@@ -192,7 +216,7 @@ const articoliFiltrati = queryWords.length === 0
 
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
-    setInputs((prev) =>
+    setInputs(prev =>
       prev.map((r, i) =>
         i === idx
           ? {
@@ -211,7 +235,7 @@ const articoliFiltrati = queryWords.length === 0
     }
   }
   function aggiungiRiga() {
-    setInputs((prev) => [...prev, { id: crypto.randomUUID(), quantita: "", collo: 1 }]);
+    setInputs(prev => [...prev, { id: crypto.randomUUID(), quantita: "", collo: 1 }]);
   }
   function rimuoviRiga(idToRemove: string) {
     setInputs(prev => prev.filter(inp => inp.id !== idToRemove));
@@ -223,7 +247,7 @@ const articoliFiltrati = queryWords.length === 0
     setTimeout(() => setBarcodeModalOpen(true), 150);
   }
 
-  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: any) {
+  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: Record<number, boolean>) {
     setIsBusy(true);
     await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`, {
       method: "POST",
@@ -344,12 +368,26 @@ const articoliFiltrati = queryWords.length === 0
     }
   }
 
-
   // --------- UI HELPERS ---------
+  function getParzialiStorici(model: string) {
+    const storici = parzialiStorici.filter(p => p.model_number === model);
+    const perParziale: { [num: number]: number } = {};
+    storici.forEach((r: RigaParziale) => {
+      const parz = r.numero_parziale || 1;
+      perParziale[parz] = (perParziale[parz] || 0) + r.quantita;
+    });
+    return Object.entries(perParziale).map(([parziale, quantita]) => ({ parziale, quantita }));
+  }
+  function totaleStorici(model: string) {
+    return parzialiStorici.filter(p => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
+  }
+  function totaleWip(model: string) {
+    return parziali.filter(p => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
+  }
   function getResiduoInput(idx: number): number {
     if (!modaleArticolo) return 0;
     const totaleStorico = getParzialiStorici(modaleArticolo.model_number)
-      .reduce((sum, r) => sum + r.quantita, 0);
+      .reduce((sum, r) => sum + Number(r.quantita), 0);
     const sommaAltriInput = inputs
       .map((inp, i) => (i !== idx ? Number(inp.quantita) || 0 : 0))
       .reduce((a, b) => a + b, 0);
@@ -371,21 +409,6 @@ const articoliFiltrati = queryWords.length === 0
         sommaAltriInput
     );
   }
-  function getParzialiStorici(model: string) {
-    const storici = parzialiStorici.filter(p => p.model_number === model);
-    const perParziale: { [num: number]: number } = {};
-    storici.forEach((r: any) => {
-      const parz = r.numero_parziale || 1;
-      perParziale[parz] = (perParziale[parz] || 0) + r.quantita;
-    });
-    return Object.entries(perParziale).map(([parziale, quantita]) => ({ parziale, quantita }));
-  }
-  function totaleStorici(model: string) {
-    return parzialiStorici.filter((p) => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
-  }
-  function totaleWip(model: string) {
-    return parziali.filter((p) => p.model_number === model).reduce((sum, r) => sum + r.quantita, 0);
-  }
   function colliRiepilogo(): ColloRiepilogo[] {
     const gruppi: { [collo: number]: ColloRiepilogo } = {};
     for (const p of parziali) {
@@ -395,10 +418,10 @@ const articoliFiltrati = queryWords.length === 0
     }
     return Object.values(gruppi).sort((a, b) => a.collo - b.collo);
   }
-  const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every((c) => c.confermato);
+  const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every(c => c.confermato);
 
   function exportColliPDF() {
-    const doc = new jsPDF("p", "mm", "a4");
+    const doc: JsPDFWithAutoTable = new jsPDF("p", "mm", "a4");
     doc.setFontSize(16);
     doc.text(`Riepilogo colli (NON confermati)`, 14, 18);
     doc.setFontSize(11);
@@ -406,7 +429,7 @@ const articoliFiltrati = queryWords.length === 0
     doc.text(`Data: ${data}`, 90, 26);
 
     let currentY = 36;
-    colliRiepilogo().forEach((collo) => {
+    colliRiepilogo().forEach(collo => {
       doc.setFontSize(13);
       doc.text(`Collo ${collo.collo}${collo.confermato ? " (confermato)" : ""}`, 14, currentY);
       autoTable(doc, {
@@ -417,9 +440,22 @@ const articoliFiltrati = queryWords.length === 0
         headStyles: { fillColor: [6, 182, 212] },
         margin: { left: 14, right: 14 }
       });
-      currentY = ((doc as any).lastAutoTable?.finalY ?? currentY + 40) + 8;
+      currentY = (doc.lastAutoTable?.finalY ?? currentY + 40) + 8;
     });
     doc.output("dataurlnewwindow");
+  }
+
+  // Cavallotto: apertura PDF (formati A5/A4/A3)
+  function openCavallottoPdf(sku: string, formato: string) {
+    setCavallottoLoading(true);
+    window.open(
+      `${import.meta.env.VITE_API_URL}/api/cavallotto/html?sku=${encodeURIComponent(sku)}&formato=${encodeURIComponent(formato)}`,
+      "_blank"
+    );
+    setTimeout(() => {
+      setCavallottoLoading(false);
+      setCavallottoModal(null);
+    }, 900);
   }
 
   return (
@@ -460,6 +496,7 @@ const articoliFiltrati = queryWords.length === 0
         >
           <div className="relative flex-1">
             <input
+              ref={inputRef}
               type="text"
               placeholder="Cerca per SKU o EAN"
               value={skuSearch}
@@ -467,7 +504,6 @@ const articoliFiltrati = queryWords.length === 0
               className="rounded-lg border border-cyan-400 px-3 py-2 text-[15px] outline-cyan-700 w-full font-medium"
               disabled={isBusy}
             />
-          
           </div>
           <button
             type="submit"
@@ -511,7 +547,7 @@ const articoliFiltrati = queryWords.length === 0
             </tr>
           </thead>
           <tbody>
-            {articoliToShow.map((art) => {
+            {articoliToShow.map(art => {
               const totStorici = totaleStorici(art.model_number);
               const wip = totaleWip(art.model_number);
               const confermata = totStorici + wip;
@@ -529,10 +565,7 @@ const articoliFiltrati = queryWords.length === 0
                     <div className="flex items-center gap-2">
                       <span className="text-base">{art.model_number}</span>
                       {completa && hasStorici && (
-                        <CheckCircle
-                          size={18}
-                          className="text-green-600 ml-0.5 sm:size-[18px] size-[50px]"
-                        />
+                        <CheckCircle size={18} className="text-green-600 ml-0.5 sm:size-[18px]" />
                       )}
                     </div>
                   </td>
@@ -540,7 +573,7 @@ const articoliFiltrati = queryWords.length === 0
                     {hasStorici ? (
                       <span className="text-xs">
                         {getParzialiStorici(art.model_number).map((r, i) => (
-                          <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold text-lg sm:text-xs">
+                          <span key={`${art.model_number}-parz-${i}`} className="bg-blue-100 px-2 py-0.5 rounded font-bold text-lg sm:text-xs">
                             {r.quantita}
                           </span>
                         ))}
@@ -611,15 +644,26 @@ const articoliFiltrati = queryWords.length === 0
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b>
               {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
-              {modaleArticolo.vendor_product_id && (
+              {/* Bottoni stampa */}
+              <div className="flex gap-2 mt-1">
+                {modaleArticolo.vendor_product_id && (
+                  <button
+                    className="px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
+                    onClick={() => setShowEtichette(true)}
+                  >
+                    Genera Etichette
+                  </button>
+                )}
+                {/* nuovo: cavallotto su SKU */}
                 <button
-                  className="ml-2 px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
-                  onClick={() => setShowEtichette(true)}
+                  className="px-2 py-1 bg-indigo-100 border border-indigo-300 text-indigo-800 rounded-lg text-xs font-semibold hover:bg-indigo-200 transition"
+                  onClick={() => setCavallottoModal(modaleArticolo.model_number)}
                 >
-                  Genera Etichette
+                  Genera Cavallotto
                 </button>
-              )}
+              </div>
             </div>
+
             <div className="flex-1 overflow-y-auto" style={{ minHeight: 0, maxHeight: "50vh" }}>
               <div className="mb-2">
                 <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
@@ -628,13 +672,14 @@ const articoliFiltrati = queryWords.length === 0
                 ) : (
                   <span className="flex flex-wrap gap-2 text-xs">
                     {getParzialiStorici(modaleArticolo.model_number).map((r, i) => (
-                      <span key={i} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
+                      <span key={`stor-${i}`} className="bg-blue-100 px-2 py-0.5 rounded font-bold">
                         {r.quantita}
                       </span>
                     ))}
                   </span>
                 )}
               </div>
+
               <div className="flex flex-col gap-2 mb-3">
                 {inputs.length === 0 && (
                   <div className="text-center text-gray-500 my-4">
@@ -651,16 +696,16 @@ const articoliFiltrati = queryWords.length === 0
                         max={getResiduoInput(idx)}
                         value={inp.quantita === 0 ? "" : inp.quantita}
                         onChange={e => {
-                          let v = Number(e.target.value);
-                          if (isNaN(v)) v = 0;
+                          let vNum = Number(e.target.value);
+                          if (isNaN(vNum)) vNum = 0;
                           const max = getResiduoInput(idx);
-                          if (v > max) {
-                            v = max;
+                          if (vNum > max) {
+                            vNum = max;
                             setShakeIdx(idx);
                             setTimeout(() => setShakeIdx(null), 400);
                           }
-                          if (v < 1) v = 0;
-                          aggiornaInput(idx, "quantita", v);
+                          if (vNum < 1) vNum = 0;
+                          aggiornaInput(idx, "quantita", vNum);
                         }}
                         className={`w-full border rounded-lg p-2 text-center font-bold text-blue-700 outline-blue-400 ${shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""}`}
                         placeholder="Quantità"
@@ -674,7 +719,7 @@ const articoliFiltrati = queryWords.length === 0
                         min={1}
                         value={inp.collo === 0 ? "" : inp.collo}
                         onChange={e => {
-                          let v = e.target.value;
+                          const v = e.target.value;
                           if (v === "" || v === "0") {
                             aggiornaInput(idx, "collo", "");
                           } else {
@@ -691,7 +736,7 @@ const articoliFiltrati = queryWords.length === 0
                     <button
                       className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
                       onClick={() => rimuoviRiga(inp.id)}
-                      disabled={false || isBusy}
+                      disabled={isBusy}
                       title="Rimuovi riga"
                     >
                       <Minus size={18} />
@@ -699,6 +744,7 @@ const articoliFiltrati = queryWords.length === 0
                   </div>
                 ))}
               </div>
+
               <div className="flex gap-2 justify-between mb-1">
                 <button
                   className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-100 text-blue-700 font-semibold rounded-full hover:bg-blue-200 transition"
@@ -709,6 +755,7 @@ const articoliFiltrati = queryWords.length === 0
                 </button>
               </div>
             </div>
+
             <div className="flex justify-end mt-2">
               <button
                 className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white font-bold rounded-full shadow hover:bg-blue-700 transition"
@@ -718,7 +765,7 @@ const articoliFiltrati = queryWords.length === 0
                   (inputs.length > 0 &&
                     inputs.every((inp, idx) =>
                       !inp.quantita ||
-                      inp.quantita <= 0 ||
+                      Number(inp.quantita) <= 0 ||
                       inp.collo <= 0 ||
                       Number(inp.quantita) > getResiduoInput(idx)
                     )
@@ -728,6 +775,7 @@ const articoliFiltrati = queryWords.length === 0
                 {isBusy ? "Salvataggio..." : "Aggiungi"}
               </button>
             </div>
+
             <style>
               {`
                 @keyframes shake {
@@ -761,7 +809,7 @@ const articoliFiltrati = queryWords.length === 0
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
         ) : (
           <div className="flex flex-wrap gap-6">
-            {colliRiepilogo().map((collo) => (
+            {colliRiepilogo().map(collo => (
               <div
                 key={collo.collo}
                 className={`bg-white rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2 ${
@@ -896,6 +944,33 @@ const articoliFiltrati = queryWords.length === 0
         sku={modaleArticolo?.model_number || ""}
         ean={modaleArticolo?.vendor_product_id || ""}
       />
+
+      {/* MODALE CAVALLOTTO */}
+      {cavallottoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xs text-center relative">
+            <button
+              className="absolute top-2 right-3 text-2xl text-gray-300 hover:text-black"
+              onClick={() => setCavallottoModal(null)}
+            >×</button>
+            <div className="mb-4 font-bold text-lg text-blue-800">Stampa Cavallotto</div>
+            <div className="mb-4">Scegli il formato</div>
+            <div className="flex flex-col gap-2 mb-3">
+              {["A5", "A4", "A3"].map(formato => (
+                <button
+                  key={formato}
+                  className="bg-cyan-100 hover:bg-cyan-200 border border-cyan-300 text-cyan-800 font-semibold py-2 rounded-xl"
+                  onClick={() => openCavallottoPdf(cavallottoModal, formato)}
+                  disabled={cavallottoLoading}
+                >
+                  {formato}
+                </button>
+              ))}
+            </div>
+            {cavallottoLoading && <svg className="mx-auto animate-spin" width="24" height="24" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" opacity="0.25"/><path d="M22 12a10 10 0 0 1-10 10" stroke="currentColor" strokeWidth="4" opacity="0.9"/></svg>}
+          </div>
+        </div>
+      )}
 
       {/* Overlay BUSY */}
       {isBusy && (

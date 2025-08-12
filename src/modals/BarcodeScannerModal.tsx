@@ -31,7 +31,6 @@ export default function BarcodeScannerModal({
     return () => {
       scanner.stop().catch(() => {});
     };
-    // eslint-disable-next-line
   }, [onDetected, isMobile]);
 
   return (

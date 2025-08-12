@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
-import { ChevronRight, Plus, Trash } from "lucide-react";
+import { ChevronRight, Plus, Trash, Loader2 } from "lucide-react";
 import { useParams } from "react-router-dom";
+import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 
 // ========== UTILS ==========
 function normalizza(str: string) {
@@ -86,6 +87,23 @@ export default function DettaglioPrelievo() {
   const inputRef = useRef<HTMLInputElement>(null);
   const radiciBoxRef = useRef<HTMLDivElement>(null);
 
+  // === Etichette & Cavallotto ===
+  const [showEtichette, setShowEtichette] = useState(false);
+  const [cavallottoModalSku, setCavallottoModalSku] = useState<string | null>(null);
+  const [cavallottoLoading, setCavallottoLoading] = useState(false);
+
+  function openCavallottoPdf(sku: string, formato: string) {
+    setCavallottoLoading(true);
+    window.open(
+      `${import.meta.env.VITE_API_URL}/api/cavallotto/html?sku=${encodeURIComponent(sku)}&formato=${encodeURIComponent(formato)}`,
+      "_blank"
+    );
+    setTimeout(() => {
+      setCavallottoLoading(false);
+      setCavallottoModalSku(null);
+    }, 900);
+  }
+
   // --- Chiudi dropdown radici cliccando fuori
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -107,7 +125,7 @@ export default function DettaglioPrelievo() {
 
   // --- Carica tutte le righe (per radici disponibili)
   useEffect(() => {
-    if (data) setImportData(data); // Salva la data scelta all'avvio
+    if (data) setImportData(data);
     fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`)
       .then(res => res.json())
       .then((lista: PrelievoRow[]) => setAllPrelieviData(lista));
@@ -118,7 +136,7 @@ export default function DettaglioPrelievo() {
     fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`)
       .then(res => res.json())
       .then((lista: PrelievoRow[]) => setPrelievi(lista));
-    setItemsToShow(PAGE_SIZE); // reset paginazione quando cambi radice
+    setItemsToShow(PAGE_SIZE);
   }, [data, radice]);
 
   // Deseleziona tutto quando cambi filtro
@@ -126,7 +144,7 @@ export default function DettaglioPrelievo() {
     setSelectedIds([]);
   }, [radice, data, search]);
 
-  // --- Ricava tutte le radici
+  // --- Radici
   const allRadici = Array.from(new Set(allPrelieviData.map(r => r.radice))).filter(Boolean);
 
   // --- Filtro ricerca
@@ -135,7 +153,7 @@ export default function DettaglioPrelievo() {
     ? prelievi.filter(r => matchAllWords(r.sku + " " + r.ean, queryWords))
     : prelievi;
 
-  // --- Applica paginazione SOLO quando il filtro radice è su "Totali"
+  // --- Paginazione solo per Totali senza ricerca
   const isTotali = !radice;
   const canPaginate = isTotali && prelieviToShow.length > itemsToShow;
   if (isTotali && !search) {
@@ -186,52 +204,49 @@ export default function DettaglioPrelievo() {
     );
   }
 
-async function salvaModificaPrelievo(riscontroVal?: number) {
-  if (!modaleArticolo) return;
-  let riscontroToSend = typeof riscontroVal === "number" ? riscontroVal : riscontro;
+  async function salvaModificaPrelievo(riscontroVal?: number) {
+    if (!modaleArticolo) return;
+    const riscontroToSend = typeof riscontroVal === "number" ? riscontroVal : riscontro;
 
-  // PATCH singolo prelievo
-  const res = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/${modaleArticolo.id}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      riscontro: riscontroToSend ?? null,
-      plus: plus ?? null,
-      note: note ?? ""
-    })
-  });
+    const res = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/${modaleArticolo.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        riscontro: riscontroToSend ?? null,
+        plus: plus ?? null,
+        note: note ?? ""
+      })
+    });
 
-  // NUOVO: gestione errore di validazione backend!
-  if (!res.ok) {
-    let msg = "Errore di validazione!";
-    try {
-      const err = await res.json();
-      msg = err.error || msg;
-    } catch {}
-    setToast({ msg, type: "error" });
-    return; // NON aggiornare il resto dello stato!
+    if (!res.ok) {
+      let msg = "Errore di validazione!";
+      try {
+        const err = await res.json();
+        msg = err.error || msg;
+      } catch {// no-op: l'errore viene ignorato volutamente// 
+      }
+      setToast({ msg, type: "error" });
+      return;
+    }
+
+    const res1 = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`
+    );
+    setPrelievi(await res1.json());
+
+    const res2 = await fetch(
+      `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`
+    );
+    setAllPrelieviData(await res2.json());
+
+    setModaleArticolo(null);
+    setRiscontroError(false);
+    setToast({ msg: "Prelievo aggiornato!", type: "success" });
   }
-
-  // Se tutto ok, aggiorna la lista
-  const res1 = await fetch(
-    `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`
-  );
-  setPrelievi(await res1.json());
-
-  const res2 = await fetch(
-    `${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`
-  );
-  setAllPrelieviData(await res2.json());
-
-  setModaleArticolo(null);
-  setRiscontroError(false);
-  setToast({ msg: "Prelievo aggiornato!", type: "success" }); // opzionale, feedback positivo
-}
-
 
   function handleRiscontroChange(e: React.ChangeEvent<HTMLInputElement>) {
     const max = modaleArticolo?.qty ?? 0;
-    let value = e.target.value === "" ? null : Number(e.target.value);
+    const value = e.target.value === "" ? null : Number(e.target.value);
     if (value !== null && value > max) {
       setRiscontro(max);
       setRiscontroError(true);
@@ -244,7 +259,7 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
     }
   }
 
-  // --- AZIONI MASSIVE ---
+    // --- AZIONI MASSIVE ---
 
   async function completaFiltrati() {
     const pendingIds = prelieviToShow
@@ -257,37 +272,42 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
     }
     if (!window.confirm("Vuoi segnare tutti i pending filtrati come MANCA?")) return;
 
-    setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi filtrati…");
+    try {
+      setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi filtrati…");
 
-    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: pendingIds, fields: { riscontro: 0 } })
-    });
+      // 1) riscontro=0
+      const setRes = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: pendingIds, fields: { riscontro: 0 } })
+      });
+      if (!setRes.ok) throw new Error("Impossibile aggiornare i prelievi (bulk).");
 
-    setProgressPerc(80); setProgressText("Pulizia produzione (filtrati)…");
+      setProgressPerc(75); setProgressText("Sincronizzo produzione (filtrati)…");
 
-    if (radice) {
-      await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
+      // 2) pulizia produzione parziale
+      const body = radice ? { radice } : { ids: pendingIds };
+      const cleanRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ radice })
+        body: JSON.stringify(body)
       });
-    } else {
-      await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: pendingIds })
-      });
+      if (!cleanRes.ok) throw new Error("Pulizia produzione parziale fallita.");
+
+      setProgressPerc(100); setProgressText("Completato!");
+      setTimeout(() => setProgressActive(false), 600);
+
+      // 3) refresh liste
+      const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
+      setPrelievi(await res1.json());
+      const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+      setAllPrelieviData(await res2.json());
+      setSelectedIds([]);
+      setToast({ msg: "Completati filtrati e pulita produzione!", type: "success" });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : "Errore durante la pulizia.", type: "error" });
+      setProgressActive(false);
     }
-    setProgressPerc(100); setProgressText("Completato!");
-    setTimeout(() => setProgressActive(false), 800);
-
-    const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
-    setPrelievi(await res1.json());
-    const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-    setAllPrelieviData(await res2.json());
-    setSelectedIds([]);
   }
 
   async function completaSelezionati() {
@@ -295,63 +315,82 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
     if (ids.length === 0) return;
     if (!window.confirm("Vuoi segnare come MANCA i selezionati?")) return;
 
-    setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi selezionati…");
+    try {
+      setProgressActive(true); setProgressPerc(20); setProgressText("Completamento prelievi selezionati…");
 
-    await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids, fields: { riscontro: 0 } })
-    });
+      const setRes = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, fields: { riscontro: 0 } })
+      });
+      if (!setRes.ok) throw new Error("Impossibile aggiornare i prelievi selezionati.");
 
-    setProgressPerc(80); setProgressText("Pulizia produzione (selezionati)…");
+      setProgressPerc(75); setProgressText("Sincronizzo produzione (selezionati)…");
 
-    await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids })
-    });
+      const cleanRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids })
+      });
+      if (!cleanRes.ok) throw new Error("Pulizia produzione parziale fallita.");
 
-    setProgressPerc(100); setProgressText("Completato!");
-    setTimeout(() => setProgressActive(false), 800);
+      setProgressPerc(100); setProgressText("Completato!");
+      setTimeout(() => setProgressActive(false), 600);
 
-    const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
-    setPrelievi(await res1.json());
-    const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-    setAllPrelieviData(await res2.json());
-    setSelectedIds([]);
+      const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
+      setPrelievi(await res1.json());
+      const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+      setAllPrelieviData(await res2.json());
+      setSelectedIds([]);
+      setToast({ msg: "Completati selezionati e pulita produzione!", type: "success" });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : "Errore durante la pulizia.", type: "error" });
+      setProgressActive(false);
+    }
   }
 
+
   async function completaPending() {
-    const resPrelievi = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-    const tuttiPrelievi: PrelievoRow[] = await resPrelievi.json();
+    try {
+      const resPrelievi = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+      const tuttiPrelievi: PrelievoRow[] = await resPrelievi.json();
+      const pendingIds = tuttiPrelievi.filter(r => r.stato === "pending" || r.stato === "in verifica").map(r => r.id);
 
-    const pendingIds = tuttiPrelievi
-      .filter(r => r.stato === "pending" || r.stato === "in verifica")
-      .map(r => r.id);
-
-    if (pendingIds.length > 0) {
+      if (pendingIds.length === 0) {
+        alert("Non ci sono articoli pending da completare.");
+        return;
+      }
       if (!window.confirm("Sei sicuro di voler segnare tutti i pending come MANCA?")) return;
 
-      await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
+      setProgressActive(true); setProgressPerc(25); setProgressText("Completo tutti i pending…");
+
+      const setRes = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ids: pendingIds, fields: { riscontro: 0 } })
       });
-    } else {
-      alert("Non ci sono articoli pending da completare.");
+      if (!setRes.ok) throw new Error("Impossibile aggiornare i prelievi (bulk).");
+
+      setProgressPerc(85); setProgressText("Sincronizzo produzione (globale)…");
+
+      const cleanRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
+      if (!cleanRes.ok) throw new Error("Pulizia produzione globale fallita.");
+
+      setProgressPerc(100); setProgressText("Completato!");
+      setTimeout(() => setProgressActive(false), 700);
+
+      const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
+      setPrelievi(await res1.json());
+      const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
+      setAllPrelieviData(await res2.json());
+      setSelectedIds([]);
+      setToast({ msg: "Completato tutto e pulita produzione!", type: "success" });
+    } catch (err) {
+      setToast({ msg: err instanceof Error ? err.message : "Errore durante la pulizia.", type: "error" });
+      setProgressActive(false);
     }
-
-    setProgressActive(true); setProgressPerc(90); setProgressText("Pulizia produzione…");
-    await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, { method: "POST" });
-    setProgressPerc(100); setProgressText("Completato!");
-    setTimeout(() => setProgressActive(false), 800);
-
-    const res1 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}${radice ? `&radice=${encodeURIComponent(radice)}` : ""}`);
-    setPrelievi(await res1.json());
-    const res2 = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi?data=${encodeURIComponent(data || "")}`);
-    setAllPrelieviData(await res2.json());
-    setSelectedIds([]);
   }
+
 
   async function svuotaLista() {
     if (!window.confirm("Sei sicuro di voler svuotare tutta la lista prelievi? L'operazione è IRREVERSIBILE!")) return;
@@ -631,13 +670,35 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
               className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
               onClick={() => setModaleArticolo(null)}
             >×</button>
+
             <div className="mb-1 font-bold text-blue-700 text-lg">Modifica Prelievo</div>
+
             <div className="mb-2 font-mono text-base flex items-center gap-3">
               <span className="bg-blue-100 px-2 py-1 rounded">{modaleArticolo.sku}</span>
             </div>
+
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b> {modaleArticolo.ean}
+              <div className="flex gap-2 mt-1">
+                <button
+                  className="px-2 py-1 bg-gray-100 border rounded-lg text-xs font-semibold hover:bg-gray-200 transition"
+                  onClick={() => setShowEtichette(true)}
+                  disabled={!modaleArticolo.sku || !modaleArticolo.ean}
+                  title="Genera etichette"
+                >
+                  🏷️ Genera Etichette
+                </button>
+                <button
+                  className="px-2 py-1 bg-indigo-100 border border-indigo-200 rounded-lg text-xs font-semibold text-indigo-800 hover:bg-indigo-200 transition"
+                  onClick={() => setCavallottoModalSku(modaleArticolo.sku)}
+                  disabled={!modaleArticolo.sku}
+                  title="Genera cavallotto"
+                >
+                  🖨️ Genera Cavallotto
+                </button>
+              </div>
             </div>
+
             <div className="flex flex-col gap-2 mb-3">
               <div>
                 <label className="block text-xs mb-1">Riscontro (max {modaleArticolo.qty})</label>
@@ -695,6 +756,7 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
                 />
               </div>
             </div>
+
             <div className="flex justify-between gap-2 mt-3">
               <button
                 className="inline-flex items-center gap-2 px-4 py-2 bg-red-100 text-red-600 font-bold rounded-full shadow hover:bg-red-200 transition text-sm"
@@ -715,6 +777,42 @@ async function salvaModificaPrelievo(riscontroVal?: number) {
           </div>
         </div>
       )}
+
+      {/* MODALE ETICHETTE */}
+      <GeneraEtichetteModal
+        open={showEtichette}
+        onClose={() => setShowEtichette(false)}
+        sku={modaleArticolo?.sku || ""}
+        ean={modaleArticolo?.ean || ""}
+      />
+
+      {/* MODALE CAVALLOTTO */}
+      {cavallottoModalSku && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30">
+          <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-xs text-center relative">
+            <button
+              className="absolute top-2 right-3 text-2xl text-gray-300 hover:text-black"
+              onClick={() => setCavallottoModalSku(null)}
+            >×</button>
+            <div className="mb-4 font-bold text-lg text-blue-800">Stampa Cavallotto</div>
+            <div className="mb-4">Scegli il formato</div>
+            <div className="flex flex-col gap-2 mb-3">
+              {["A5", "A4", "A3"].map(formato => (
+                <button
+                  key={formato}
+                  className="bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 text-indigo-800 font-semibold py-2 rounded-xl"
+                  onClick={() => openCavallottoPdf(cavallottoModalSku, formato)}
+                  disabled={cavallottoLoading}
+                >
+                  {formato}
+                </button>
+              ))}
+            </div>
+            {cavallottoLoading && <Loader2 className="mx-auto animate-spin text-indigo-600" />}
+          </div>
+        </div>
+      )}
+
       <style>
         {`
         @media (max-width: 850px) {

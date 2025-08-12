@@ -3,24 +3,32 @@ import autoTable from "jspdf-autotable";
 import * as XLSX from "xlsx";
 import { useState } from "react";
 
+type ParzialeRow = {
+  model_number: string;
+  quantita: number;
+  collo: number;
+};
+
+type VisualizzaParzialeModalProps = {
+  dati: ParzialeRow[];
+  center: string;
+  numeroParziale: number;
+  data: string;
+  triggerLabel?: string;
+};
+
 export default function VisualizzaParzialeModal({
   dati,
   center,
   numeroParziale,
   data,
   triggerLabel = "Visualizza",
-}: {
-  dati: any[];
-  center: string;
-  numeroParziale: number;
-  data: string;
-  triggerLabel?: string;
-}) {
+}: VisualizzaParzialeModalProps) {
   const [open, setOpen] = useState(false);
 
-  const handleExportExcel = () => {
+  const handleExportExcel = (): void => {
     const ws = XLSX.utils.json_to_sheet(
-      dati.map(row => ({
+      dati.map((row) => ({
         SKU: row.model_number,
         Quantità: row.quantita,
         Collo: row.collo,
@@ -29,15 +37,16 @@ export default function VisualizzaParzialeModal({
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Parziale");
 
-    function safe(str: string | number) {
-      return String(str).replace(/[^a-zA-Z0-9_\-]/g, "_");
+    // nota: niente escape inutile su '-'. Lo posizioniamo in fondo alla classe.
+    function safe(str: string | number): string {
+      return String(str).replace(/[^a-zA-Z0-9_-]/g, "_");
     }
 
     const nomeFile = `${safe(center)}_${safe(numeroParziale)}_${safe(data)}.xlsx`;
     XLSX.writeFile(wb, nomeFile);
   };
 
-  const handleVisualizzaPDF = () => {
+  const handleVisualizzaPDF = (): void => {
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text(`Lista Parziale`, 14, 18);
@@ -45,16 +54,22 @@ export default function VisualizzaParzialeModal({
     doc.text(`Centro: ${center || ""}`, 14, 28);
     doc.text(`N° Parziale: ${numeroParziale || ""}`, 70, 28);
     doc.text(`Data: ${data || ""}`, 130, 28);
+
     autoTable(doc, {
       head: [["SKU", "Quantità", "Collo"]],
-      body: dati.map(row => [row.model_number, row.quantita, row.collo]),
+      body: dati.map((row) => [row.model_number, row.quantita, row.collo]),
       startY: 36,
       theme: "grid",
       styles: { fontSize: 12 },
       headStyles: { fillColor: [6, 182, 212] },
     });
+
     doc.output("dataurlnewwindow");
   };
+
+  const maxCollo = dati.length
+    ? Math.max(...dati.map((d) => d.collo || 0))
+    : 0;
 
   return (
     <>
@@ -64,6 +79,7 @@ export default function VisualizzaParzialeModal({
       >
         {triggerLabel}
       </button>
+
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center px-2">
           <div
@@ -73,6 +89,7 @@ export default function VisualizzaParzialeModal({
             <button
               className="absolute top-2 right-4 text-xl text-gray-400 hover:text-gray-700"
               onClick={() => setOpen(false)}
+              aria-label="Chiudi"
             >
               ×
             </button>
@@ -84,7 +101,7 @@ export default function VisualizzaParzialeModal({
                   Lista Parziale: {center} n° {numeroParziale}
                 </div>
                 <div className="text-sm text-gray-600 mt-0.5">
-                  Colli: {Math.max(...dati.map(d => d.collo || 0), 0)}
+                  Colli: {maxCollo}
                 </div>
               </div>
               <div className="flex gap-2 justify-end flex-wrap">
@@ -111,17 +128,29 @@ export default function VisualizzaParzialeModal({
               <table className="w-full border text-[15px] min-w-[330px]">
                 <thead>
                   <tr className="bg-cyan-50 sticky top-0 z-10">
-                    <th className="border px-2 py-1 text-left font-semibold text-xs md:text-sm">SKU</th>
-                    <th className="border px-2 py-1 text-center font-semibold text-xs md:text-sm">Quantità</th>
-                    <th className="border px-2 py-1 text-center font-semibold text-xs md:text-sm">Collo</th>
+                    <th className="border px-2 py-1 text-left font-semibold text-xs md:text-sm">
+                      SKU
+                    </th>
+                    <th className="border px-2 py-1 text-center font-semibold text-xs md:text-sm">
+                      Quantità
+                    </th>
+                    <th className="border px-2 py-1 text-center font-semibold text-xs md:text-sm">
+                      Collo
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
                   {dati.map((row, i) => (
-                    <tr key={i} className="bg-white">
-                      <td className="border px-2 py-1 font-mono break-all">{row.model_number}</td>
-                      <td className="border px-2 py-1 text-center">{row.quantita}</td>
-                      <td className="border px-2 py-1 text-center">{row.collo}</td>
+                    <tr key={`${row.model_number}-${i}`} className="bg-white">
+                      <td className="border px-2 py-1 font-mono break-all">
+                        {row.model_number}
+                      </td>
+                      <td className="border px-2 py-1 text-center">
+                        {row.quantita}
+                      </td>
+                      <td className="border px-2 py-1 text-center">
+                        {row.collo}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

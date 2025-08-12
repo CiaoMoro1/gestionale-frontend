@@ -1,8 +1,41 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, type NavigateFunction } from "react-router-dom";
 import { Card, CardContent } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { UploadCloud, Loader2 } from "lucide-react";
+
+type OrderSummary = {
+  fulfillment_center: string;
+  start_delivery: string;
+  numero_parziale: number | null;
+  colli_totali: number | null;
+  colli_confermati: number | null;
+  stato_ordine: "nuovo" | "parziale" | string;
+  po_list?: string[];
+};
+
+type JobStatus =
+  | "queued"
+  | "pending"
+  | "running"
+  | "done"
+  | "failed"
+  | string;
+
+type JobStatusResponse = {
+  status: JobStatus;
+  result?: {
+    importati?: number;
+    po_unici?: number;
+    doppioni?: string[];
+    errors?: string[];
+  };
+  error?: string;
+};
+
+type UploadResponse =
+  | { job_id: string }
+  | { error: string };
 
 const DashboardAmazonVendor: React.FC = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -11,17 +44,20 @@ const DashboardAmazonVendor: React.FC = () => {
 
   // Job queue state
   const [jobId, setJobId] = useState<string | null>(null);
-  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
 
   // Stato riepilogo ordini
-  const [orders, setOrders] = useState<any[]>([]);
+  const [orders, setOrders] = useState<OrderSummary[]>([]);
   const navigate = useNavigate();
 
   // Fetch riepiloghi all’avvio
   useEffect(() => {
+    let alive = true;
     fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/dashboard`)
-      .then(res => res.json())
-      .then(setOrders);
+      .then(res => res.json() as Promise<OrderSummary[]>)
+      .then(data => { if (alive) setOrders(data); })
+      .catch(() => { /* opzionale: toast */ });
+    return () => { alive = false; };
   }, []);
 
   // Polling stato job (quando c'è un job_id)
@@ -30,37 +66,47 @@ const DashboardAmazonVendor: React.FC = () => {
     setLog(["Job inviato, attendo completamento..."]);
     setJobStatus("pending");
 
+    let cancelled = false;
     const interval = setInterval(async () => {
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/jobs/${jobId}/status`);
-      const data = await res.json();
-      setJobStatus(data.status);
+      try {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/api/jobs/${jobId}/status`);
+        const data = (await res.json()) as JobStatusResponse;
+        if (cancelled) return;
+        setJobStatus(data.status);
 
-      if (data.status === "done" || data.status === "failed") {
-        clearInterval(interval);
-        setLoading(false);
+        if (data.status === "done" || data.status === "failed") {
+          clearInterval(interval);
+          setLoading(false);
 
-        if (data.status === "done") {
-          const result = data.result || {};
-          setLog([
-            `✅ Importazione completata!`,
-            `${result.importati ?? 0} articoli importati correttamente.`,
-            `(${result.po_unici ?? 0} PO/ordini unici importati)`,
-            ...(result.doppioni?.length ? ["⚠️ Doppioni saltati:", ...result.doppioni] : []),
-            ...(result.errors?.length ? ["❌ Errori:", ...result.errors] : []),
-          ]);
-          // Ricarica riepilogo dopo upload
-          fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/dashboard`)
-            .then(res => res.json())
-            .then(setOrders);
+          if (data.status === "done") {
+            const result = data.result || {};
+            setLog([
+              `✅ Importazione completata!`,
+              `${result.importati ?? 0} articoli importati correttamente.`,
+              `(${result.po_unici ?? 0} PO/ordini unici importati)`,
+              ...(result.doppioni?.length ? ["⚠️ Doppioni saltati:", ...result.doppioni] : []),
+              ...(result.errors?.length ? ["❌ Errori:", ...result.errors] : []),
+            ]);
+            // Ricarica riepilogo dopo upload
+            fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/dashboard`)
+              .then(r => r.json() as Promise<OrderSummary[]>)
+              .then(setOrders)
+              .catch(() => { /* opzionale: toast */ });
+          } else {
+            setLog([`❌ Errore: ${data.error || "Errore sconosciuto"}`]);
+          }
         } else {
-          setLog([`❌ Errore: ${data.error || "Errore sconosciuto"}`]);
+          setLog([`⏳ Job in corso... (${data.status})`]);
         }
-      } else {
-        setLog([`⏳ Job in corso... (${data.status})`]);
+      } catch {
+        // opzionale: mostrare un messaggio temporaneo
       }
     }, 3000);
 
-    return () => clearInterval(interval);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [jobId]);
 
   // Upload file Excel
@@ -95,27 +141,53 @@ const DashboardAmazonVendor: React.FC = () => {
         return;
       }
 
-      const data = await res.json();
-      if (data.job_id) {
+      const data = (await res.json()) as UploadResponse;
+      if ("job_id" in data) {
         setJobId(data.job_id); // Polling job!
       } else {
         setLog([`❌ Errore: ${data.error || "Errore sconosciuto"}`]);
         setLoading(false);
       }
-    } catch (err: any) {
-      setLog([`❌ Errore durante l’upload: ${err.message}`]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Errore sconosciuto";
+      setLog([`❌ Errore durante l’upload: ${msg}`]);
       setLoading(false);
     }
   };
 
   // Helpers per gruppi dashboard (come prima)
-  function filterGroup(t: number) {
+  function filterGroup(t: 1 | 2 | 3 | 4): OrderSummary[] {
     switch (t) {
-      case 1: return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale == null);
-      case 2: return orders.filter(o => o.stato_ordine === "nuovo" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
-      case 3: return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) === (o.colli_totali ?? 0));
-      case 4: return orders.filter(o => o.stato_ordine === "parziale" && o.numero_parziale != null && (o.colli_totali ?? 0) > 0 && (o.colli_confermati ?? 0) < (o.colli_totali ?? 0));
-      default: return [];
+      case 1:
+        return orders.filter(
+          o => o.stato_ordine === "nuovo" && o.numero_parziale == null
+        );
+      case 2:
+        return orders.filter(
+          o =>
+            o.stato_ordine === "nuovo" &&
+            o.numero_parziale != null &&
+            (o.colli_totali ?? 0) > 0 &&
+            (o.colli_confermati ?? 0) < (o.colli_totali ?? 0)
+        );
+      case 3:
+        return orders.filter(
+          o =>
+            o.stato_ordine === "parziale" &&
+            o.numero_parziale != null &&
+            (o.colli_totali ?? 0) > 0 &&
+            (o.colli_confermati ?? 0) === (o.colli_totali ?? 0)
+        );
+      case 4:
+        return orders.filter(
+          o =>
+            o.stato_ordine === "parziale" &&
+            o.numero_parziale != null &&
+            (o.colli_totali ?? 0) > 0 &&
+            (o.colli_confermati ?? 0) < (o.colli_totali ?? 0)
+        );
+      default:
+        return [];
     }
   }
 
@@ -141,11 +213,7 @@ const DashboardAmazonVendor: React.FC = () => {
             disabled={loading}
           />
 
-          <Button
-            onClick={handleUpload}
-            disabled={!file || loading}
-            className="w-fit"
-          >
+          <Button onClick={handleUpload} disabled={!file || loading} className="w-fit">
             {loading ? (
               <>
                 <Loader2 className="animate-spin mr-2" size={20} /> Caricamento...
@@ -154,15 +222,13 @@ const DashboardAmazonVendor: React.FC = () => {
               "Carica ordini"
             )}
           </Button>
-            {jobStatus && (
-              <div className="text-xs text-gray-500 mt-1">
-                Stato job: {jobStatus}
-              </div>
-            )}
+          {jobStatus && (
+            <div className="text-xs text-gray-500 mt-1">Stato job: {jobStatus}</div>
+          )}
           {log.length > 0 && (
             <div className="bg-muted rounded p-3 mt-4 text-sm space-y-1 max-h-52 overflow-auto">
               {log.map((line, idx) => (
-                <div key={idx}>{line}</div>
+                <div key={`${line}-${idx}`}>{line}</div>
               ))}
             </div>
           )}
@@ -206,7 +272,15 @@ const DashboardAmazonVendor: React.FC = () => {
   );
 };
 
-function DashboardGroup({ title, orders, navigate }: { title: string, orders: any[], navigate: any }) {
+function DashboardGroup({
+  title,
+  orders,
+  navigate,
+}: {
+  title: string;
+  orders: OrderSummary[];
+  navigate: NavigateFunction;
+}) {
   if (orders.length === 0) return null;
   return (
     <div>
@@ -225,54 +299,70 @@ function DashboardGroup({ title, orders, navigate }: { title: string, orders: an
             </tr>
           </thead>
           <tbody>
-            {orders.map((o, i) => (
-              <tr
-                key={i}
-                className={
-                  o.colli_confermati === o.colli_totali && o.colli_totali > 0
-                    ? "bg-gradient-to-r from-green-50/70 via-white to-green-100/60"
-                    : o.colli_confermati === 0
-                    ? "bg-gradient-to-r from-slate-50/80 to-blue-100/40"
-                    : "bg-gradient-to-r from-yellow-50/90 to-orange-100/30"
-                }
-              >
-                <td className="border px-3 py-2 font-semibold text-blue-800">{o.fulfillment_center}</td>
-                <td className="border px-3 py-2">{o.start_delivery}</td>
-                <td className="border px-3 py-2">
-                  {o.numero_parziale != null ? (
-                    <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
-                      #{o.numero_parziale}
-                    </span>
-                  ) : (
-                    <span className="bg-gray-200 text-gray-500 px-2 py-1 rounded-full text-xs">-</span>
-                  )}
-                </td>
-                <td className="border px-3 py-2">{o.colli_totali ?? 0}</td>
-                <td className="border px-3 py-2">
-                  <span
-                    className={
-                      o.colli_confermati === o.colli_totali && o.colli_totali > 0
-                        ? "bg-green-200 text-green-900 px-2 py-1 rounded-full text-xs font-bold"
-                        : o.colli_confermati > 0
-                        ? "bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-bold"
-                        : "bg-gray-200 text-gray-500 px-2 py-1 rounded-full text-xs"
-                    }
-                  >
-                    {o.colli_confermati ?? 0}
-                  </span>
-                </td>
-                <td className="border px-3 py-2">{o.po_list?.length ?? 0}</td>
-                <td className="border px-3 py-2">
-                  <button
-                  type="button"
-                  className="underline text-blue-700 font-semibold hover:bg-blue-50 transition px-3 py-1 rounded"
-                  onClick={() => navigate(`/ordini-amazon/dettaglio/${o.fulfillment_center}/${o.start_delivery}`)}
+            {orders.map((o, i) => {
+              const key = `${o.fulfillment_center}-${o.start_delivery}-${o.numero_parziale ?? "n"}`;
+              const allConfirmed =
+                (o.colli_confermati ?? 0) === (o.colli_totali ?? 0) &&
+                (o.colli_totali ?? 0) > 0;
+              const someConfirmed = (o.colli_confermati ?? 0) > 0 && !allConfirmed;
+
+              return (
+                <tr
+                  key={key + "-" + i}
+                  className={
+                    allConfirmed
+                      ? "bg-gradient-to-r from-green-50/70 via-white to-green-100/60"
+                      : someConfirmed
+                      ? "bg-gradient-to-r from-yellow-50/90 to-orange-100/30"
+                      : "bg-gradient-to-r from-slate-50/80 to-blue-100/40"
+                  }
                 >
-                  Apri
-                </button>
-                </td>
-              </tr>
-            ))}
+                  <td className="border px-3 py-2 font-semibold text-blue-800">
+                    {o.fulfillment_center}
+                  </td>
+                  <td className="border px-3 py-2">{o.start_delivery}</td>
+                  <td className="border px-3 py-2">
+                    {o.numero_parziale != null ? (
+                      <span className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-xs font-semibold shadow-sm">
+                        #{o.numero_parziale}
+                      </span>
+                    ) : (
+                      <span className="bg-gray-200 text-gray-500 px-2 py-1 rounded-full text-xs">
+                        -
+                      </span>
+                    )}
+                  </td>
+                  <td className="border px-3 py-2">{o.colli_totali ?? 0}</td>
+                  <td className="border px-3 py-2">
+                    <span
+                      className={
+                        allConfirmed
+                          ? "bg-green-200 text-green-900 px-2 py-1 rounded-full text-xs font-bold"
+                          : someConfirmed
+                          ? "bg-orange-200 text-orange-800 px-2 py-1 rounded-full text-xs font-bold"
+                          : "bg-gray-200 text-gray-500 px-2 py-1 rounded-full text-xs"
+                      }
+                    >
+                      {o.colli_confermati ?? 0}
+                    </span>
+                  </td>
+                  <td className="border px-3 py-2">{o.po_list?.length ?? 0}</td>
+                  <td className="border px-3 py-2">
+                    <button
+                      type="button"
+                      className="underline text-blue-700 font-semibold hover:bg-blue-50 transition px-3 py-1 rounded"
+                      onClick={() =>
+                        navigate(
+                          `/ordini-amazon/dettaglio/${o.fulfillment_center}/${o.start_delivery}`
+                        )
+                      }
+                    >
+                      Apri
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>

@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { PDFDocument } from "pdf-lib";
+import React, { useState, useEffect } from "react";
+import { PDFDocument, type PDFPage } from "pdf-lib";
 import { useDropzone } from "react-dropzone";
 
 const A4_WIDTH = 595.28;   // pt
@@ -12,7 +12,7 @@ const EtichetteVendor: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const asnDropzone = useDropzone({
-    accept: { 'application/pdf': [] },
+    accept: { "application/pdf": [] },
     multiple: false,
     onDrop: (acceptedFiles) => {
       setAsnFile(acceptedFiles[0] || null);
@@ -21,7 +21,7 @@ const EtichetteVendor: React.FC = () => {
   });
 
   const colliDropzone = useDropzone({
-    accept: { 'application/pdf': [] },
+    accept: { "application/pdf": [] },
     multiple: false,
     onDrop: (acceptedFiles) => {
       setColliFile(acceptedFiles[0] || null);
@@ -47,47 +47,50 @@ const EtichetteVendor: React.FC = () => {
         asnFile.arrayBuffer(),
         colliFile.arrayBuffer(),
       ]);
+
       const asnPdfDoc = await PDFDocument.load(asnBytes);
       const colliPdfDoc = await PDFDocument.load(colliBytes);
 
-      if (asnPdfDoc.getPageCount() < 1) throw new Error("Il file ASN è vuoto.");
+      if (asnPdfDoc.getPageCount() < 1) {
+        throw new Error("Il file ASN è vuoto.");
+      }
       const numColli = colliPdfDoc.getPageCount();
-      if (numColli < 1) throw new Error("Il file Colli non ha etichette.");
+      if (numColli < 1) {
+        throw new Error("Il file Colli non ha etichette.");
+      }
 
-      // Prepara array etichette: duplica ASN, poi colli
+      // output
       const outputPdf = await PDFDocument.create();
-      const asnPage = await asnPdfDoc.getPage(0);
 
-      // Estrarre tutte le pagine colli
-      const colliPages = [];
+      // Pagina ASN (singola) + tutte le pagine colli
+      const asnPage: PDFPage = asnPdfDoc.getPage(0);
+      const colliPages: PDFPage[] = [];
       for (let i = 0; i < numColli; i++) {
-        colliPages.push(await colliPdfDoc.getPage(i));
+        colliPages.push(colliPdfDoc.getPage(i));
       }
 
-      // Costruisci array etichette ASN (duplicata) e COLLI
-      const etichette = [];
-      for (let i = 0; i < numColli; i++) {
-        etichette.push(asnPage);
-      }
+      // Array etichette: n volte ASN (quante i colli), poi tutte le etichette colli
+      const etichette: PDFPage[] = [];
+      for (let i = 0; i < numColli; i++) etichette.push(asnPage);
       etichette.push(...colliPages);
 
-      // Per ogni gruppo da 4 etichette, crea pagina A4 e inserisci 4 etichette (embedPage+drawPage)
+      // Impagina 4 per A4
       for (let i = 0; i < etichette.length; i += 4) {
         const page = outputPdf.addPage([A4_WIDTH, A4_HEIGHT]);
         for (let j = 0; j < 4 && i + j < etichette.length; j++) {
           const srcPage = etichette[i + j];
-          // Embed la pagina nel nuovo PDF
-          const [embedded] = await outputPdf.embedPages([srcPage]);
-          // Ottieni dimensioni originali
-          const { width, height } = embedded;
-          // Calcola scaling per adattare metà pagina
+          const embedded = await outputPdf.embedPage(srcPage);
+
+          const width = embedded.width;
+          const height = embedded.height;
+
           const scaleX = (A4_WIDTH / 2) / width;
           const scaleY = (A4_HEIGHT / 2) / height;
-          const scale = Math.min(scaleX, scaleY) * 0.98; // margine
-          // Offset
+          const scale = Math.min(scaleX, scaleY) * 0.98; // piccolo margine
+
           const x = (j % 2) * (A4_WIDTH / 2) + 6;
           const y = A4_HEIGHT - ((Math.floor(j / 2) + 1) * (A4_HEIGHT / 2)) + 6;
-          // Disegna la pagina embedded
+
           page.drawPage(embedded, {
             x,
             y,
@@ -97,12 +100,15 @@ const EtichetteVendor: React.FC = () => {
         }
       }
 
-      const pdfBytes = await outputPdf.save();
-      const blob = new Blob([pdfBytes], { type: "application/pdf" });
+      const pdfBytes = await outputPdf.save(); // Uint8Array
+
+      // ✅ Fix TS2322: crea un vero ArrayBuffer ritagliato
+      const blob = new Blob([new Uint8Array(pdfBytes)], { type: "application/pdf" });
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
-    } catch (err: any) {
-      setErrorMsg("Errore nella generazione: " + (err.message || err));
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setErrorMsg("Errore nella generazione: " + msg);
     } finally {
       setLoading(false);
     }
@@ -114,7 +120,8 @@ const EtichetteVendor: React.FC = () => {
     try {
       const bytes = await file.arrayBuffer();
       const pdfDoc = await PDFDocument.load(bytes);
-      return `(${pdfDoc.getPageCount()} pagina${pdfDoc.getPageCount() > 1 ? "e" : ""})`;
+      const n = pdfDoc.getPageCount();
+      return `(${n} pagina${n > 1 ? "e" : ""})`;
     } catch {
       return null;
     }
@@ -122,7 +129,8 @@ const EtichetteVendor: React.FC = () => {
 
   const [asnInfo, setAsnInfo] = useState<string | null>(null);
   const [colliInfo, setColliInfo] = useState<string | null>(null);
-  React.useEffect(() => {
+
+  useEffect(() => {
     (async () => {
       setAsnInfo(asnFile ? await fileInfo(asnFile) : null);
       setColliInfo(colliFile ? await fileInfo(colliFile) : null);
@@ -137,20 +145,37 @@ const EtichetteVendor: React.FC = () => {
         <br />
         Verrà creato un PDF unico: 4 etichette per foglio A4, pronto per la stampa.
       </p>
+
       <div className="grid grid-cols-2 gap-6">
-        <div {...asnDropzone.getRootProps()} className={`border-2 p-4 rounded-xl cursor-pointer text-center transition hover:border-blue-500 ${asnDropzone.isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"}`}>
+        <div
+          {...asnDropzone.getRootProps()}
+          className={`border-2 p-4 rounded-xl cursor-pointer text-center transition hover:border-blue-500 ${
+            asnDropzone.isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"
+          }`}
+        >
           <input {...asnDropzone.getInputProps()} />
           <span className="block font-semibold mb-2">ASN</span>
-          <span className="block text-gray-600 text-sm">{asnFile ? asnFile.name : "Trascina o scegli etichetta ASN"}</span>
+          <span className="block text-gray-600 text-sm">
+            {asnFile ? asnFile.name : "Trascina o scegli etichetta ASN"}
+          </span>
           {asnInfo && <span className="block text-xs text-blue-700 mt-1">{asnInfo}</span>}
         </div>
-        <div {...colliDropzone.getRootProps()} className={`border-2 p-4 rounded-xl cursor-pointer text-center transition hover:border-blue-500 ${colliDropzone.isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"}`}>
+
+        <div
+          {...colliDropzone.getRootProps()}
+          className={`border-2 p-4 rounded-xl cursor-pointer text-center transition hover:border-blue-500 ${
+            colliDropzone.isDragActive ? "border-blue-500 bg-blue-50" : "border-gray-300"
+          }`}
+        >
           <input {...colliDropzone.getInputProps()} />
           <span className="block font-semibold mb-2">Colli</span>
-          <span className="block text-gray-600 text-sm">{colliFile ? colliFile.name : "Trascina o scegli etichette Colli"}</span>
+          <span className="block text-gray-600 text-sm">
+            {colliFile ? colliFile.name : "Trascina o scegli etichette Colli"}
+          </span>
           {colliInfo && <span className="block text-xs text-blue-700 mt-1">{colliInfo}</span>}
         </div>
       </div>
+
       <div className="flex gap-4">
         <button
           className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-xl shadow disabled:bg-gray-400"
@@ -167,11 +192,8 @@ const EtichetteVendor: React.FC = () => {
           Reset
         </button>
       </div>
-      {errorMsg && (
-        <div className="text-red-600 mt-2 font-semibold">
-          {errorMsg}
-        </div>
-      )}
+
+      {errorMsg && <div className="text-red-600 mt-2 font-semibold">{errorMsg}</div>}
     </div>
   );
 };

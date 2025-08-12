@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { Package, CheckCircle, Plus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import VisualizzaParzialeModal from "../../components/VisualizzaParzialeModal";
@@ -11,17 +11,19 @@ type Riepilogo = {
   stato_ordine: string;
 };
 
+type ParzialeRiga = {
+  model_number: string;
+  quantita: number;
+  collo: number;
+  po_number: string;
+};
+
 type Parziale = {
   numero_parziale: number;
   confermato: boolean;
   created_at: string;
   gestito?: boolean;
-  dati: {
-    model_number: string;
-    quantita: number;
-    collo: number;
-    po_number: string;
-  }[];
+  dati: ParzialeRiga[] | string; // lato API potrebbe arrivare stringa JSON
 };
 
 type Articolo = {
@@ -29,47 +31,10 @@ type Articolo = {
   model_number: string;
   qty_ordered: number;
   qty_confirmed: number;
-  cost?: number | string;  // <-- aggiungi questa riga!
+  cost?: number | string;
 };
 
-export default function ParzialiOrdini() {
-  const [riepiloghi, setRiepiloghi] = useState<Riepilogo[]>([]);
-  const [articoli, setArticoli] = useState<{ [id: number]: Articolo[] }>({});
-  const [parziali, setParziali] = useState<{ [id: number]: Parziale[] }>({});
-  const [loading, setLoading] = useState(true);
-  const [closingOrderId, setClosingOrderId] = useState<number | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    async function load() {
-      setLoading(true);
-      const rieps = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/parziali`
-      ).then((r) => r.json());
-      setRiepiloghi(rieps);
-
-      await Promise.all(
-        rieps.map(async (r: Riepilogo) => {
-          const articoliArr = await fetchAllItemsByPO(r.po_list);
-          setArticoli((old) => ({ ...old, [r.id]: articoliArr }));
-
-          const parzArr = await fetch(
-            `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali?riepilogo_id=${r.id}`
-          ).then((r) => r.json());
-          setParziali((old) => ({
-            ...old,
-            [r.id]: parzArr.filter((p: Parziale) => p.confermato),
-          }));
-        })
-      );
-
-      setLoading(false);
-    }
-    load();
-  }, []);
-
-
+// --- funzione pura e stabile ---
 function chunkArray<T>(arr: T[], size: number): T[][] {
   const result: T[][] = [];
   for (let i = 0; i < arr.length; i += size) {
@@ -78,46 +43,91 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   return result;
 }
 
-async function fetchAllItemsByPO(po_list: string[]) {
-  let all: Articolo[] = [];
-  const BATCH_SIZE = 10; // stesso valore del backend!
-  const MAX_BATCHES = 100; // sicurezza: max 20.000 righe (10x200x100)
-  const poGroups = chunkArray(po_list, BATCH_SIZE);
+export default function ParzialiOrdini() {
+  const [riepiloghi, setRiepiloghi] = useState<Riepilogo[]>([]);
+  const [articoli, setArticoli] = useState<Record<number, Articolo[]>>({});
+  const [parziali, setParziali] = useState<Record<number, Parziale[]>>({});
+  const [loading, setLoading] = useState(true);
+  const [closingOrderId, setClosingOrderId] = useState<number | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const navigate = useNavigate();
 
-  for (const group of poGroups) {
-    let offset = 0;
-    const limit = 200;
-    let batchCount = 0;
-    while (batchCount < MAX_BATCHES) {
-      const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
-      const res = await fetch(url);
-      const data = await res.json();
-      if (!Array.isArray(data) || data.length === 0) break;
-      all = [...all, ...data];
-      if (data.length < limit) break;
-      offset += limit;
-      batchCount += 1;
+  // --- STABILIZZO LA FUNZIONE (nessuna dipendenza da stato/props) ---
+  const fetchAllItemsByPO = useCallback(async (po_list: string[]) => {
+    let all: Articolo[] = [];
+    const BATCH_SIZE = 10; // stesso valore del backend
+    const MAX_BATCHES = 100;
+    const poGroups = chunkArray(po_list, BATCH_SIZE);
+
+    for (const group of poGroups) {
+      let offset = 0;
+      const limit = 200;
+      let batchCount = 0;
+
+      while (batchCount < MAX_BATCHES) {
+        const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
+        const res = await fetch(url);
+        const data: unknown = await res.json();
+
+        if (!Array.isArray(data) || data.length === 0) break;
+        all = [...all, ...(data as Articolo[])];
+
+        if (data.length < limit) break;
+        offset += limit;
+        batchCount += 1;
+      }
     }
-  }
-  // Deduplica finale
-  const seen = new Set();
-  all = all.filter(item => {
-    const key = `${item.po_number}|${item.model_number}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
 
-  return all;
-}
+    // Deduplica finale
+    const seen = new Set<string>();
+    all = all.filter((item) => {
+      const key = `${item.po_number}|${item.model_number}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 
+    return all;
+  }, []);
 
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+
+      const rieps: Riepilogo[] = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/parziali`
+      ).then((r) => r.json());
+
+      setRiepiloghi(rieps);
+
+      await Promise.all(
+        rieps.map(async (r) => {
+          const articoliArr = await fetchAllItemsByPO(r.po_list);
+          setArticoli((old) => ({ ...old, [r.id]: articoliArr }));
+
+          const parzArr: Parziale[] = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali?riepilogo_id=${r.id}`
+          ).then((r2) => r2.json());
+
+          setParziali((old) => ({
+            ...old,
+            [r.id]: (parzArr || []).filter((p) => p.confermato),
+          }));
+        })
+      );
+
+      setLoading(false);
+    }
+    load();
+  }, [fetchAllItemsByPO]); // <- OK per eslint
 
   function getQtyConfirmedPerPo(po_number: string, parz: Parziale[]) {
     let tot = 0;
     for (const p of parz) {
-      for (const r of p.dati) {
-        if (r.po_number === po_number) tot += r.quantita;
+      const rows: ParzialeRiga[] =
+        typeof p.dati === "string" ? JSON.parse(p.dati) : p.dati;
+      for (const r of rows) {
+        if (r.po_number === po_number) tot += r.quantita || 0;
       }
     }
     return tot;
@@ -126,7 +136,9 @@ async function fetchAllItemsByPO(po_list: string[]) {
   function formatDate(dt: string) {
     if (!dt) return "";
     const d = new Date(dt);
-    return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
+    return `${d.toLocaleDateString()} ${d
+      .toLocaleTimeString()
+      .slice(0, 5)}`;
   }
 
   async function handleToggleGestito(
@@ -151,14 +163,13 @@ async function fetchAllItemsByPO(po_list: string[]) {
 
     setParziali((prev) => {
       const aggiornati = { ...prev };
-      aggiornati[riepilogoId] = aggiornati[riepilogoId].map((p) =>
+      aggiornati[riepilogoId] = (aggiornati[riepilogoId] || []).map((p) =>
         p.numero_parziale === numeroParziale ? { ...p, gestito: nuovoStato } : p
       );
       return aggiornati;
     });
   }
 
-  // --- NUOVO: chiusura ordine senza reload ---
   async function chiudiOrdine(riep: Riepilogo) {
     setClosingOrderId(riep.id);
     try {
@@ -175,7 +186,7 @@ async function fetchAllItemsByPO(po_list: string[]) {
       );
       if (!res.ok) throw new Error("Errore chiusura ordine");
 
-      // Aggiorna stato locale: rimuovi l’ordine dalla lista, togli i suoi parziali/articoli
+      // Aggiorna stato locale
       setRiepiloghi((old) => old.filter((x) => x.id !== riep.id));
       setParziali((old) => {
         const copy = { ...old };
@@ -187,10 +198,15 @@ async function fetchAllItemsByPO(po_list: string[]) {
         delete copy[riep.id];
         return copy;
       });
+
       setSuccessMsg("Ordine chiuso con successo!");
       setTimeout(() => setSuccessMsg(null), 2000);
-    } catch (err: any) {
-      alert("Errore durante la chiusura ordine: " + (err.message || err));
+    } catch (err: unknown) {
+      const msg =
+        err && typeof err === "object" && "message" in err
+          ? String((err as Error).message)
+          : String(err);
+      alert("Errore durante la chiusura ordine: " + msg);
     } finally {
       setClosingOrderId(null);
     }
@@ -295,66 +311,88 @@ async function fetchAllItemsByPO(po_list: string[]) {
             </table>
           </div>
 
+          {(() => {
+            // Prendi solo gli articoli validi per i PO dell’ordine
+            const listaArticoli = articoli[riep.id] || [];
+            const articoliFiltrati = listaArticoli.filter(
+              (a) =>
+                riep.po_list.includes(a.po_number) &&
+                (a.qty_ordered || 0) > 0
+            );
 
-{(() => {
-  // Prendi solo gli articoli validi per i PO dell’ordine
-  const listaArticoli = articoli[riep.id] || [];
-  const articoliFiltrati = listaArticoli.filter(a => riep.po_list.includes(a.po_number) && (a.qty_ordered || 0) > 0);
+            // Calcola valore ordinato
+            const valoreOrdinato = articoliFiltrati.reduce(
+              (sum, x) =>
+                sum + (Number(x.qty_ordered) || 0) * (Number(x.cost) || 0),
+              0
+            );
 
-  // Calcola valore ordinato solo su questi
-  const valoreOrdinato = articoliFiltrati.reduce(
-    (sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)), 0
-  );
+            // Map per costo lookup
+            const costoArticoloMap = new Map<string, number>();
+            articoliFiltrati.forEach((x) => {
+              costoArticoloMap.set(
+                `${x.po_number}|${x.model_number}`,
+                Number(x.cost) || 0
+              );
+            });
 
-  // Map per costo lookup
-  const costoArticoloMap = new Map<string, number>();
-  articoliFiltrati.forEach(x => {
-    costoArticoloMap.set(`${x.po_number}|${x.model_number}`, Number(x.cost) || 0);
-  });
+            // Calcola valore confermato su tutti i parziali
+            const listaParziali = parziali[riep.id] || [];
+            let valoreConfermato = 0;
+            for (const parz of listaParziali) {
+              const dati: ParzialeRiga[] =
+                typeof parz.dati === "string"
+                  ? JSON.parse(parz.dati)
+                  : parz.dati;
+              for (const r of dati) {
+                const key = `${r.po_number}|${r.model_number}`;
+                valoreConfermato +=
+                  (r.quantita || 0) * (costoArticoloMap.get(key) || 0);
+              }
+            }
 
-  // Calcola valore confermato su tutti i parziali
-  const listaParziali = parziali[riep.id] || [];
-  let valoreConfermato = 0;
-  for (const parz of listaParziali) {
-    const dati = typeof parz.dati === "string" ? JSON.parse(parz.dati) : parz.dati;
-    for (const r of dati) {
-      const key = `${r.po_number}|${r.model_number}`;
-      valoreConfermato += (r.quantita || 0) * (costoArticoloMap.get(key) || 0);
-    }
-  }
+            const percCosto =
+              valoreOrdinato > 0
+                ? Math.min(
+                    Math.round((valoreConfermato / valoreOrdinato) * 100),
+                    100
+                  )
+                : 0;
 
-  const percCosto = valoreOrdinato > 0 ? Math.min(Math.round((valoreConfermato / valoreOrdinato) * 100), 100) : 0;
-
-  // Debug se vuoi
-  // console.log('PO:', riep.po_list, 'Articoli filtrati:', articoliFiltrati, 'Ordinato:', valoreOrdinato, 'Confermato:', valoreConfermato);
-
-  return articoliFiltrati.length > 0 && valoreOrdinato > 0 && (
-    <div className="my-3">
-      <div className="flex items-center justify-between mb-1 text-xs text-gray-600">
-        <span>
-          Valore ordinato: <span className="text-blue-700 font-bold">€ {valoreOrdinato.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</span>
-        </span>
-        <span>
-          Valore confermato: <span className="text-green-700 font-bold">€ {valoreConfermato.toLocaleString("it-IT", { minimumFractionDigits: 2 })}</span>
-        </span>
-      </div>
-      <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
-        <div
-          className="h-5 rounded-full bg-green-500 transition-all"
-          style={{ width: `${percCosto}%` }}
-        ></div>
-        <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
-          {percCosto}%
-        </div>
-      </div>
-      {valoreOrdinato === 0 && (
-        <div className="text-xs text-red-500 mt-2">
-          Attenzione: alcuni PO potrebbero non avere articoli validi con costo o quantità ordinata.
-        </div>
-      )}
-    </div>
-  );
-})()}
+            return articoliFiltrati.length > 0 && valoreOrdinato > 0 ? (
+              <div className="my-3">
+                <div className="flex items-center justify-between mb-1 text-xs text-gray-600">
+                  <span>
+                    Valore ordinato:{" "}
+                    <span className="text-blue-700 font-bold">
+                      €{" "}
+                      {valoreOrdinato.toLocaleString("it-IT", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </span>
+                  <span>
+                    Valore confermato:{" "}
+                    <span className="text-green-700 font-bold">
+                      €{" "}
+                      {valoreConfermato.toLocaleString("it-IT", {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </span>
+                </div>
+                <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-5 rounded-full bg-green-500 transition-all"
+                    style={{ width: `${percCosto}%` }}
+                  />
+                  <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
+                    {percCosto}%
+                  </div>
+                </div>
+              </div>
+            ) : null;
+          })()}
 
           {/* Lista Parziali */}
           <div className="border-t pt-3 mt-3">
@@ -442,9 +480,7 @@ async function fetchAllItemsByPO(po_list: string[]) {
                   closingOrderId === riep.id
                 }
                 onClick={() => {
-                  if (
-                    window.confirm("Sei sicuro di voler chiudere l’ordine?")
-                  ) {
+                  if (window.confirm("Sei sicuro di voler chiudere l’ordine?")) {
                     chiudiOrdine(riep);
                   }
                 }}

@@ -2,14 +2,24 @@ import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import SearchProductModal from "../../modals/SearchProductModal";
 
+type ResultRow = {
+  fulfillment_center: string;
+  start_delivery: string; // ISO date string
+  po_number: string;
+  model_number: string; // SKU
+  vendor_product_id: string; // EAN
+  qty_ordered: number;
+  qty_inserted?: number | null;
+};
+
 export default function DraftGestione() {
   const [barcode, setBarcode] = useState("");
-  const [foundRows, setFoundRows] = useState<any[]>([]);
+  const [foundRows, setFoundRows] = useState<ResultRow[]>([]);
   const [scannerOpen, setScannerOpen] = useState(false);
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // Nuovo: ref per focus automatico
+  // Ref per focus automatico
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Focalizza input quando pagina vuota o quando chiudi scanner
@@ -28,7 +38,7 @@ export default function DraftGestione() {
     } else {
       setFoundRows([]);
     }
-    // eslint-disable-next-line
+
   }, [searchParams]);
 
   async function searchArticle(code: string) {
@@ -37,8 +47,8 @@ export default function DraftGestione() {
     const res = await fetch(
       `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items/by-barcode?barcode=${encodeURIComponent(code)}`
     );
-    const data = await res.json();
-    setFoundRows(data);
+    const data = (await res.json()) as ResultRow[]; // tipizza risposta
+    setFoundRows(Array.isArray(data) ? data : []);
   }
 
   function handleScannerFound(ean: string) {
@@ -59,7 +69,7 @@ export default function DraftGestione() {
     setBarcode("");
     setSearchParams({});
     setFoundRows([]);
-    // inputRef focus già gestito da useEffect sopra!
+    // focus input gestito dal useEffect
   }
 
   return (
@@ -127,49 +137,55 @@ export default function DraftGestione() {
               </tr>
             </thead>
             <tbody>
-              {foundRows.map((art, idx) => (
-                <tr key={idx} className="hover:bg-blue-50 transition">
-                  <td className="border px-1">
-                    {art.fulfillment_center}
-                    {art.start_delivery && (
-                      <span className="ml-1 text-gray-500">
-                        ({new Date(art.start_delivery).toLocaleDateString("it-IT")})
-                      </span>
-                    )}
-                  </td>
-                  <td className="border px-1 font-mono">{art.po_number}</td>
-                  <td className="border px-1 font-mono">{art.model_number}</td>
-                  <td className="border px-1">{art.vendor_product_id}</td>
-                  <td className="border px-1 text-right">{art.qty_ordered}</td>
-                  <td className={`border px-1 text-right font-bold ${art.qty_inserted > 0 ? "text-blue-700" : "text-neutral-400"}`}>
-                    {art.qty_inserted ?? 0}
-                  </td>
-                  <td className="border px-1 text-center">
-                    <button
-                      className="underline text-blue-700 font-semibold px-2 py-1 rounded hover:bg-blue-100"
-                      onClick={() =>
-                        navigate(
-                          `/ordini-amazon/dettaglio/${art.fulfillment_center}/${art.start_delivery}`,
-                          {
-                            state: {
-                              autoOpen: {
-                                po_number: art.po_number,
-                                model_number: art.model_number,
-                              },
-                              fromDraft: true,
-                              barcode,
-                            },
-                          }
-                        )
-                      }
+              {foundRows.map(art => {
+                const key = `${art.fulfillment_center}-${art.start_delivery}-${art.po_number}-${art.model_number}`;
+                return (
+                  <tr key={key} className="hover:bg-blue-50 transition">
+                    <td className="border px-1">
+                      {art.fulfillment_center}
+                      {art.start_delivery && (
+                        <span className="ml-1 text-gray-500">
+                          ({new Date(art.start_delivery).toLocaleDateString("it-IT")})
+                        </span>
+                      )}
+                    </td>
+                    <td className="border px-1 font-mono">{art.po_number}</td>
+                    <td className="border px-1 font-mono">{art.model_number}</td>
+                    <td className="border px-1">{art.vendor_product_id}</td>
+                    <td className="border px-1 text-right">{art.qty_ordered}</td>
+                    <td
+                      className={`border px-1 text-right font-bold ${
+                        (art.qty_inserted ?? 0) > 0 ? "text-blue-700" : "text-neutral-400"
+                      }`}
                     >
-                      Gestisci Parziale
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                      {art.qty_inserted ?? 0}
+                    </td>
+                    <td className="border px-1 text-center">
+                      <button
+                        className="underline text-blue-700 font-semibold px-2 py-1 rounded hover:bg-blue-100"
+                        onClick={() =>
+                          navigate(
+                            `/ordini-amazon/dettaglio/${art.fulfillment_center}/${art.start_delivery}`,
+                            {
+                              state: {
+                                autoOpen: {
+                                  po_number: art.po_number,
+                                  model_number: art.model_number,
+                                },
+                                fromDraft: true,
+                                barcode,
+                              },
+                            }
+                          )
+                        }
+                      >
+                        Gestisci Parziale
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
-
           </table>
         )}
       </div>

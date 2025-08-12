@@ -17,28 +17,40 @@ export default function SlideToConfirm({
   const [dragX, setDragX] = useState(0);
   const [isSliding, setIsSliding] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragXRef = useRef(0);
+  const dragXRef = useRef<number>(0);
 
   // Dimensione pallino (deve essere la stessa usata sotto)
   const ballSize = 48;
   const ballSpace = ballSize + 8; // con margine
 
-  function handlePointerDown(e: React.PointerEvent | React.TouchEvent) {
+  function getClientX(ev: PointerEvent | TouchEvent): number {
+    if ("touches" in ev) {
+      return ev.touches?.[0]?.clientX ?? 0;
+    }
+    return (ev as PointerEvent).clientX ?? 0;
+  }
+
+  function handlePointerDown(
+    e: React.PointerEvent<HTMLButtonElement> | React.TouchEvent<HTMLButtonElement>
+  ) {
     if (disabled) return;
     setIsSliding(true);
+
     const startX =
-      "touches" in e && e.touches
-        ? e.touches[0].clientX
-        : "clientX" in e
-        ? e.clientX
-        : 0;
+      "touches" in e.nativeEvent
+        ? e.nativeEvent.touches?.[0]?.clientX ?? 0
+        : (e as React.PointerEvent<HTMLButtonElement>).clientX ?? 0;
 
-    function getClientX(ev: any) {
-      return ev.touches?.[0]?.clientX ?? ev.clientX ?? 0;
-    }
-
-    const moveListener = (ev: any) => {
+    const moveListener = (ev: PointerEvent | TouchEvent) => {
       if (!containerRef.current) return;
+      // Evita lo scroll su mobile mentre trascini
+      if ("preventDefault" in ev) {
+        try {
+          ev.preventDefault();
+        } catch {
+          /* noop */
+        }
+      }
       const maxX = containerRef.current.offsetWidth - ballSpace;
       const currX = getClientX(ev);
       const diff = Math.max(0, Math.min(currX - startX, maxX));
@@ -55,16 +67,17 @@ export default function SlideToConfirm({
       }
       setTimeout(() => setDragX(0), 180);
       setIsSliding(false);
-      window.removeEventListener("pointermove", moveListener);
-      window.removeEventListener("pointerup", upListener);
-      window.removeEventListener("touchmove", moveListener);
-      window.removeEventListener("touchend", upListener);
+
+      window.removeEventListener("pointermove", moveListener as EventListener);
+      window.removeEventListener("pointerup", upListener as EventListener);
+      window.removeEventListener("touchmove", moveListener as EventListener);
+      window.removeEventListener("touchend", upListener as EventListener);
     };
 
-    window.addEventListener("pointermove", moveListener);
-    window.addEventListener("pointerup", upListener);
-    window.addEventListener("touchmove", moveListener, { passive: false });
-    window.addEventListener("touchend", upListener);
+    window.addEventListener("pointermove", moveListener as EventListener);
+    window.addEventListener("pointerup", upListener as EventListener);
+    window.addEventListener("touchmove", moveListener as EventListener, { passive: false });
+    window.addEventListener("touchend", upListener as EventListener);
   }
 
   return (
@@ -86,10 +99,10 @@ export default function SlideToConfirm({
           }}
         />
 
-        {/* SPAZIO pallino */}
+        {/* Spazio per il pallino */}
         <div style={{ width: ballSpace, minWidth: ballSpace }} />
 
-        {/* Testo centrale, con padding sinistro per il pallino */}
+        {/* Testo centrale */}
         <span
           className="relative z-10 w-full text-center select-none transition-all tracking-wide"
           style={{

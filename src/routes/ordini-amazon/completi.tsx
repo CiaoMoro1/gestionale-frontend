@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Package, Download, ChevronDown, ChevronUp, Search } from "lucide-react";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -27,20 +27,22 @@ type FilterType = {
   center?: string;
 };
 
+type PoDettaglio = { po: string; ordinata: number; confermata: number };
+
 function formatDate(dt: string) {
   if (!dt) return "";
   const d = new Date(dt);
   return `${d.toLocaleDateString()} ${d.toLocaleTimeString().slice(0, 5)}`;
 }
 
-// 1️⃣ Utility fetch con retry automatico
-async function fetchWithRetry(url: string, tries = 3, delayMs = 800): Promise<any> {
-  let lastError;
+// 1️⃣ Utility fetch con retry automatico (generica)
+async function fetchWithRetry<T>(url: string, tries = 3, delayMs = 800): Promise<T> {
+  let lastError: unknown;
   for (let i = 0; i < tries; i++) {
     try {
       const res = await fetch(url);
       if (!res.ok) throw new Error("HTTP error " + res.status);
-      return await res.json();
+      return (await res.json()) as T;
     } catch (err) {
       lastError = err;
       if (i < tries - 1) await new Promise(resolve => setTimeout(resolve, delayMs));
@@ -59,7 +61,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 // 3️⃣ Funzione fetch completa con retry e deduplica
-async function fetchAllItemsByPO(po_list: string[]) {
+async function fetchAllItemsByPO(po_list: string[]): Promise<Articolo[]> {
   let all: Articolo[] = [];
   const BATCH_SIZE = 10; // Limite backend
   const MAX_BATCHES = 100; // Massimo batch di sicurezza
@@ -71,7 +73,7 @@ async function fetchAllItemsByPO(po_list: string[]) {
     let batchCount = 0;
     while (batchCount < MAX_BATCHES) {
       const url = `${import.meta.env.VITE_API_URL}/api/amazon/vendor/items?po_list=${group.join(",")}&offset=${offset}&limit=${limit}`;
-      const data = await fetchWithRetry(url, 3, 800);
+      const data = await fetchWithRetry<Articolo[]>(url, 3, 800);
       if (!Array.isArray(data) || data.length === 0) break;
       all = [...all, ...data];
       if (data.length < limit) break;
@@ -80,7 +82,7 @@ async function fetchAllItemsByPO(po_list: string[]) {
     }
   }
   // Deduplica finale
-  const seen = new Set();
+  const seen = new Set<string>();
   all = all.filter(item => {
     const key = `${item.po_number}|${item.model_number}`;
     if (seen.has(key)) return false;
@@ -90,6 +92,17 @@ async function fetchAllItemsByPO(po_list: string[]) {
   return all;
 }
 
+// === Utils totali (funzioni pure) ===
+const valore = (qty: number | undefined, cost: number | string | undefined) =>
+  (qty || 0) * (Number(cost) || 0);
+
+const totaliRighe = (rows: Articolo[]) => ({
+  ord: rows.reduce((s, x) => s + (x.qty_ordered || 0), 0),
+  conf: rows.reduce((s, x) => s + (x.qty_confirmed || 0), 0),
+  valOrd: rows.reduce((s, x) => s + valore(x.qty_ordered, x.cost), 0),
+  valConf: rows.reduce((s, x) => s + valore(x.qty_confirmed, x.cost), 0),
+});
+
 export default function CompletatiOrdini() {
   const [dati, setDati] = useState<Riepilogo[]>([]);
   const [articoli, setArticoli] = useState<{ [id: number]: Articolo[] }>({});
@@ -98,16 +111,23 @@ export default function CompletatiOrdini() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>({});
   const [search, setSearch] = useState("");
-  const [poModal, setPoModal] = useState<{ open: boolean; poList: any[]; titolo: string }>({ open: false, poList: [], titolo: "" });
+  const [toast, setToast] = useState<string | null>(null);
+  const [poModal, setPoModal] = useState<{ open: boolean; poList: PoDettaglio[]; titolo: string }>(
+    {
+      open: false,
+      poList: [],
+      titolo: "",
+    }
+  );
 
   useEffect(() => {
     async function load() {
       setLoading(true);
-      const rieps = await fetch(
+      const rieps = await fetchWithRetry<Riepilogo[]>(
         `${import.meta.env.VITE_API_URL}/api/amazon/vendor/orders/riepilogo/completati`
-      ).then(r => r.json());
+      );
 
-      rieps.sort((a: Riepilogo, b: Riepilogo) => {
+      rieps.sort((a, b) => {
         if (b.start_delivery > a.start_delivery) return 1;
         if (b.start_delivery < a.start_delivery) return -1;
         if ((b.created_at || "") > (a.created_at || "")) return 1;
@@ -118,15 +138,17 @@ export default function CompletatiOrdini() {
       setDati(rieps);
 
       await Promise.all(
-        rieps.map(async (r: Riepilogo) => {
+        rieps.map(async r => {
           try {
             const arr = await fetchAllItemsByPO(r.po_list);
             setArticoli(old => ({
               ...old,
-              [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number))
+              [r.id]: arr.sort((a, b) => a.model_number.localeCompare(b.model_number)),
             }));
-          } catch (err) {
-            alert("Errore nel caricamento di alcuni articoli. Riprova tra poco.");
+          } catch {
+            console.error("Errore nel caricamento articoli per riepilogo", r.id);
+            setToast("Errore nel caricamento di alcuni articoli. Riprova tra poco.");
+            setTimeout(() => setToast(null), 3500);
           }
         })
       );
@@ -135,6 +157,44 @@ export default function CompletatiOrdini() {
     }
     load();
   }, []);
+
+  const groupedByDate = useMemo(() => {
+    const g: { [data: string]: Riepilogo[] } = {};
+    dati.forEach(r => {
+      if (
+        (filter.data && r.start_delivery !== filter.data) ||
+        (filter.center && r.fulfillment_center !== filter.center)
+      )
+        return;
+      (g[r.start_delivery] ||= []).push(r);
+    });
+    return g;
+  }, [dati, filter.data, filter.center]);
+
+  const centriUnici = useMemo(
+    () => Array.from(new Set(dati.map(d => d.fulfillment_center))).sort(),
+    [dati]
+  );
+
+  const dateUniche = useMemo(
+    () => Array.from(new Set(dati.map(d => d.start_delivery))).sort().reverse(),
+    [dati]
+  );
+
+  const totaliGruppo = (ids: number[]) => {
+    let ord = 0,
+      conf = 0,
+      valOrd = 0,
+      valConf = 0;
+    ids.forEach(id => {
+      const t = totaliRighe(articoli[id] || []);
+      ord += t.ord;
+      conf += t.conf;
+      valOrd += t.valOrd;
+      valConf += t.valConf;
+    });
+    return { ord, conf, valOrd, valConf };
+  };
 
   function handleExportExcel(riep: Riepilogo) {
     const lista = articoli[riep.id] || [];
@@ -148,7 +208,7 @@ export default function CompletatiOrdini() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Completato");
     function safe(str: string | number) {
-      return String(str).replace(/[^a-zA-Z0-9_\-]/g, "_");
+      return String(str).replace(/[^a-zA-Z0-9_-]/g, "_");
     }
     const nomeFile = `${safe(riep.fulfillment_center)}_${safe(riep.start_delivery)}.xlsx`;
     XLSX.writeFile(wb, nomeFile);
@@ -164,17 +224,14 @@ export default function CompletatiOrdini() {
     doc.text(`Data: ${riep.start_delivery}`, 90, 28);
     autoTable(doc, {
       head: [["SKU", "Q.tà ordinata", "Q.tà confermata"]],
-      body: lista.map(row => [
-        row.model_number,
-        row.qty_ordered,
-        row.qty_confirmed,
-      ]),
+      body: lista.map(row => [row.model_number, row.qty_ordered, row.qty_confirmed]),
       startY: 36,
       theme: "grid",
       styles: { fontSize: 12 },
       headStyles: { fillColor: [34, 197, 94] },
     });
-    doc.output("dataurlnewwindow");
+    const safe = (s: string) => String(s).replace(/[^a-zA-Z0-9_-]/g, "_");
+    doc.save(`Ordine_${safe(riep.fulfillment_center)}_${safe(riep.start_delivery)}.pdf`);
   }
 
   function showPoModal(articoliGruppo: Articolo[], titolo: string) {
@@ -185,7 +242,8 @@ export default function CompletatiOrdini() {
       poDettaglio[po].ordinata += a.qty_ordered || 0;
       poDettaglio[po].confermata += a.qty_confirmed || 0;
     });
-    const elenco = Object.entries(poDettaglio).map(([po, vals]) => ({ po, ...vals }))
+    const elenco: PoDettaglio[] = Object.entries(poDettaglio)
+      .map(([po, vals]) => ({ po, ...vals }))
       .sort((a, b) => a.po.localeCompare(b.po));
     setPoModal({
       open: true,
@@ -193,19 +251,6 @@ export default function CompletatiOrdini() {
       titolo,
     });
   }
-
-  const groupedByDate: { [data: string]: Riepilogo[] } = {};
-  dati.forEach(r => {
-    if (
-      (filter.data && r.start_delivery !== filter.data) ||
-      (filter.center && r.fulfillment_center !== filter.center)
-    ) return;
-    if (!groupedByDate[r.start_delivery]) groupedByDate[r.start_delivery] = [];
-    groupedByDate[r.start_delivery].push(r);
-  });
-
-  const centriUnici = Array.from(new Set(dati.map(d => d.fulfillment_center))).sort();
-  const dateUniche = Array.from(new Set(dati.map(d => d.start_delivery))).sort().reverse();
 
   return (
     <div className="mx-auto max-w-2xl p-2 sm:p-4">
@@ -222,7 +267,9 @@ export default function CompletatiOrdini() {
         >
           <option value="">Tutti i Centri</option>
           {centriUnici.map(center => (
-            <option key={center} value={center}>{center}</option>
+            <option key={center} value={center}>
+              {center}
+            </option>
           ))}
         </select>
         <select
@@ -232,7 +279,9 @@ export default function CompletatiOrdini() {
         >
           <option value="">Tutte le Date</option>
           {dateUniche.map(dt => (
-            <option key={dt} value={dt}>{dt}</option>
+            <option key={dt} value={dt}>
+              {dt}
+            </option>
           ))}
         </select>
         <div className="relative w-full sm:w-auto">
@@ -257,23 +306,22 @@ export default function CompletatiOrdini() {
         </div>
       ) : (
         Object.entries(groupedByDate).map(([dataRiep, rieps]) => {
-          // Totali raggruppamento
-          const totaleGruppoOrdinato = rieps.reduce(
-            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_ordered || 0), 0)),
-            0
-          );
-          const totaleGruppoConfermato = rieps.reduce(
-            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + (a.qty_confirmed || 0), 0)),
-            0
-          );
-          const totaleGruppoValOrd = rieps.reduce(
-            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_ordered || 0) * (Number(a.cost) || 0)), 0)),
-            0
-          );
-          const totaleGruppoValConf = rieps.reduce(
-            (sum, r) => sum + ((articoli[r.id] || []).reduce((s, a) => s + ((a.qty_confirmed || 0) * (Number(a.cost) || 0)), 0)),
-            0
-          );
+          const { ord: totaleGruppoOrdinato, conf: totaleGruppoConfermato, valOrd: totaleGruppoValOrd, valConf: totaleGruppoValConf } =
+            totaliGruppo(rieps.map(r => r.id));
+            ((ids: number[]) => {
+              let ord = 0,
+                conf = 0,
+                valOrd = 0,
+                valConf = 0;
+              ids.forEach(id => {
+                const t = totaliRighe(articoli[id] || []);
+                ord += t.ord;
+                conf += t.conf;
+                valOrd += t.valOrd;
+                valConf += t.valConf;
+              });
+              return { ord, conf, valOrd, valConf };
+            })(rieps.map(r => r.id));
 
           return (
             <div key={dataRiep} className="mb-8 bg-gray-50 rounded-2xl shadow border">
@@ -287,19 +335,29 @@ export default function CompletatiOrdini() {
                 }
               >
                 <div>
-                  <div className="font-bold text-base text-gray-800">
-                    Data consegna: {dataRiep}
-                  </div>
+                  <div className="font-bold text-base text-gray-800">Data consegna: {dataRiep}</div>
                   <div className="text-xs font-medium text-gray-500">
-                    Tot. ordinato: <span className="text-blue-700 font-bold">{totaleGruppoOrdinato}</span> | 
-                    Tot. confermato: <span className="text-green-700 font-bold">{totaleGruppoConfermato}</span>
+                    Tot. ordinato:{" "}
+                    <span className="text-blue-700 font-bold">{totaleGruppoOrdinato}</span> | Tot.
+                    confermato:{" "}
+                    <span className="text-green-700 font-bold">{totaleGruppoConfermato}</span>
                     <br />
-                    Val. ordinato: <span className="text-blue-700 font-bold">
-                      € {totaleGruppoValOrd.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Val. ordinato:{" "}
+                    <span className="text-blue-700 font-bold">
+                      €
+                      {totaleGruppoValOrd.toLocaleString("it-IT", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </span>
                     {" | "}
-                    Val. confermato: <span className="text-green-700 font-bold">
-                      € {totaleGruppoValConf.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    Val. confermato:{" "}
+                    <span className="text-green-700 font-bold">
+                      €
+                      {totaleGruppoValConf.toLocaleString("it-IT", {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
                     </span>
                   </div>
                 </div>
@@ -318,18 +376,15 @@ export default function CompletatiOrdini() {
                         )
                     )
                     .map(group => {
-                      const listaArticoli = (articoli[group.id] || []).slice().sort((a, b) =>
-                        a.model_number.localeCompare(b.model_number)
-                      );
+                      const listaArticoli = (articoli[group.id] || [])
+                        .slice()
+                        .sort((a, b) => a.model_number.localeCompare(b.model_number));
                       const show = showAll[group.id] || false;
                       const visibili = show ? listaArticoli : listaArticoli.slice(0, 5);
-                      // Totali per il footer singolo ordine
-                      const totOrd = listaArticoli.reduce((sum, x) => sum + (x.qty_ordered || 0), 0);
-                      const totConf = listaArticoli.reduce((sum, x) => sum + (x.qty_confirmed || 0), 0);
-                      const percTot =
-                        totOrd > 0
-                          ? Math.min(Math.round((totConf / totOrd) * 100), 100)
-                          : 0;
+
+                      const { ord: totOrd, conf: totConf, valOrd, valConf } = totaliRighe(listaArticoli);
+
+                      const percTot = totOrd > 0 ? Math.min(Math.round((totConf / totOrd) * 100), 100) : 0;
 
                       return (
                         <div
@@ -415,11 +470,8 @@ export default function CompletatiOrdini() {
                                         <div className="relative w-full max-w-[90px] h-4 bg-gray-100 rounded-full overflow-hidden mx-auto">
                                           <div
                                             className="h-4 rounded-full bg-green-400"
-                                            style={{
-                                              width: `${completamento}%`,
-                                              transition: "width 0.4s"
-                                            }}
-                                          ></div>
+                                            style={{ width: `${completamento}%`, transition: "width 0.4s" }}
+                                          />
                                           <div className="absolute inset-0 flex items-center justify-center text-xs font-semibold text-gray-700">
                                             {completamento}%
                                           </div>
@@ -433,16 +485,17 @@ export default function CompletatiOrdini() {
 
                             <div className="flex flex-col sm:flex-row gap-2 justify-between items-center border-t mt-3 pt-2">
                               <div className="font-semibold text-sm text-neutral-700">
-                                Totale ordinato: <span className="text-blue-700">{totOrd}</span> | Totale confermato: <span className="text-green-700">{totConf}</span>
+                                Totale ordinato: <span className="text-blue-700">{totOrd}</span> | Totale confermato:{" "}
+                                <span className="text-green-700">{totConf}</span>
                                 <br />
                                 <span className="text-xs font-medium text-gray-500">
                                   Valore ordinato:{" "}
                                   <span className="text-blue-700 font-bold">
-                                    € {listaArticoli.reduce((sum, x) => sum + ((x.qty_ordered || 0) * (Number(x.cost) || 0)), 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    € {valOrd.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>{" "}
                                   | Valore confermato:{" "}
                                   <span className="text-green-700 font-bold">
-                                    € {listaArticoli.reduce((sum, x) => sum + ((x.qty_confirmed || 0) * (Number(x.cost) || 0)), 0).toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    € {valConf.toLocaleString("it-IT", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                   </span>
                                 </span>
                               </div>
@@ -450,11 +503,8 @@ export default function CompletatiOrdini() {
                                 <div className="relative w-full h-5 bg-gray-200 rounded-full overflow-hidden">
                                   <div
                                     className="h-5 rounded-full bg-green-500"
-                                    style={{
-                                      width: `${percTot}%`,
-                                      transition: "width 0.4s"
-                                    }}
-                                  ></div>
+                                    style={{ width: `${percTot}%`, transition: "width 0.4s" }}
+                                  />
                                   <div className="absolute inset-0 flex items-center justify-center text-xs font-bold text-gray-800">
                                     {percTot}%
                                   </div>
@@ -527,6 +577,13 @@ export default function CompletatiOrdini() {
               Chiudi
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Toast semplice */}
+      {toast && (
+        <div className="fixed bottom-4 right-4 bg-neutral-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+          {toast}
         </div>
       )}
     </div>

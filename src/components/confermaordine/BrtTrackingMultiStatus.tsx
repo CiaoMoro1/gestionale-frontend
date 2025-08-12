@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import  { useEffect, useState, type ReactElement } from "react";
 import {
   PackageCheck,
   Truck,
@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 
+/** === Tipi API BRT (minimali, solo quello che usiamo) === */
 type BrtEvent = {
   data: string;
   ora: string;
@@ -18,12 +19,48 @@ type BrtEvent = {
   filiale: string;
 };
 
+type BrtApiEventoWrapper = {
+  evento: BrtEvent;
+};
+
+type BrtApiDatiSpedizione = {
+  descrizione_stato_sped_parte1?: string;
+  stato_sped_parte1?: string;
+  spedizione_id?: string;
+  filiale_arrivo?: string;
+};
+
+type BrtApiBolla = {
+  dati_spedizione?: BrtApiDatiSpedizione;
+};
+
+type BrtApiTrackingInner = {
+  bolla?: BrtApiBolla;
+  lista_eventi?: BrtApiEventoWrapper[];
+};
+
+type BrtApiTrackingResponse = {
+  tracking?: {
+    ttParcelIdResponse?: BrtApiTrackingInner;
+  } | BrtApiTrackingInner;
+  ttParcelIdResponse?: BrtApiTrackingInner;
+} & BrtApiTrackingInner; // a volte i campi sono “flattened”
+
+type BrtApiEnvelope =
+  | BrtApiTrackingResponse
+  | {
+      results?: BrtApiTrackingResponse[];
+    }
+  | BrtApiTrackingResponse[];
+
+/** === Props === */
 type BrtTrackingMultiStatusProps = {
   parcelIds: string[];
   orderNumber?: string | number;
 };
 
-const EVENT_ICON: Record<string, React.ReactElement> = {
+/** === Icone/Colori === */
+const EVENT_ICON: Record<string, ReactElement> = {
   CONSEGNATA: <CheckCircle className="text-green-600" size={22} />,
   "IN CONSEGNA": <Truck className="text-blue-500" size={22} />,
   RITIRATA: <PackageCheck className="text-yellow-500" size={22} />,
@@ -38,24 +75,45 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 function getStatusColor(stato: string) {
-  const key = stato.toUpperCase();
+  const key = (stato || "").toUpperCase();
   return STATUS_COLORS[key] || "bg-gray-100 text-gray-700 border-gray-200";
 }
 
+/** === Helpers normalizzazione risposta === */
+function normalizeResults(payload: BrtApiEnvelope): BrtApiTrackingResponse[] {
+  // /api a volte torna {results:[...]} o direttamente un array, o un singolo oggetto
+  if (Array.isArray(payload)) return payload;
+  if ("results" in payload && Array.isArray(payload.results)) return payload.results;
+  return [payload as BrtApiTrackingResponse];
+}
+
+function extractTrackingInner(obj: BrtApiTrackingResponse): BrtApiTrackingInner | undefined {
+  // Possibili posizioni del payload utile
+  return (
+    (obj.tracking && "ttParcelIdResponse" in obj.tracking
+      ? obj.tracking.ttParcelIdResponse
+      : (obj.tracking as BrtApiTrackingInner)) ||
+    obj.ttParcelIdResponse ||
+    (obj as BrtApiTrackingInner)
+  );
+}
+
+/** === Component === */
 export default function BrtTrackingMultiStatus({
   parcelIds,
   orderNumber,
 }: BrtTrackingMultiStatusProps) {
   const [loading, setLoading] = useState(false);
-  const [results, setResults] = useState<any[]>([]);
+  const [results, setResults] = useState<BrtApiTrackingResponse[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!parcelIds || parcelIds.length === 0) return;
-    setLoading(true);
-    setError(null);
+    let cancelled = false;
 
-    (async () => {
+    async function run() {
+      setLoading(true);
+      setError(null);
       try {
         const { data } = await supabase.auth.getSession();
         const token = data.session?.access_token || "";
@@ -64,27 +122,30 @@ export default function BrtTrackingMultiStatus({
           Authorization: `Bearer ${token}`,
         };
         const res = await fetch(
-          `${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${parcelIds.join(",")}`,
+          `${import.meta.env.VITE_API_URL}/api/brt/tracking?parcelIds=${encodeURIComponent(
+            parcelIds.join(",")
+          )}`,
           { headers }
         );
         if (!res.ok) throw new Error("Errore tracking");
-        const dataJson = await res.json();
-        const normalized =
-          Array.isArray(dataJson.results) && dataJson.results.length > 0
-            ? dataJson.results
-            : Array.isArray(dataJson)
-            ? dataJson
-            : [dataJson];
-        setResults(normalized);
-        setLoading(false);
-      } catch (err) {
-        setError("Errore caricamento tracking BRT.");
-        setLoading(false);
+        const dataJson: BrtApiEnvelope = await res.json();
+        const normalized = normalizeResults(dataJson);
+        if (!cancelled) setResults(normalized);
+      } catch {
+        if (!cancelled) setError("Errore caricamento tracking BRT.");
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    })();
+    }
+
+    run();
+    return () => {
+      cancelled = true;
+    };
   }, [parcelIds]);
 
   if (!parcelIds || parcelIds.length === 0) return null;
+
   if (loading)
     return (
       <div className="my-4 flex items-center gap-2 justify-center text-blue-800">
@@ -92,6 +153,7 @@ export default function BrtTrackingMultiStatus({
         <span>Caricamento tracking BRT…</span>
       </div>
     );
+
   if (error)
     return (
       <div className="my-4 flex items-center gap-2 justify-center text-red-600 font-semibold">
@@ -100,32 +162,32 @@ export default function BrtTrackingMultiStatus({
       </div>
     );
 
-  // Mostra SOLO la prima spedizione, ignora i duplicati
+  // Mostra SOLO la prima spedizione
   if (!results[0]) {
-  return (
-    <div className="my-4 flex items-center gap-2 justify-center text-gray-600">
-      <AlertTriangle size={18} />
-      Nessun dato di tracking disponibile.
-    </div>
-  );
-}
+    return (
+      <div className="my-4 flex items-center gap-2 justify-center text-gray-600">
+        <AlertTriangle size={18} />
+        Nessun dato di tracking disponibile.
+      </div>
+    );
+  }
 
-const tracking = results[0];
-const brtData =
-  tracking?.tracking?.ttParcelIdResponse ??
-  tracking?.tracking ??
-  tracking?.ttParcelIdResponse ??
-  tracking;
+  const tracking = results[0];
+  const brtData = extractTrackingInner(tracking);
 
+  const d = brtData?.bolla?.dati_spedizione;
   const stato =
-    brtData?.bolla?.dati_spedizione?.descrizione_stato_sped_parte1 ||
-    brtData?.bolla?.dati_spedizione?.stato_sped_parte1 ||
+    d?.descrizione_stato_sped_parte1 ||
+    d?.stato_sped_parte1 ||
     "Stato non disponibile";
-  const events = (brtData?.lista_eventi || []).map((e: any) => e.evento) as BrtEvent[];
-  const spedizioneId = brtData?.bolla?.dati_spedizione?.spedizione_id || "-";
-  const terminale = brtData?.bolla?.dati_spedizione?.filiale_arrivo || "";
+  const events: BrtEvent[] = (brtData?.lista_eventi || []).map(
+    (e: BrtApiEventoWrapper) => e.evento
+  );
+
+  const spedizioneId = d?.spedizione_id || "-";
+  const terminale = d?.filiale_arrivo || "";
   const statoBadge = getStatusColor(stato);
-  const consegnata = stato.toUpperCase().includes("CONSEGNATA");
+  const consegnata = (stato || "").toUpperCase().includes("CONSEGNATA");
 
   return (
     <section className="w-full max-w-md mx-auto mt-3 mb-6 px-1">
@@ -145,6 +207,7 @@ const brtData =
             {parcelIds.length} colli
           </div>
         </div>
+
         <div className="mb-2 flex items-center gap-2">
           <span className={`px-2 py-1 rounded-lg border font-bold text-sm sm:text-base ${statoBadge}`}>
             {stato}
@@ -155,6 +218,7 @@ const brtData =
             </span>
           )}
         </div>
+
         <div className="text-xs text-blue-700 mb-1">
           Spedizione ID: <span className="font-semibold">{spedizioneId}</span>
         </div>
@@ -163,19 +227,21 @@ const brtData =
             Filiale arrivo: <span className="font-semibold">{terminale}</span>
           </div>
         )}
+
         <div className="overflow-x-auto">
           <ol className="flex flex-col gap-0.5 mt-1">
             {events.length === 0 ? (
               <li className="text-gray-400 text-xs py-2">Nessun evento disponibile.</li>
             ) : (
               events
-                .filter(ev => ev.descrizione?.trim() !== "")
+                .filter((ev) => (ev.descrizione || "").trim() !== "")
                 .reverse()
                 .map((ev, idx) => (
-                  <li key={idx} className="flex items-center gap-2 px-1 py-1">
+                  <li key={`${ev.id}-${idx}`} className="flex items-center gap-2 px-1 py-1">
                     <span className="flex-shrink-0 w-5">
-                      {EVENT_ICON[ev.descrizione.toUpperCase()] ||
-                        <Loader className="text-gray-400" size={16} />}
+                      {EVENT_ICON[(ev.descrizione || "").toUpperCase()] ?? (
+                        <Loader className="text-gray-400" size={16} />
+                      )}
                     </span>
                     <span className="text-xs text-gray-700 w-20 flex-shrink-0">
                       {ev.data} {ev.ora}
