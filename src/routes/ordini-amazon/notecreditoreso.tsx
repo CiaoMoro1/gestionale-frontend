@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import { useState, useRef } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -9,9 +9,9 @@ type Nota = {
   po: string;
   vret: string;
   xml_url: string;
-  imponibile: number;
-  iva: number;
-  totale: number;
+  imponibile?: number;
+  iva?: number;
+  totale?: number; // può non esserci: tienilo opzionale
   stato: string;
   created_at: string;
 };
@@ -31,34 +31,36 @@ type JobStatus = {
 };
 
 export default function NoteCreditoResoPage() {
-  const [file, setFile] = useState<File | null>(null);
+  // ↓↓↓ CAMBIATO: due file separati
+  const [returnItemsFile, setReturnItemsFile] = useState<File | null>(null);
+  const [returnSummaryFile, setReturnSummaryFile] = useState<File | null>(null);
+
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [note, setNote] = useState<Nota[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1. Carica CSV
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setFile(e.target.files?.[0] || null);
-  };
+  const uploadFiles = async () => {
+    if (!returnItemsFile) return; // obbligatorio
 
-  const uploadCSV = async () => {
-    if (!file) return;
     const formData = new FormData();
-    formData.append("file", file);
+    formData.append("return_items", returnItemsFile);
+    if (returnSummaryFile) {
+      formData.append("return_summary", returnSummaryFile);
+    }
+
     setJobStatus(null);
     setNote([]);
     setSelectedIds([]);
-    // Upload file
-      const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/upload`, {
+
+    const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/upload`, {
       method: "POST",
       body: formData,
     });
     const data = await resp.json();
-    pollJob(data.job_id);
+    if (data?.job_id) pollJob(data.job_id);
   };
 
-  // 2. Poll job status fino a DONE
   const pollJob = (jid: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     const interval = setInterval(async () => {
@@ -73,19 +75,16 @@ export default function NoteCreditoResoPage() {
     pollingRef.current = interval;
   };
 
-  // 3. Carica lista note
   const fetchNoteList = async () => {
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list`);
     const data: Nota[] = await resp.json();
     setNote(data || []);
   };
 
-  // 4. Download singolo XML
   const downloadXML = (id: number) => {
     window.open(`${API_BASE_URL}/api/notecredito_amazon_reso/download/${id}`, "_blank");
   };
 
-  // 5. Download ZIP
   const downloadZIP = async () => {
     if (!selectedIds.length) return;
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/download_zip`, {
@@ -104,7 +103,6 @@ export default function NoteCreditoResoPage() {
     setTimeout(() => window.URL.revokeObjectURL(url), 2000);
   };
 
-  // Seleziona/deseleziona una nota per lo ZIP
   const toggleId = (id: number) => {
     setSelectedIds((prev) =>
       prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
@@ -115,14 +113,30 @@ export default function NoteCreditoResoPage() {
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4">Note di Credito Amazon Vendor - VRET</h1>
 
-      {/* Upload CSV */}
-      <div className="mb-6 p-4 border rounded bg-white">
-        <label className="block font-medium mb-2">Carica file Return_Items.csv</label>
-        <input type="file" accept=".csv" onChange={handleFileChange} className="mb-2" />
+      {/* Upload files */}
+      <div className="mb-6 p-4 border rounded bg-white space-y-3">
+        <div>
+          <label className="block font-medium mb-1">Return_Items.csv (obbligatorio)</label>
+          <input
+            type="file"
+            accept=".csv"
+            onChange={(e) => setReturnItemsFile(e.target.files?.[0] || null)}
+          />
+        </div>
+
+        <div>
+          <label className="block font-medium mb-1">Return_Summary (.xls/.xlsx) — opzionale</label>
+          <input
+            type="file"
+            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => setReturnSummaryFile(e.target.files?.[0] || null)}
+          />
+        </div>
+
         <button
           className="bg-blue-600 text-white px-4 py-2 rounded"
-          disabled={!file}
-          onClick={uploadCSV}
+          disabled={!returnItemsFile}
+          onClick={uploadFiles}
         >
           Carica e genera note
         </button>
@@ -180,7 +194,7 @@ export default function NoteCreditoResoPage() {
                   <td>{n.data_nota}</td>
                   <td>{n.po}</td>
                   <td>{n.vret}</td>
-                  <td>{n.totale?.toFixed(2)}</td>
+                  <td>{n.totale != null ? n.totale.toFixed(2) : "-"}</td>
                   <td>{n.stato}</td>
                   <td>
                     <button
