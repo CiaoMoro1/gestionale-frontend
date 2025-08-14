@@ -2,9 +2,7 @@ import React, { useState, useRef } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
-type Articolo = {
-  prezzo_totale?: number;
-};
+type Articolo = { prezzo_totale?: number };
 
 type Nota = {
   id: number;
@@ -15,17 +13,13 @@ type Nota = {
   xml_url: string;
   imponibile?: number;
   iva?: number;
-  totale?: number;          // potrebbe non esserci
-  articoli?: Articolo[];    // <-- nuovo: arriva dal backend
+  totale?: number;
+  articoli?: Articolo[];
   stato: string;
   created_at: string;
 };
 
-type JobResult = {
-  note_generate?: number;
-  note?: Nota[];
-};
-
+type JobResult = { note_generate?: number; note?: Nota[] };
 type JobStatus = {
   status: string;
   result?: JobResult;
@@ -37,13 +31,18 @@ type JobStatus = {
 
 export default function NoteCreditoResoPage() {
   const [itemsFile, setItemsFile] = useState<File | null>(null);
-  const [summaryFile, setSummaryFile] = useState<File | null>(null); // <-- nuovo opzionale
+  const [summaryFile, setSummaryFile] = useState<File | null>(null);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [note, setNote] = useState<Nota[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [lastJobId, setLastJobId] = useState<string | null>(null);
+
+  // filtri data
+  const [dateFrom, setDateFrom] = useState<string>("");
+  const [dateTo, setDateTo] = useState<string>("");
+
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 1) choose files
   const handleItemsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setItemsFile(e.target.files?.[0] || null);
   };
@@ -51,16 +50,16 @@ export default function NoteCreditoResoPage() {
     setSummaryFile(e.target.files?.[0] || null);
   };
 
-  // 2) upload both (items required, summary optional) — field names MUST match backend
   const uploadFiles = async () => {
     if (!itemsFile) return;
     const formData = new FormData();
-    formData.append("return_items", itemsFile);        // <-- NOME CAMPO CORRETTO
-    if (summaryFile) formData.append("return_summary", summaryFile); // <-- opzionale
+    formData.append("return_items", itemsFile);
+    if (summaryFile) formData.append("return_summary", summaryFile);
 
     setJobStatus(null);
     setNote([]);
     setSelectedIds([]);
+    setLastJobId(null);
 
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/upload`, {
       method: "POST",
@@ -68,13 +67,13 @@ export default function NoteCreditoResoPage() {
     });
     const data = await resp.json();
     if (data?.job_id) {
+      setLastJobId(data.job_id);
       pollJob(data.job_id);
     } else {
       setJobStatus({ status: "failed", error: "Upload fallito" });
     }
   };
 
-  // 3) poll job
   const pollJob = (jid: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     const interval = setInterval(async () => {
@@ -83,20 +82,25 @@ export default function NoteCreditoResoPage() {
       setJobStatus(data);
       if (data.status === "done" || data.status === "failed") {
         clearInterval(interval);
-        fetchNoteList();
+        // dopo DONE: mostra SOLO quelle di quel job
+        fetchNoteList({ job_id: jid });
       }
     }, 1500);
     pollingRef.current = interval;
   };
 
-  // 4) list notes
-  const fetchNoteList = async () => {
-    const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list`);
+  // carica lista con filtri opzionali
+  const fetchNoteList = async (opts?: { job_id?: string; date_from?: string; date_to?: string }) => {
+    const p = new URLSearchParams();
+    if (opts?.job_id) p.set("job_id", opts.job_id);
+    if (opts?.date_from) p.set("date_from", opts.date_from);
+    if (opts?.date_to) p.set("date_to", opts.date_to);
+
+    const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list${p.toString() ? `?${p}` : ""}`);
     const data: Nota[] = await resp.json();
     setNote(data || []);
   };
 
-  // 5) download single / zip
   const downloadXML = (id: number) => {
     window.open(`${API_BASE_URL}/api/notecredito_amazon_reso/download/${id}`, "_blank");
   };
@@ -123,13 +127,11 @@ export default function NoteCreditoResoPage() {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
   };
 
-  // calcolo totale lato client se il backend non lo invia
   const renderTotale = (n: Nota) => {
     if (typeof n.totale === "number") return n.totale.toFixed(2);
     const sum = (n.articoli || []).reduce((acc, a) => acc + (a.prezzo_totale || 0), 0);
     if (sum > 0) return sum.toFixed(2);
     return "—";
-    // (volendo potresti mostrare imponibile+iva se presenti)
   };
 
   return (
@@ -147,13 +149,55 @@ export default function NoteCreditoResoPage() {
           <input type="file" accept=".xls,.xlsx" onChange={handleSummaryChange} />
         </div>
 
-        <button
-          className="bg-blue-600 text-white px-4 py-2 rounded"
-          disabled={!itemsFile}
-          onClick={uploadFiles}
-        >
+        <button className="bg-blue-600 text-white px-4 py-2 rounded" disabled={!itemsFile} onClick={uploadFiles}>
           Carica e genera note
         </button>
+      </div>
+
+      {/* Filtri */}
+      <div className="mb-6 p-4 border rounded bg-white">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+          <div>
+            <label className="block text-sm font-medium mb-1">Dal</label>
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Al</label>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="border rounded px-2 py-1 w-full"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              className="bg-gray-700 text-white px-3 py-2 rounded w-full"
+              onClick={() => fetchNoteList({ date_from: dateFrom || undefined, date_to: dateTo || undefined })}
+            >
+              Filtra per data
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button className="bg-gray-400 text-white px-3 py-2 rounded w-full" onClick={() => fetchNoteList()}>
+              Mostra tutte
+            </button>
+            {lastJobId && (
+              <button
+                className="bg-indigo-600 text-white px-3 py-2 rounded w-full"
+                onClick={() => fetchNoteList({ job_id: lastJobId })}
+                title="Mostra solo le note generate dall'ultimo job"
+              >
+                Ultimo job
+              </button>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Job status */}
@@ -172,7 +216,7 @@ export default function NoteCreditoResoPage() {
       {note.length > 0 && (
         <div>
           <div className="flex justify-between items-center mb-2">
-            <span className="font-semibold">Note di credito generate: {note.length}</span>
+            <span className="font-semibold">Note di credito: {note.length}</span>
             <button
               className="bg-green-600 text-white px-3 py-1 rounded"
               disabled={!selectedIds.length}
@@ -211,10 +255,7 @@ export default function NoteCreditoResoPage() {
                   <td>{renderTotale(n)}</td>
                   <td>{n.stato}</td>
                   <td>
-                    <button
-                      className="bg-blue-500 text-white px-2 py-1 rounded"
-                      onClick={() => downloadXML(n.id)}
-                    >
+                    <button className="bg-blue-500 text-white px-2 py-1 rounded" onClick={() => downloadXML(n.id)}>
                       XML
                     </button>
                   </td>
