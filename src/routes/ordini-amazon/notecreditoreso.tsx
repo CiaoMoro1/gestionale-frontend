@@ -1,6 +1,10 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
+
+type Articolo = {
+  prezzo_totale?: number;
+};
 
 type Nota = {
   id: number;
@@ -11,7 +15,8 @@ type Nota = {
   xml_url: string;
   imponibile?: number;
   iva?: number;
-  totale?: number; // può non esserci: tienilo opzionale
+  totale?: number;          // potrebbe non esserci
+  articoli?: Articolo[];    // <-- nuovo: arriva dal backend
   stato: string;
   created_at: string;
 };
@@ -31,23 +36,27 @@ type JobStatus = {
 };
 
 export default function NoteCreditoResoPage() {
-  // ↓↓↓ CAMBIATO: due file separati
-  const [returnItemsFile, setReturnItemsFile] = useState<File | null>(null);
-  const [returnSummaryFile, setReturnSummaryFile] = useState<File | null>(null);
-
+  const [itemsFile, setItemsFile] = useState<File | null>(null);
+  const [summaryFile, setSummaryFile] = useState<File | null>(null); // <-- nuovo opzionale
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [note, setNote] = useState<Nota[]>([]);
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  const uploadFiles = async () => {
-    if (!returnItemsFile) return; // obbligatorio
+  // 1) choose files
+  const handleItemsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setItemsFile(e.target.files?.[0] || null);
+  };
+  const handleSummaryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setSummaryFile(e.target.files?.[0] || null);
+  };
 
+  // 2) upload both (items required, summary optional) — field names MUST match backend
+  const uploadFiles = async () => {
+    if (!itemsFile) return;
     const formData = new FormData();
-    formData.append("return_items", returnItemsFile);
-    if (returnSummaryFile) {
-      formData.append("return_summary", returnSummaryFile);
-    }
+    formData.append("return_items", itemsFile);        // <-- NOME CAMPO CORRETTO
+    if (summaryFile) formData.append("return_summary", summaryFile); // <-- opzionale
 
     setJobStatus(null);
     setNote([]);
@@ -58,9 +67,14 @@ export default function NoteCreditoResoPage() {
       body: formData,
     });
     const data = await resp.json();
-    if (data?.job_id) pollJob(data.job_id);
+    if (data?.job_id) {
+      pollJob(data.job_id);
+    } else {
+      setJobStatus({ status: "failed", error: "Upload fallito" });
+    }
   };
 
+  // 3) poll job
   const pollJob = (jid: string) => {
     if (pollingRef.current) clearInterval(pollingRef.current);
     const interval = setInterval(async () => {
@@ -75,12 +89,14 @@ export default function NoteCreditoResoPage() {
     pollingRef.current = interval;
   };
 
+  // 4) list notes
   const fetchNoteList = async () => {
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list`);
     const data: Nota[] = await resp.json();
     setNote(data || []);
   };
 
+  // 5) download single / zip
   const downloadXML = (id: number) => {
     window.open(`${API_BASE_URL}/api/notecredito_amazon_reso/download/${id}`, "_blank");
   };
@@ -104,9 +120,16 @@ export default function NoteCreditoResoPage() {
   };
 
   const toggleId = (id: number) => {
-    setSelectedIds((prev) =>
-      prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]
-    );
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((i) => i !== id) : [...prev, id]));
+  };
+
+  // calcolo totale lato client se il backend non lo invia
+  const renderTotale = (n: Nota) => {
+    if (typeof n.totale === "number") return n.totale.toFixed(2);
+    const sum = (n.articoli || []).reduce((acc, a) => acc + (a.prezzo_totale || 0), 0);
+    if (sum > 0) return sum.toFixed(2);
+    return "—";
+    // (volendo potresti mostrare imponibile+iva se presenti)
   };
 
   return (
@@ -114,35 +137,26 @@ export default function NoteCreditoResoPage() {
       <h1 className="text-2xl font-bold mb-4">Note di Credito Amazon Vendor - VRET</h1>
 
       {/* Upload files */}
-      <div className="mb-6 p-4 border rounded bg-white space-y-3">
-        <div>
-          <label className="block font-medium mb-1">Return_Items.csv (obbligatorio)</label>
-          <input
-            type="file"
-            accept=".csv"
-            onChange={(e) => setReturnItemsFile(e.target.files?.[0] || null)}
-          />
+      <div className="mb-6 p-4 border rounded bg-white">
+        <div className="mb-3">
+          <label className="block font-medium mb-2">Carica file Return_Items.csv (obbligatorio)</label>
+          <input type="file" accept=".csv" onChange={handleItemsChange} />
         </div>
-
-        <div>
-          <label className="block font-medium mb-1">Return_Summary (.xls/.xlsx) — opzionale</label>
-          <input
-            type="file"
-            accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            onChange={(e) => setReturnSummaryFile(e.target.files?.[0] || null)}
-          />
+        <div className="mb-4">
+          <label className="block font-medium mb-2">Carica Return_Summary (opzionale: .xls/.xlsx)</label>
+          <input type="file" accept=".xls,.xlsx" onChange={handleSummaryChange} />
         </div>
 
         <button
           className="bg-blue-600 text-white px-4 py-2 rounded"
-          disabled={!returnItemsFile}
+          disabled={!itemsFile}
           onClick={uploadFiles}
         >
           Carica e genera note
         </button>
       </div>
 
-      {/* Stato job */}
+      {/* Job status */}
       {jobStatus && (
         <div className="mb-4">
           <div>
@@ -154,7 +168,7 @@ export default function NoteCreditoResoPage() {
         </div>
       )}
 
-      {/* Lista note */}
+      {/* Notes table */}
       {note.length > 0 && (
         <div>
           <div className="flex justify-between items-center mb-2">
@@ -194,7 +208,7 @@ export default function NoteCreditoResoPage() {
                   <td>{n.data_nota}</td>
                   <td>{n.po}</td>
                   <td>{n.vret}</td>
-                  <td>{n.totale != null ? n.totale.toFixed(2) : "-"}</td>
+                  <td>{renderTotale(n)}</td>
                   <td>{n.stato}</td>
                   <td>
                     <button
