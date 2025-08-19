@@ -7,6 +7,16 @@ import SlideToConfirm from "../../components/SlideToConfirm";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
+
+type SaveWipPayload = {
+  parziali: RigaParziale[];
+  confermaCollo: Record<number, boolean>;
+  merge?: boolean;
+  numero_parziale?: number;
+  client_last_modified_at?: string;
+};
+
+
 type Articolo = {
   model_number: string;        // SKU
   vendor_product_id: string;   // EAN
@@ -128,6 +138,9 @@ export default function DettaglioDestinazione() {
   const [skuSearchError, setSkuSearchError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
+  const [toast, setToast] = useState<string | null>(null);
+
+
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
   // Filtro ricerca globale
@@ -248,34 +261,125 @@ export default function DettaglioDestinazione() {
   }
 
   async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: Record<number, boolean>) {
+    if (!center || !data) return;
     setIsBusy(true);
-    await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${center}&data=${data}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ parziali: nextParziali, confermaCollo: nextConfermaCollo }),
-    });
-    setParziali(nextParziali);
-    setConfermaCollo(nextConfermaCollo);
-    setIsBusy(false);
+    try {
+      const latest = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`).then(r=>r.json());
+      const serverParziali: RigaParziale[] = Array.isArray(latest) ? latest : (latest?.parziali ?? []);
+      const serverConferma: Record<number, boolean> = Array.isArray(latest) ? {} : (latest?.confermaCollo ?? {});
+      const serverTs: string | undefined = Array.isArray(latest) ? undefined : latest?.last_modified_at;
+
+      const payload: SaveWipPayload = {
+        parziali: nextParziali.length ? nextParziali : serverParziali,
+        confermaCollo: { ...serverConferma, ...nextConfermaCollo },
+        merge: true,
+      };
+      if (serverTs) payload.client_last_modified_at = serverTs;
+
+      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
+      });
+
+      if (res.status === 409) {
+        setToast("Aggiornato altrove, ricarico…"); setTimeout(()=>setToast(null), 3000);
+        await reloadAll(); return;
+      }
+      if (!res.ok) { setToast("Errore salvataggio."); setTimeout(()=>setToast(null), 3000); return; }
+
+      setParziali(payload.parziali);
+      setConfermaCollo(payload.confermaCollo);
+    } finally { setIsBusy(false); }
   }
+
+
   async function salvaParzialiLiveGenerico(art: Articolo | null, nextInputs: RigaInput[]) {
-    if (!art) return;
+    if (!art || !center || !data) return;
     setIsBusy(true);
-    const nuoviParziali: RigaParziale[] = nextInputs
-      .filter(r => Number(r.quantita) > 0 && r.collo > 0)
-      .map(r => ({
-        model_number: art.model_number,
-        quantita: Number(r.quantita),
-        collo: r.collo,
-        po_number: art.po_number,
-        confermato: false
-      }));
-    const altri = parziali.filter(
-      p => p.model_number !== art.model_number || p.po_number !== art.po_number
-    );
-    await salvaParzialiLive([...altri, ...nuoviParziali], confermaCollo);
-    setIsBusy(false);
+
+    try {
+      // 1) prendo LO STATO CORRENTE dal server (fonte di verità)
+      const latest = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`
+      ).then(r => r.json());
+
+      // latest può essere [] (API attuale) oppure {parziali, confermaCollo, numero_parziale,...}
+      const serverParziali: RigaParziale[] = Array.isArray(latest)
+        ? latest
+        : (latest?.parziali ?? []);
+      const serverConferma: Record<number, boolean> = Array.isArray(latest)
+        ? {}
+        : (latest?.confermaCollo ?? {});
+      const serverNumeroParziale: number | undefined = Array.isArray(latest)
+        ? undefined
+        : latest?.numero_parziale;
+      const serverUpdatedAt: string | undefined = Array.isArray(latest)
+        ? undefined
+        : latest?.last_modified_at;
+
+      // 2) costruisco i parziali NUOVI per questo articolo (solo righe valide)
+      const nuoviParziali: RigaParziale[] = nextInputs
+        .filter(r => Number(r.quantita) > 0 && r.collo > 0)
+        .map(r => ({
+          model_number: art.model_number,
+          quantita: Number(r.quantita),
+          collo: r.collo,
+          po_number: art.po_number,
+          confermato: false,
+        }));
+
+      // 3) MERGE: tengo TUTTO ciò che non è dell’articolo, e sostituisco solo l’articolo corrente
+      const mergedParziali = [
+        ...serverParziali.filter(
+          p => !(p.model_number === art.model_number && p.po_number === art.po_number)
+        ),
+        ...nuoviParziali,
+      ];
+
+      // 4) salvo lato server con modalità merge; invio versione (se disponibile) per evitare race
+      const payload: SaveWipPayload = {
+        parziali: mergedParziali,
+        confermaCollo: serverConferma,
+        merge: true,
+      };
+      if (serverNumeroParziale !== undefined) payload.numero_parziale = serverNumeroParziale;
+      if (serverUpdatedAt) payload.client_last_modified_at = serverUpdatedAt;
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
+
+      // 409 = conflitto versione (qualcun altro ha salvato prima di te)
+      if (res.status === 409) {
+        setToast("Aggiornamento rifiutato: i colli sono cambiati da un altro dispositivo. Ricarico…");
+        setTimeout(() => setToast(null), 3000);
+        await reloadAll();
+        return;
+      }
+      if (!res.ok) {
+        setToast("Errore nel salvataggio. Riprova.");
+        return;
+      }
+
+      // 5) aggiorno UI locale coerentemente
+      setParziali(mergedParziali);
+      setConfermaCollo(serverConferma);
+    } catch (err) {
+      console.error("salvaParzialiLiveGenerico merge error:", err);
+      setToast("Errore di rete nel salvataggio.");
+    } finally {
+      setIsBusy(false);
+    }
   }
+
   async function resetParzialiWip() {
     if (!center || !data) return;
     setIsBusy(true);
@@ -847,13 +951,23 @@ export default function DettaglioDestinazione() {
                 {collo.confermato && (
                   <div className="absolute top-2 right-2 text-green-500">
                     <CheckCircle size={20} />
-                  </div>
+                  </div>                
                 )}
               </div>
             ))}
           </div>
         )}
       </div>
+      {/* Toast globale UNA sola volta */}
+      {toast && (
+        <div
+          className="fixed bottom-4 right-4 z-[9999] bg-neutral-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg"
+          role="status"
+          aria-live="polite"
+        >
+          {toast}
+        </div>
+      )}
 
       {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
