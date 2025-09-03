@@ -25,7 +25,6 @@ import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";
 import NoteCreditoResoPage from "./routes/ordini-amazon/notecreditoreso";
 
 
-
 // Lazy load delle route
 const HomePage = lazy(() => import("./routes/Home"));
 const Prodotti = lazy(() => import("./routes/Prodotti"));
@@ -41,6 +40,7 @@ const OrdiniAmazonDashboard = lazy(() => import("./routes/ordini-amazon/dashboar
 const EtichetteVendor = lazy(() => import("./routes/ordini-amazon/etichettevendor"));
 const PrelievoAmazon = lazy(() => import("./routes/ordini-amazon/prelievo"));
 const FattureVendor = lazy(() => import("./routes/ordini-amazon/fatturevendor"));
+const NoteCreditoOrdini = lazy(() => import("./routes/ordini-amazon/notecreditoordini"));
 
 
 
@@ -139,6 +139,8 @@ function AppContent() {
               <Route path="/produzione-vendor" element={<ProduzioneVendor />} />
               <Route path="/ordini-amazon/fatturevendor" element={<FattureVendor />} />
               <Route path="/ordini-amazon/notecreditoreso" element={<NoteCreditoResoPage />} />
+              <Route path="/ordini-amazon/nota-credito-upload" element={<NoteCreditoOrdini />} />
+
 
 
 
