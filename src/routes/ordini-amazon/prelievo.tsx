@@ -148,10 +148,42 @@ export default function DettaglioPrelievo() {
   const allRadici = Array.from(new Set(allPrelieviData.map(r => r.radice))).filter(Boolean);
 
   // --- Filtro ricerca
-  const queryWords = normalizza(search).split(" ").filter(Boolean);
-  let prelieviToShow = search.length > 0
-    ? prelievi.filter(r => matchAllWords(r.sku + " " + r.ean, queryWords))
-    : prelievi;
+// --- Filtro ricerca avanzato (supporta "suffisso;" sugli SKU)
+function normalizeTight(s: string) {
+  // solo a-z0-9, senza spazi: utile per endsWith robusto
+  return (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+const raw = (search || "").trim();
+const tokens = raw.split(/\s+/).filter(Boolean);
+
+// token che terminano con ';' = filtro "SKU termina con ..."
+const suffixTokens = tokens
+  .filter(t => t.endsWith(";"))
+  .map(t => t.slice(0, -1))
+  .map(normalizeTight)
+  .filter(Boolean);
+
+const normalTokens = tokens
+  .filter(t => !t.endsWith(";"))
+  .map(normalizza);   // normalizzo solo i token "normali"
+
+let prelieviToShow = search.length > 0
+  ? prelievi.filter(r => {
+      // match parole "normali" su SKU + EAN (logica esistente)
+      const baseOk = normalTokens.length === 0
+        ? true
+        : matchAllWords(r.sku + " " + r.ean, normalTokens);
+
+      // match suffissi SOLO su SKU
+      const skuTight = normalizeTight(r.sku);
+      const suffixOk = suffixTokens.length === 0
+        ? true
+        : suffixTokens.some(suf => skuTight.endsWith(suf));
+
+      return baseOk && suffixOk;
+    })
+  : prelievi;
 
   // --- Paginazione solo per Totali senza ricerca
   const isTotali = !radice;
