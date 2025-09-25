@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
 
@@ -134,6 +134,38 @@ export default function NoteCreditoResoPage() {
     return "—";
   };
 
+  // ======= SELEZIONA TUTTI (tri-state su visibili) =======
+  const headerCbRef = useRef<HTMLInputElement | null>(null);
+
+  const visibleIds = useMemo(() => note.map((n) => n.id), [note]);
+
+  const allVisibleSelected = useMemo(
+    () => visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id)),
+    [visibleIds, selectedIds]
+  );
+
+  const someVisibleSelected = useMemo(
+    () => selectedIds.some((id) => visibleIds.includes(id)) && !allVisibleSelected,
+    [visibleIds, selectedIds, allVisibleSelected]
+  );
+
+  useEffect(() => {
+    if (headerCbRef.current) {
+      headerCbRef.current.indeterminate = someVisibleSelected;
+    }
+  }, [someVisibleSelected]);
+
+  const toggleSelectAllVisible = () => {
+    if (allVisibleSelected) {
+      // deseleziona solo i visibili, preserva selezioni su altre liste
+      setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
+    } else {
+      // aggiunge tutti i visibili alla selezione corrente (merge, no duplicati)
+      setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+  // ================================================
+
   return (
     <div className="max-w-3xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4">Note di Credito Amazon Vendor - VRET</h1>
@@ -228,7 +260,15 @@ export default function NoteCreditoResoPage() {
           <table className="w-full border text-sm">
             <thead>
               <tr className="bg-gray-200">
-                <th></th>
+                <th className="w-10 text-center">
+                  <input
+                    ref={headerCbRef}
+                    type="checkbox"
+                    checked={allVisibleSelected}
+                    onChange={toggleSelectAllVisible}
+                    aria-label="Seleziona tutte le note visibili"
+                  />
+                </th>
                 <th>Numero</th>
                 <th>Data</th>
                 <th>PO</th>
@@ -241,11 +281,12 @@ export default function NoteCreditoResoPage() {
             <tbody>
               {note.map((n) => (
                 <tr key={n.id}>
-                  <td>
+                  <td className="text-center">
                     <input
                       type="checkbox"
                       checked={selectedIds.includes(n.id)}
                       onChange={() => toggleId(n.id)}
+                      aria-label={`Seleziona nota ${n.numero_nota}`}
                     />
                   </td>
                   <td>{n.numero_nota}</td>
