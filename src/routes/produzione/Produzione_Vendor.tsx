@@ -266,6 +266,17 @@ function movedPieces(l: LogMovimento): number | null {
   return a - b;
 }
 
+
+// Radice "per menu": per gli SKU MZ-<TOK> usiamo <TOK>, altrimenti la radice classica
+function radiceMenuKey(row: ProduzioneRow): string {
+  const sku = (row.sku || "").toUpperCase();
+  if (sku.startsWith("MZ-")) {
+    const parts = sku.split("-");
+    return (parts[1] || "MZ").trim().toUpperCase();
+  }
+  return (row.radice || "").toUpperCase();
+}
+
 /* ----------------------- Tipi per la Flow Map dei log ---------------------- */
 
 export type EdgeKey = `${StatoProduzione}->${StatoProduzione}`;
@@ -511,7 +522,7 @@ export default function ProduzioneVendor() {
   useEffect(() => {
     let filtrate = allRows.slice();
     if (statoProduzione) filtrate = filtrate.filter((r) => r.stato_produzione === (statoProduzione as StatoProduzione));
-    if (radice) filtrate = filtrate.filter((r) => r.radice === radice);
+    if (radice) filtrate = filtrate.filter((r) => radiceMenuKey(r) === radice);
     if (canale) filtrate = filtrate.filter((r) => r.canale === canale);
     if (search) filtrate = filtrate.filter((row) => matchSmart({ sku: row.sku, ean: row.ean }, search));
     filtrate.sort((a, b) => a.sku.localeCompare(b.sku, "it", { sensitivity: "base" }));
@@ -830,12 +841,15 @@ export default function ProduzioneVendor() {
   const radiciDisponibili = Array.from(
     new Set(
       allRows
-        .filter(
-          (r) => (!statoProduzione || r.stato_produzione === (statoProduzione as StatoProduzione)) && (!canale || r.canale === canale)
+        .filter((r) =>
+          (!statoProduzione || r.stato_produzione === (statoProduzione as StatoProduzione)) &&
+          (!canale || r.canale === canale)
         )
-        .map((r) => r.radice)
+        .map((r) => radiceMenuKey(r))
     )
-  ).filter(Boolean);
+  )
+    .filter(Boolean)
+  .sort((a, b) => a.localeCompare(b, "it", { sensitivity: "base" }));
   const badgeRadiceCounts = radiciDisponibili.map((rr) => ({
     radice: rr,
     count: allRows.filter(
