@@ -226,12 +226,11 @@ function badgeStato(stato: StatoProduzione) {
       ? "from-pink-100 to-pink-300 border-pink-400 text-pink-700"
       : stato === "Trasferito"
       ? "from-gray-200 to-gray-300 border-gray-400 text-gray-700"
-      : "from-red-100 to-red-200 border-red-400 text-red-800";
+      : stato === "Deposito"                         // <<< aggiungi questo ramo
+      ? "from-amber-100 to-amber-200 border-amber-400 text-amber-800"
+      : "from-red-100 to-red-200 border-red-400 text-red-800"; // Rimossi
   return (
-    <span
-      className={`inline-block rounded-full border px-3 py-1 font-semibold text-xs bg-gradient-to-tr ${color} shadow glass transition-all animate-badge-state`}
-      style={{ letterSpacing: 1 }}
-    >
+    <span className={`inline-block rounded-full border px-3 py-1 font-semibold text-xs bg-gradient-to-tr ${color} shadow glass transition-all animate-badge-state`} style={{ letterSpacing: 1 }}>
       {stato}
     </span>
   );
@@ -1181,6 +1180,7 @@ export default function ProduzioneVendor() {
                                   x.start_delivery === r.start_delivery &&
                                   x.stato_produzione !== "Da Stampare" &&
                                   x.stato_produzione !== "Rimossi" &&
+                                  x.stato_produzione !== "Deposito" &&
                                   x.canale === r.canale
                               )
                               .reduce((sum, x) => sum + (x.da_produrre || 0), 0);
@@ -1633,7 +1633,10 @@ export default function ProduzioneVendor() {
                     return (
                       <button
                         key={c}
-                        onClick={() => setLogMovimentiOpen((prev) => prev && ({ ...prev, selectedCanale: c }))}
+                        onClick={() => {
+                          setLogMovimentiOpen(prev => prev && ({ ...prev, selectedCanale: c }));
+                          setCanale(c === "—" ? "" : c);   // <<< AGGIUNTO: aggiorna anche il filtro della tabella
+                        }}
                         className={`px-3 py-1 rounded-full border text-xs font-bold shadow-sm ${
                           active ? "bg-cyan-600 border-cyan-700 text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
                         }`}
