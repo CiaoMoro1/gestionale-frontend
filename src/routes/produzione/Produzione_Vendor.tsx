@@ -124,6 +124,12 @@ const STATE_STYLES: Record<StatoProduzione, { fill: string; stroke: string; text
   "Deposito":      { fill: "#fff7ed", stroke: "#fb923c", text: "#7c2d12", glow: "rgba(251,146,60,.25)" }, // <<< NEW (ambra tenue)
   "Rimossi":       { fill: "#fee2e2", stroke: "#f87171", text: "#7f1d1d", glow: "rgba(248,113,113,.35)" },
 };
+
+
+
+
+
+
 /* ------------------------------ Utilità testo ----------------------------- */
 function delta(oldV?: number | null, newV?: number | null, unit = "pezzi"): string {
   const a = typeof oldV === "number" ? oldV : undefined;
@@ -465,6 +471,15 @@ export default function ProduzioneVendor() {
   const scrollTopRef = useRef<HTMLDivElement>(null);
   const scrollTableRef = useRef<HTMLDivElement>(null);
 
+  
+// ADD vicino agli altri useState/useRef
+const logsCacheRef = useRef<Map<number, LogMovimento[]>>(new Map());
+const [lastOpenedRowId, setLastOpenedRowId] = useState<number | null>(null);
+
+
+// riga -> elemento DOM per scroll-back
+const rowRefs = useRef<Map<number, HTMLTableRowElement>>(new Map());
+
   /* ------------------------- Gestione dropdown chiusura ------------------------- */
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -669,11 +684,13 @@ export default function ProduzioneVendor() {
   }
 
   async function openMovimentiLog(produzioneId: number, sku?: string): Promise<void> {
+    setLastOpenedRowId(produzioneId);
+
     // 1) leggi riga produzione per meta (canale, ean, start_delivery)
     const prodRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}`, { headers: headersJson() });
     const prodRow = (await prodRes.json()) as Partial<ProduzioneRow> | null;
 
-    // 2) prepara stato iniziale modale (vuoto -> per skeleton veloce)
+    // 2) stato iniziale modale
     setLogMovimentiOpen({
       id: produzioneId,
       sku: prodRow?.sku ?? sku,
@@ -681,30 +698,36 @@ export default function ProduzioneVendor() {
       start_delivery: prodRow?.start_delivery ?? null,
       canale: prodRow?.canale ?? null,
       canaliDisponibili: Array.from(new Set(allRows.filter(r => r.sku === (prodRow?.sku ?? sku)).map(r => r.canale ?? "—"))),
-      selectedCanale: (prodRow?.canale ?? null),
+      selectedCanale: (prodRow?.canale ?? null), // locale alla modale
       data: [],
       graph: { nodes: FLOW_STATES, edges: [] },
     });
 
-    // 3) carica log unificati (compatti) con fallback legacy
-    let res: Response;
-    try {
-      res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log-unified?compact=1`, { headers: headersJson() });
-    } catch {
-      res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log`, { headers: headersJson() });
+    // 3) cerca in cache
+    let clean: LogMovimento[];
+    if (logsCacheRef.current.has(produzioneId)) {
+      clean = logsCacheRef.current.get(produzioneId)!;
+    } else {
+      // 3a) carica unified (compatto) con fallback
+      let res: Response;
+      try {
+        res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log-unified?compact=1`, { headers: headersJson() });
+      } catch {
+        res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log`, { headers: headersJson() });
+      }
+      const arr = (await res.json()) as LogMovimento[] | { data?: LogMovimento[] };
+      const raw = Array.isArray(arr) ? arr : arr?.data ?? [];
+      clean = dedupeLogs(
+        raw.map((l) => ({
+          ...l,
+          motivo: normalizeMotivo(l.motivo),
+          utente: normalizeUtente(l.utente),
+        }))
+      );
+      logsCacheRef.current.set(produzioneId, clean);
     }
-    const arr = (await res.json()) as LogMovimento[] | { data?: LogMovimento[] };
-    const raw = Array.isArray(arr) ? arr : arr?.data ?? [];
 
-    // 4) normalizza + dedupe + build grafo
-    const clean = dedupeLogs(
-      raw.map((l) => ({
-        ...l,
-        motivo: normalizeMotivo(l.motivo),
-        utente: normalizeUtente(l.utente),
-      }))
-    );
-
+    // 4) build grafo (indipendente dal canale; i totali si filtrano in render)
     setLogMovimentiOpen((prev) => prev && ({
       ...prev,
       data: clean,
@@ -1151,8 +1174,10 @@ export default function ProduzioneVendor() {
               return (
                 <tr
                   key={r.id}
-                  className={`${rowBg} ${isGroupStart ? "border-t-2 border-slate-200" : ""} transition-colors duration-150 hover:brightness-95`}
+                  ref={(el) => { if (el) rowRefs.current.set(r.id, el); }}
+                  className={`${rowBg} ${isGroupStart ? "border-t-2 border-slate-200" : ""} transition-colors duration-150 hover:brightness-95 ${lastOpenedRowId===r.id ? "ring-2 ring-cyan-300" : ""}`}
                 >
+
                   <td className="px-3 py-2">
                     <input
                       type="checkbox"
@@ -1176,12 +1201,12 @@ export default function ProduzioneVendor() {
                               .filter(
                                 (x) =>
                                   x.sku === r.sku &&
-                                  x.ean === r.ean &&
-                                  x.start_delivery === r.start_delivery &&
+                                  (x.ean ?? "") === (r.ean ?? "") &&
+                                  (x.start_delivery ?? "") === (r.start_delivery ?? "") &&
+                                  x.canale === r.canale &&
                                   x.stato_produzione !== "Da Stampare" &&
                                   x.stato_produzione !== "Rimossi" &&
-                                  x.stato_produzione !== "Deposito" &&
-                                  x.canale === r.canale
+                                  x.stato_produzione !== "Deposito"
                               )
                               .reduce((sum, x) => sum + (x.da_produrre || 0), 0);
                             return Math.max(qty - riscontro - lavorati, 0) + plus;
@@ -1622,8 +1647,8 @@ export default function ProduzioneVendor() {
             <div className="text-xl font-extrabold text-slate-900 tracking-tight">
               Flusso movimenti · <span className="font-mono font-black">{logMovimentiOpen.sku || "—"}</span>
             </div>
-
-            {/* Switch canali dello stesso SKU */}
+            
+            {/* Switch canali dello stesso SKU (locale alla modale) */}
             {Array.isArray(logMovimentiOpen.canaliDisponibili) && logMovimentiOpen.canaliDisponibili.length > 1 && (
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-500 font-semibold">Canale:</span>
@@ -1633,12 +1658,13 @@ export default function ProduzioneVendor() {
                     return (
                       <button
                         key={c}
-                        onClick={() => {
-                          setLogMovimentiOpen(prev => prev && ({ ...prev, selectedCanale: c }));
-                          setCanale(c === "—" ? "" : c);   // <<< AGGIUNTO: aggiorna anche il filtro della tabella
-                        }}
+                        onClick={() =>
+                          setLogMovimentiOpen(prev => prev && ({ ...prev, selectedCanale: c }))
+                        }
                         className={`px-3 py-1 rounded-full border text-xs font-bold shadow-sm ${
-                          active ? "bg-cyan-600 border-cyan-700 text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                          active
+                            ? "bg-cyan-600 border-cyan-700 text-white"
+                            : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
                         }`}
                       >
                         {c}
@@ -1649,7 +1675,22 @@ export default function ProduzioneVendor() {
               </div>
             )}
 
-            <button className="text-2xl text-slate-400 hover:text-slate-700" onClick={() => setLogMovimentiOpen(null)} aria-label="Chiudi">
+
+            <button
+              className="text-2xl text-slate-400 hover:text-slate-700"
+              onClick={() => {
+                setLogMovimentiOpen(null);
+                // torna alla riga aperta e illumina per un attimo
+                if (lastOpenedRowId !== null) {
+                  const el = rowRefs.current.get(lastOpenedRowId);
+                  if (el) {
+                    el.scrollIntoView({ block: "center", behavior: "smooth" });
+                    setTimeout(() => setLastOpenedRowId(null), 650); // rimuovi ring dopo ~0.6s
+                  }
+                }
+              }}
+              aria-label="Chiudi"
+            >
               ×
             </button>
           </div>
