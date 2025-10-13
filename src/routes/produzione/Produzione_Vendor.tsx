@@ -109,7 +109,15 @@ const STATI_PRODUZIONE: StatoProduzione[] = [
   "Trasferito",
   "Rimossi",
 ];
-
+const STATE_STYLES: Record<StatoProduzione, { fill: string; stroke: string; text: string; glow: string }> = {
+  "Da Stampare":   { fill: "#dbeafe", stroke: "#60a5fa", text: "#0c4a6e", glow: "rgba(96,165,250,.35)" },
+  "Stampato":      { fill: "#dcfce7", stroke: "#4ade80", text: "#065f46", glow: "rgba(74,222,128,.35)" },
+  "Calandrato":    { fill: "#ede9fe", stroke: "#a78bfa", text: "#4c1d95", glow: "rgba(167,139,250,.35)" },
+  "Cucito":        { fill: "#ffedd5", stroke: "#fb923c", text: "#7c2d12", glow: "rgba(251,146,60,.35)" },
+  "Confezionato":  { fill: "#fce7f3", stroke: "#f472b6", text: "#831843", glow: "rgba(244,114,182,.35)" },
+  "Trasferito":    { fill: "#e5e7eb", stroke: "#9ca3af", text: "#111827", glow: "rgba(156,163,175,.35)" },
+  "Rimossi":       { fill: "#fee2e2", stroke: "#f87171", text: "#7f1d1d", glow: "rgba(248,113,113,.35)" },
+};
 /* ------------------------------ Utilità testo ----------------------------- */
 function delta(oldV?: number | null, newV?: number | null, unit = "pezzi"): string {
   const a = typeof oldV === "number" ? oldV : undefined;
@@ -183,6 +191,19 @@ function badgeCanale(c?: string) {
       {c || "—"}
     </span>
   );
+}
+
+function totalsByStateForSku(all: ProduzioneRow[], sku?: string, canale?: string | null) {
+  const out: Record<StatoProduzione, number> = {
+    "Da Stampare": 0, "Stampato": 0, "Calandrato": 0, "Cucito": 0, "Confezionato": 0, "Trasferito": 0, "Rimossi": 0
+  };
+  if (!sku) return out;
+  for (const r of all) {
+    if (r.sku !== sku) continue;
+    if (canale && r.canale !== canale) continue;
+    out[r.stato_produzione] += (r.da_produrre || 0);
+  }
+  return out;
 }
 
 function badgeStato(stato: StatoProduzione) {
@@ -327,6 +348,11 @@ export default function ProduzioneVendor() {
   const [logMovimentiOpen, setLogMovimentiOpen] = useState<{
     id: number;
     sku?: string;
+    ean?: string | null;
+    start_delivery?: string | null;
+    canale?: string | null;
+    canaliDisponibili?: string[];
+    selectedCanale?: string | null;
     data: LogMovimento[];
     graph?: FlowGraph;
   } | null>(null);
@@ -597,22 +623,49 @@ export default function ProduzioneVendor() {
   }
 
   async function openMovimentiLog(produzioneId: number, sku?: string): Promise<void> {
-    setLogMovimentiOpen({ id: produzioneId, sku, data: [] });
+    // 1) leggi riga produzione per meta (canale, ean, start_delivery)
+    const prodRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}`, { headers: headersJson() });
+    const prodRow = (await prodRes.json()) as Partial<ProduzioneRow> | null;
+
+    // 2) prepara stato iniziale modale (vuoto -> per skeleton veloce)
+    setLogMovimentiOpen({
+      id: produzioneId,
+      sku: prodRow?.sku ?? sku,
+      ean: prodRow?.ean ?? null,
+      start_delivery: prodRow?.start_delivery ?? null,
+      canale: prodRow?.canale ?? null,
+      canaliDisponibili: Array.from(new Set(allRows.filter(r => r.sku === (prodRow?.sku ?? sku)).map(r => r.canale ?? "—"))),
+      selectedCanale: (prodRow?.canale ?? null),
+      data: [],
+      graph: { nodes: FLOW_STATES, edges: [] },
+    });
+
+    // 3) carica log unificati (compatti) con fallback legacy
     let res: Response;
     try {
-      res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log-unified?compact=1`, {
-        headers: headersJson(),
-      });
+      res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log-unified?compact=1`, { headers: headersJson() });
     } catch {
       res = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/${produzioneId}/log`, { headers: headersJson() });
     }
     const arr = (await res.json()) as LogMovimento[] | { data?: LogMovimento[] };
-    const data = Array.isArray(arr) ? arr : arr?.data ?? [];
+    const raw = Array.isArray(arr) ? arr : arr?.data ?? [];
+
+    // 4) normalizza + dedupe + build grafo
     const clean = dedupeLogs(
-      data.map((l) => ({ ...l, motivo: normalizeMotivo(l.motivo), utente: normalizeUtente(l.utente) }))
+      raw.map((l) => ({
+        ...l,
+        motivo: normalizeMotivo(l.motivo),
+        utente: normalizeUtente(l.utente),
+      }))
     );
-    setLogMovimentiOpen({ id: produzioneId, sku, data: clean, graph: buildFlowGraph(clean) });
+
+    setLogMovimentiOpen((prev) => prev && ({
+      ...prev,
+      data: clean,
+      graph: buildFlowGraph(clean),
+    }));
   }
+
 
   async function openCavallottoPdf(sku: string, formato: string): Promise<void> {
     window.open(
@@ -1511,179 +1564,212 @@ export default function ProduzioneVendor() {
       )}
 
       {logMovimentiOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-2xl border w-full max-w-4xl animate-fade-in relative p-0 overflow-hidden">
-            <div className="px-6 py-4 border-b bg-gradient-to-br from-slate-50 to-white flex items-center justify-between">
-              <div className="text-xl font-extrabold text-slate-900 tracking-tight">
-                Flusso movimenti · <span className="font-mono font-black">{logMovimentiOpen.sku || "—"}</span>
-              </div>
-              <button
-                className="text-2xl text-slate-400 hover:text-slate-700"
-                onClick={() => setLogMovimentiOpen(null)}
-                aria-label="Chiudi"
-              >
-                ×
-              </button>
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+        <div className="bg-white rounded-2xl shadow-2xl border w-full max-w-5xl animate-fade-in relative p-0 overflow-hidden">
+          {/* Header */}
+          <div className="px-6 py-4 border-b bg-gradient-to-br from-slate-50 to-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-xl font-extrabold text-slate-900 tracking-tight">
+              Flusso movimenti · <span className="font-mono font-black">{logMovimentiOpen.sku || "—"}</span>
             </div>
-            <div className="px-6 py-5 bg-slate-50/60">
-              {(() => {
-                const graph = logMovimentiOpen.graph;
-                if (!graph || graph.edges.length === 0) {
-                  return <div className="text-center text-slate-500 py-10">Nessun movimento registrato.</div>;
-                }
-                const width = 980;
-                const height = 280;
-                const paddingX = 60;
-                const nodeRadius = 22;
-                const step = (width - paddingX * 2) / (FLOW_STATES.length - 1);
-                const nodeY = 120;
-                const positions = new Map<StatoProduzione, { x: number; y: number }>();
-                FLOW_STATES.forEach((st, i) => positions.set(st, { x: paddingX + i * step, y: nodeY }));
-                const edgeStroke = (from: StatoProduzione, to: StatoProduzione): { dasharray?: string } => {
-                  const iFrom = FLOW_STATES.indexOf(from);
-                  const iTo = FLOW_STATES.indexOf(to);
-                  return iTo < iFrom ? { dasharray: "6,6" } : {};
+
+            {/* Switch canali dello stesso SKU */}
+            {Array.isArray(logMovimentiOpen.canaliDisponibili) && logMovimentiOpen.canaliDisponibili.length > 1 && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 font-semibold">Canale:</span>
+                <div className="flex gap-1 flex-wrap">
+                  {logMovimentiOpen.canaliDisponibili.map((c) => {
+                    const active = c === (logMovimentiOpen.selectedCanale ?? logMovimentiOpen.canale ?? c);
+                    return (
+                      <button
+                        key={c}
+                        onClick={() => setLogMovimentiOpen((prev) => prev && ({ ...prev, selectedCanale: c }))}
+                        className={`px-3 py-1 rounded-full border text-xs font-bold shadow-sm ${
+                          active ? "bg-cyan-600 border-cyan-700 text-white" : "bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        {c}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <button className="text-2xl text-slate-400 hover:text-slate-700" onClick={() => setLogMovimentiOpen(null)} aria-label="Chiudi">
+              ×
+            </button>
+          </div>
+
+          {/* Flow map */}
+          <div className="px-6 py-5 bg-slate-50/60">
+            {(() => {
+              const graph = logMovimentiOpen.graph;
+              const selCanale = logMovimentiOpen.selectedCanale ?? logMovimentiOpen.canale ?? null;
+              const totals = totalsByStateForSku(allRows, logMovimentiOpen.sku, selCanale);
+
+              if (!graph || graph.edges.length === 0) {
+                return <div className="text-center text-slate-500 py-10">Nessun movimento registrato.</div>;
+              }
+
+              // layout
+              const width = 1100;
+              const height = 320;
+              const paddingX = 70;
+              const nodeRadius = 28; // più grande
+              const step = (width - paddingX * 2) / (FLOW_STATES.length - 1);
+              const nodeY = 140;
+
+              const positions = new Map<StatoProduzione, { x: number; y: number }>();
+              FLOW_STATES.forEach((st, i) => positions.set(st, { x: paddingX + i * step, y: nodeY }));
+
+              const edgeStyle = (from: StatoProduzione, to: StatoProduzione) => {
+                const iFrom = FLOW_STATES.indexOf(from);
+                const iTo = FLOW_STATES.indexOf(to);
+                return {
+                  dasharray: iTo < iFrom ? "6,6" : undefined,
+                  color: iTo < iFrom ? "#b45309" : "#0e7490", // retro: amber / avanti: cyan
                 };
-                const edgeColor = (from: StatoProduzione, to: StatoProduzione): string => {
-                  const iFrom = FLOW_STATES.indexOf(from);
-                  const iTo = FLOW_STATES.indexOf(to);
-                  return iTo < iFrom ? "#b45309" : "#0e7490";
-                };
-                const labelFor = (from: StatoProduzione, to: StatoProduzione, qty: number): string => {
-                  const iFrom = FLOW_STATES.indexOf(from);
-                  const iTo = FLOW_STATES.indexOf(to);
-                  const suffix = iTo < iFrom ? "rientrati" : "spostati";
-                  return `${qty} ${suffix}`;
-                };
-                return (
-                  <svg
-                    width="100%"
-                    height={height}
-                    viewBox={`0 0 ${width} ${height}`}
-                    role="img"
-                    aria-label="Mappa flusso movimenti"
-                  >
-                    {graph.edges.map(({ from, to, qty }, idx) => {
-                      const p1 = positions.get(from)!;
-                      const p2 = positions.get(to)!;
-                      const dx = Math.abs(p2.x - p1.x);
-                      const dir = p2.x >= p1.x ? 1 : -1;
-                      const curvature = Math.min(80, 24 + dx * 0.2);
-                      const c1x = p1.x + dir * curvature;
-                      const c1y = p1.y - 40;
-                      const c2x = p2.x - dir * curvature;
-                      const c2y = p2.y - 40;
-                      const pathD = `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
-                      const midX = (p1.x + p2.x) / 2;
-                      const midY = Math.min(p1.y, p2.y) - 48;
-                      const strokeProps = edgeStroke(from, to);
-                      const color = edgeColor(from, to);
-                      return (
-                        <g key={`${from}-${to}-${idx}`}> 
-                          <path d={pathD} fill="none" stroke={color} strokeWidth={3} {...strokeProps} />
-                          <polygon
-                            points={`${p2.x},${p2.y} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y - 6} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y + 6}`}
-                            fill={color}
-                          />
-                          <rect
-                            x={midX - 36}
-                            y={midY - 14}
-                            width="72"
-                            height="24"
-                            rx="8"
-                            fill="white"
-                            stroke={color}
-                            strokeWidth={1.2}
-                          />
-                          <text
-                            x={midX}
-                            y={midY + 3}
-                            fontSize="12"
-                            fill={color}
-                            textAnchor="middle"
-                            fontWeight={700}
-                          >
+              };
+
+              const labelFor = (from: StatoProduzione, to: StatoProduzione, qty: number): string => {
+                const iFrom = FLOW_STATES.indexOf(from);
+                const iTo = FLOW_STATES.indexOf(to);
+                const suffix = iTo < iFrom ? "rientrati" : "spostati";
+                return `${qty} ${suffix}`;
+              };
+
+              return (
+                <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mappa flusso movimenti">
+                  {/* Archi */}
+                  {graph.edges.map(({ from, to, qty }, idx) => {
+                    const p1 = positions.get(from)!;
+                    const p2 = positions.get(to)!;
+                    const dx = Math.abs(p2.x - p1.x);
+                    const dir = p2.x >= p1.x ? 1 : -1;
+                    const curvature = Math.min(90, 32 + dx * 0.22);
+                    const c1x = p1.x + dir * curvature;
+                    const c1y = p1.y - 46;
+                    const c2x = p2.x - dir * curvature;
+                    const c2y = p2.y - 46;
+                    const d = `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
+                    const { dasharray, color } = edgeStyle(from, to);
+
+                    // posizione label a ~30% della curva
+                    const t = 0.3;
+                    const midX = (1 - t) ** 3 * p1.x + 3 * (1 - t) ** 2 * t * c1x + 3 * (1 - t) * t ** 2 * c2x + t ** 3 * p2.x;
+                    const midY = (1 - t) ** 3 * p1.y + 3 * (1 - t) ** 2 * t * c1y + 3 * (1 - t) * t ** 2 * c2y + t ** 3 * p2.y - 14;
+
+                    return (
+                      <g key={`${from}-${to}-${idx}`}>
+                        <path d={d} fill="none" stroke={color} strokeWidth={3.5} strokeDasharray={dasharray} />
+                        {/* freccia */}
+                        <polygon
+                          points={`${p2.x},${p2.y} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y - 6} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y + 6}`}
+                          fill={color}
+                        />
+                        {/* label */}
+                        <g>
+                          <rect x={midX - 48} y={midY - 14} width="96" height="26" rx="10" fill="white" stroke={color} opacity={0.95} />
+                          <text x={midX} y={midY + 4} fontSize="12" fontWeight={800} fill={color} textAnchor="middle">
                             {labelFor(from, to, qty)}
                           </text>
                         </g>
-                      );
-                    })}
-                    {FLOW_STATES.map((st) => {
-                      const p = positions.get(st)!;
-                      return (
-                        <g key={st}>
-                          <circle cx={p.x} cy={p.y} r={nodeRadius} fill="white" stroke="#64748b" strokeWidth="1.5" />
-                          <text x={p.x} y={p.y + 4} fontSize="11" fill="#0f172a" textAnchor="middle" fontWeight={700}>
-                            {st === "Da Stampare" ? "DS" : st[0]}
-                          </text>
-                          <text x={p.x} y={p.y + 40} fontSize="12" fill="#334155" textAnchor="middle">
-                            {st}
+                      </g>
+                    );
+                  })}
+
+                  {/* Nodi */}
+                  {FLOW_STATES.map((st) => {
+                    const p = positions.get(st)!;
+                    const sty = STATE_STYLES[st];
+                    const qty = totals[st] || 0;
+
+                    return (
+                      <g key={st}>
+                        {/* glow */}
+                        <circle cx={p.x} cy={p.y} r={nodeRadius + 9} fill={sty.glow} opacity={0.45} />
+                        {/* main */}
+                        <circle cx={p.x} cy={p.y} r={nodeRadius} fill={sty.fill} stroke={sty.stroke} strokeWidth={2.2} />
+                        {/* abbreviazione */}
+                        <text x={p.x} y={p.y + 4} fontSize="12" fontWeight={900} fill={sty.text} textAnchor="middle">
+                          {st === "Da Stampare" ? "DS" : st[0]}
+                        </text>
+                        {/* label stato */}
+                        <text x={p.x} y={p.y + 42} fontSize="12" fill="#334155" textAnchor="middle">
+                          {st}
+                        </text>
+                        {/* contatore */}
+                        <g>
+                          <rect x={p.x - 22} y={p.y + 52} width="44" height="22" rx="8" fill="white" stroke={sty.stroke} />
+                          <text x={p.x} y={p.y + 68} fontSize="12" fontWeight={800} fill={sty.text} textAnchor="middle">
+                            {qty}
                           </text>
                         </g>
-                      );
-                    })}
-                  </svg>
-                );
-              })()}
-            </div>
-            <div className="px-6 pb-5">
-              <div className="text-sm font-semibold text-slate-700 mb-2">Dettaglio eventi (compresso)</div>
-              <div className="grid gap-2 max-h-[32vh] overflow-y-auto pr-1">
-                {logMovimentiOpen.data.map((log, i) => {
-                  const when = log.created_at ? new Date(log.created_at) : null;
-                  const dataStr = when ? when.toLocaleString("it-IT", { timeZone: "Europe/Rome" }) : "—";
-                  const qta = delta(log.qty_vecchia, log.qty_nuova, "pezzi");
-                  const pls = delta(log.plus_vecchio, log.plus_nuovo, "plus");
-                  const isSpost = (log.motivo ?? "").toLowerCase().startsWith("spostamento a");
-                  const moved = movedPieces(log);
-                  const tag = isSpost && moved !== null && moved !== 0 ? (moved > 0 ? `${moved} spostati` : `${-moved} rientrati`) : null;
-                  return (
-                    <div
-                      key={`${log.id ?? ""}-${i}`}
-                      className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-slate-500">{dataStr}</span>
-                        <span
-                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
-                            isSpost ? "bg-sky-50 text-sky-800 border-sky-200" : "bg-slate-50 text-slate-700 border-slate-200"
-                          }`}
-                        >
-                          {log.motivo}
+                      </g>
+                    );
+                  })}
+                </svg>
+              );
+            })()}
+          </div>
+
+          {/* Lista log (compatta) – lasciata invariata salvo piccoli allineamenti */}
+          <div className="px-6 pb-5">
+            <div className="text-sm font-semibold text-slate-700 mb-2">Dettaglio eventi (compresso)</div>
+            <div className="grid gap-2 max-h-[32vh] overflow-y-auto pr-1">
+              {logMovimentiOpen.data.map((log, i) => {
+                const when = log.created_at ? new Date(log.created_at) : null;
+                const dataStr = when ? when.toLocaleString("it-IT", { timeZone: "Europe/Rome" }) : "—";
+                const qta = delta(log.qty_vecchia, log.qty_nuova, "pezzi");
+                const pls = delta(log.plus_vecchio, log.plus_nuovo, "plus");
+                const isSpost = (log.motivo ?? "").toLowerCase().startsWith("spostamento a");
+                const moved = movedPieces(log);
+                const tag =
+                  isSpost && moved !== null && moved !== 0
+                    ? moved > 0
+                      ? `${moved} spostati`
+                      : `${-moved} rientrati`
+                    : null;
+
+                return (
+                  <div key={`${log.id ?? ""}-${i}`} className="rounded-xl border border-slate-200 bg-white px-3 py-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-slate-500 min-w-[170px] inline-block">{dataStr}</span>
+                      <span
+                        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold border ${
+                          isSpost ? "bg-sky-50 text-sky-800 border-sky-200" : "bg-slate-50 text-slate-700 border-slate-200"
+                        }`}
+                      >
+                        {log.motivo}
+                      </span>
+                      {(log.canale ?? log.canale_label) && (
+                        <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+                          {log.canale ?? log.canale_label}
                         </span>
-                        {(log.canale ?? log.canale_label) && (
-                          <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
-                            {log.canale ?? log.canale_label}
-                          </span>
-                        )}
-                        {tag && (
-                          <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
-                            {tag}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <span className="text-xs text-slate-600">
-                          Stato: <b>{log.stato_vecchio || "—"}</b> → <b>{log.stato_nuovo || "—"}</b>
+                      )}
+                      {tag && (
+                        <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+                          {tag}
                         </span>
-                        <span className="text-xs text-slate-600">
-                          Qty: <b>{qta}</b>
-                        </span>
-                        <span className="text-xs text-slate-600">
-                          Plus: <b>{pls}</b>
-                        </span>
-                        <span className="text-xs text-slate-500">
-                          Utente: <b>{log.utente || "Sistema"}</b>
-                        </span>
-                      </div>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
+                    <div className="flex items-center gap-4">
+                      <span className="text-xs text-slate-600">
+                        Stato: <b>{log.stato_vecchio || "—"}</b> → <b>{log.stato_nuovo || "—"}</b>
+                      </span>
+                      <span className="text-xs text-slate-600">Qty: <b>{qta}</b></span>
+                      <span className="text-xs text-slate-600">Plus: <b>{pls}</b></span>
+                      <span className="text-xs text-slate-500">Utente: <b>{log.utente || "Sistema"}</b></span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
-      )}
+      </div>
+    )}
+
 
       {cavallottoModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
