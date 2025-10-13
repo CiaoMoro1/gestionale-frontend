@@ -28,6 +28,7 @@ export type ProduzioneRow = {
     | "Cucito"
     | "Confezionato"
     | "Trasferito"
+    | "Deposito"
     | "Rimossi";
   da_produrre: number;
   cavallotti: boolean;
@@ -88,6 +89,7 @@ const FLOW_STATES: StatoProduzione[] = [
   "Cucito",
   "Confezionato",
   "Trasferito",
+  "Deposito",
 ];
 
 const TITOLO_DA_PRODURRE: Record<string, string> = {
@@ -98,6 +100,7 @@ const TITOLO_DA_PRODURRE: Record<string, string> = {
   Cucito: "Cuciti",
   Confezionato: "Confezionati",
   Trasferito: "Trasferiti",
+  Deposito: "Deposito",
   Rimossi: "Rimossi",
 };
 
@@ -108,6 +111,7 @@ const STATI_PRODUZIONE: StatoProduzione[] = [
   "Cucito",
   "Confezionato",
   "Trasferito",
+  "Deposito",
   "Rimossi",
 ];
 const STATE_STYLES: Record<StatoProduzione, { fill: string; stroke: string; text: string; glow: string }> = {
@@ -117,6 +121,7 @@ const STATE_STYLES: Record<StatoProduzione, { fill: string; stroke: string; text
   "Cucito":        { fill: "#ffedd5", stroke: "#fb923c", text: "#7c2d12", glow: "rgba(251,146,60,.35)" },
   "Confezionato":  { fill: "#fce7f3", stroke: "#f472b6", text: "#831843", glow: "rgba(244,114,182,.35)" },
   "Trasferito":    { fill: "#e5e7eb", stroke: "#9ca3af", text: "#111827", glow: "rgba(156,163,175,.35)" },
+  "Deposito":      { fill: "#fff7ed", stroke: "#fb923c", text: "#7c2d12", glow: "rgba(251,146,60,.25)" }, // <<< NEW (ambra tenue)
   "Rimossi":       { fill: "#fee2e2", stroke: "#f87171", text: "#7f1d1d", glow: "rgba(248,113,113,.35)" },
 };
 /* ------------------------------ Utilità testo ----------------------------- */
@@ -196,7 +201,7 @@ function badgeCanale(c?: string) {
 
 function totalsByStateForSku(all: ProduzioneRow[], sku?: string, canale?: string | null) {
   const out: Record<StatoProduzione, number> = {
-    "Da Stampare": 0, "Stampato": 0, "Calandrato": 0, "Cucito": 0, "Confezionato": 0, "Trasferito": 0, "Rimossi": 0
+    "Da Stampare": 0, "Stampato": 0, "Calandrato": 0, "Cucito": 0, "Confezionato": 0, "Trasferito": 0, "Deposito": 0, "Rimossi": 0
   };
   if (!sku) return out;
   for (const r of all) {
@@ -1213,7 +1218,7 @@ export default function ProduzioneVendor() {
                               rr.start_delivery === r.start_delivery &&
                               rr.canale === r.canale
                           );
-                          const statoOrder: StatoProduzione[] = ["Stampato", "Calandrato", "Cucito", "Confezionato", "Trasferito"];
+                          const statoOrder: StatoProduzione[] = ["Stampato", "Calandrato", "Cucito", "Confezionato", "Trasferito", "Deposito"];
                           const statoLabel: Record<StatoProduzione, string> = {
                             "Da Stampare": "Da Stampare",
                             Stampato: "Stampati",
@@ -1221,6 +1226,7 @@ export default function ProduzioneVendor() {
                             Cucito: "Cuciti",
                             Confezionato: "Confezionati",
                             Trasferito: "Trasferiti",
+                            Deposito: "In Deposito",
                             Rimossi: "Rimossi",
                           };
                           const parti: JSX.Element[] = [];
