@@ -76,6 +76,7 @@ export type LogMovimento = {
   utente?: string | null;
   canale?: string | null;
   canale_label?: string | null;
+  produzione_id?: number | null;
 };
 
 export type StatoProduzione = ProduzioneRow["stato_produzione"];
@@ -284,7 +285,8 @@ export type EdgeKey = `${StatoProduzione}->${StatoProduzione}`;
 export type FlowEdge = {
   from: StatoProduzione;
   to: StatoProduzione;
-  qty: number;
+  qty: number;        // 0 se ignota
+  unknown?: boolean;  // true quando la qty non è ricavabile
 };
 
 export type FlowGraph = {
@@ -292,25 +294,54 @@ export type FlowGraph = {
   edges: FlowEdge[];
 };
 
-function buildFlowGraph(logs: LogMovimento[]): FlowGraph {
-  const edgesMap = new Map<EdgeKey, number>();
-  for (const l of logs) {
-    const motivo = (l.motivo ?? "").toLowerCase();
-    const isSpost = motivo.startsWith("spostamento a");
-    const from = (l.stato_vecchio ?? "") as StatoProduzione;
-    const to = (l.stato_nuovo ?? "") as StatoProduzione;
-    if (!isSpost) continue;
-    if (!FLOW_STATES.includes(from) || !FLOW_STATES.includes(to)) continue;
-    const m = movedPieces(l);
-    const qty = m === null ? 0 : Math.abs(m);
-    if (qty <= 0) continue;
-    const key: EdgeKey = `${from}->${to}`;
-    edgesMap.set(key, (edgesMap.get(key) ?? 0) + qty);
+
+function isMoveLog(motivo?: string | null) {
+  const s = (motivo ?? "").toLowerCase();
+  return s.startsWith("spostamento a") || s.startsWith("cambio stato");
+}
+
+// Se il log non ha qty (tipico bulk), provo a stimare dai dati della riga produzione.
+// Se non riesco -> qty=0 e unknown=true (mostro freccia senza numero).
+function movedPiecesOrFallback(l: LogMovimento, all: ProduzioneRow[]): { qty: number; unknown: boolean } {
+  const a = typeof l.qty_vecchia === "number" ? l.qty_vecchia : null;
+  const b = typeof l.qty_nuova === "number" ? l.qty_nuova : null;
+  if (a !== null && b !== null) return { qty: Math.abs(a - b), unknown: false };
+
+  if (l.produzione_id) {
+    const r = all.find(x => x.id === l.produzione_id);
+    if (r && typeof r.da_produrre === "number") {
+      return { qty: Math.max(0, r.da_produrre), unknown: false };
+    }
   }
-  const edges: FlowEdge[] = [...edgesMap.entries()].map(([k, qty]) => {
+  return { qty: 0, unknown: true };
+}
+
+
+function buildFlowGraph(logs: LogMovimento[], allRows: ProduzioneRow[]): FlowGraph {
+  const edgesMap = new Map<string, { qty: number; unknown: boolean }>();
+
+  for (const l of logs) {
+    if (!isMoveLog(l.motivo)) continue;
+
+    const from = (l.stato_vecchio ?? "") as StatoProduzione;
+    const to   = (l.stato_nuovo  ?? "") as StatoProduzione;
+    if (!FLOW_STATES.includes(from) || !FLOW_STATES.includes(to)) continue;
+
+    const { qty, unknown } = movedPiecesOrFallback(l, allRows);
+    const key = `${from}->${to}`;
+    const prev = edgesMap.get(key);
+    if (!prev) {
+      edgesMap.set(key, { qty, unknown });
+    } else {
+      edgesMap.set(key, { qty: prev.qty + qty, unknown: prev.unknown || unknown });
+    }
+  }
+
+  const edges: FlowEdge[] = [...edgesMap.entries()].map(([k, v]) => {
     const [from, to] = k.split("->") as [StatoProduzione, StatoProduzione];
-    return { from, to, qty };
+    return { from, to, qty: v.qty, unknown: v.unknown };
   });
+
   return { nodes: FLOW_STATES, edges };
 }
 
@@ -673,7 +704,7 @@ export default function ProduzioneVendor() {
     setLogMovimentiOpen((prev) => prev && ({
       ...prev,
       data: clean,
-      graph: buildFlowGraph(clean),
+      graph: buildFlowGraph(clean, allRows),
     }));
   }
 
@@ -826,7 +857,7 @@ export default function ProduzioneVendor() {
     stato: st,
     count: allRows.filter(
       (r) =>
-        (!radice || r.radice === radice) &&
+        (!radice || radiceMenuKey(r) === radice) &&   // ✅
         (!search || matchSmart({ sku: r.sku, ean: r.ean }, search)) &&
         (!canale || r.canale === canale) &&
         r.stato_produzione === st
@@ -834,7 +865,7 @@ export default function ProduzioneVendor() {
   }));
   const badgeTuttiStati = allRows.filter(
     (r) =>
-      (!radice || r.radice === radice) &&
+      (!radice || radiceMenuKey(r) === radice) &&     // ✅
       (!search || matchSmart({ sku: r.sku, ean: r.ean }, search)) &&
       (!canale || r.canale === canale)
   ).length;
@@ -856,7 +887,7 @@ export default function ProduzioneVendor() {
       (row) =>
         (!statoProduzione || row.stato_produzione === (statoProduzione as StatoProduzione)) &&
         (!canale || row.canale === canale) &&
-        row.radice === rr
+        radiceMenuKey(row) === rr                       // ✅
     ).length,
   }));
   const badgeTutteRadici = allRows.filter(
@@ -1645,17 +1676,10 @@ export default function ProduzioneVendor() {
                 };
               };
 
-              const labelFor = (from: StatoProduzione, to: StatoProduzione, qty: number): string => {
-                const iFrom = FLOW_STATES.indexOf(from);
-                const iTo = FLOW_STATES.indexOf(to);
-                const suffix = iTo < iFrom ? "rientrati" : "spostati";
-                return `${qty} ${suffix}`;
-              };
-
               return (
                 <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Mappa flusso movimenti">
                   {/* Archi */}
-                  {graph.edges.map(({ from, to, qty }, idx) => {
+                  {graph.edges.map(({ from, to, qty, unknown }, idx) => {
                     const p1 = positions.get(from)!;
                     const p2 = positions.get(to)!;
                     const dx = Math.abs(p2.x - p1.x);
@@ -1668,7 +1692,12 @@ export default function ProduzioneVendor() {
                     const d = `M ${p1.x} ${p1.y} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${p2.x} ${p2.y}`;
                     const { dasharray, color } = edgeStyle(from, to);
 
-                    // posizione label a ~30% della curva
+                    const iFrom = FLOW_STATES.indexOf(from);
+                    const iTo   = FLOW_STATES.indexOf(to);
+                    const suffix = iTo < iFrom ? "rientrati" : "spostati";
+                    const label  = unknown ? `${suffix}` : `${qty} ${suffix}`;
+
+                    // … calcolo midX/midY come hai già
                     const t = 0.3;
                     const midX = (1 - t) ** 3 * p1.x + 3 * (1 - t) ** 2 * t * c1x + 3 * (1 - t) * t ** 2 * c2x + t ** 3 * p2.x;
                     const midY = (1 - t) ** 3 * p1.y + 3 * (1 - t) ** 2 * t * c1y + 3 * (1 - t) * t ** 2 * c2y + t ** 3 * p2.y - 14;
@@ -1676,16 +1705,14 @@ export default function ProduzioneVendor() {
                     return (
                       <g key={`${from}-${to}-${idx}`}>
                         <path d={d} fill="none" stroke={color} strokeWidth={3.5} strokeDasharray={dasharray} />
-                        {/* freccia */}
                         <polygon
                           points={`${p2.x},${p2.y} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y - 6} ${p2.x - 8 * (dir === 1 ? 1 : -1)},${p2.y + 6}`}
                           fill={color}
                         />
-                        {/* label */}
                         <g>
                           <rect x={midX - 48} y={midY - 14} width="96" height="26" rx="10" fill="white" stroke={color} opacity={0.95} />
                           <text x={midX} y={midY + 4} fontSize="12" fontWeight={800} fill={color} textAnchor="middle">
-                            {labelFor(from, to, qty)}
+                            {label}
                           </text>
                         </g>
                       </g>
