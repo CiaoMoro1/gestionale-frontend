@@ -1565,7 +1565,7 @@ export default function ProduzioneVendor() {
 
       {logMovimentiOpen && (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-        <div className="bg-white rounded-2xl shadow-2xl border w-full max-w-5xl animate-fade-in relative p-0 overflow-hidden">
+        <div className="bg-white rounded-2xl shadow-2xl border w-full max-w-[1400px] animate-fade-in relative p-0 overflow-hidden">
           {/* Header */}
           <div className="px-6 py-4 border-b bg-gradient-to-br from-slate-50 to-white flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xl font-extrabold text-slate-900 tracking-tight">
