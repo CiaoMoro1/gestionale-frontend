@@ -1,4 +1,4 @@
-import React, { memo, type ReactNode } from "react";
+import React, { memo, type ReactNode, useEffect, useState } from "react";
 import type { ProduzioneRow, StatoProduzione } from "@/features/produzione";
 import { badgeCanale, badgeStato, rowBgByCanale } from "@/features/produzione";
 import { Edit, Info } from "lucide-react";
@@ -66,17 +66,26 @@ function RowViewBase({
 }: Props) {
   const rowBg = rowBgByCanale(row.canale);
 
+  // Stato locale per la quantità "Da Stampare" (live UX)
+  const [localDS, setLocalDS] = useState<number>(row.da_produrre);
+  const [saving, setSaving] = useState<boolean>(false);
+  const [saved, setSaved] = useState<boolean>(false);
+
+  // Resync quando cambia riga o valore sorgente
+  useEffect(() => {
+    setLocalDS(row.da_produrre);
+    setSaving(false);
+    setSaved(false);
+  }, [row.id, row.da_produrre]);
+
   // Banda visiva laterale per SKU quando è presente almeno un'altra riga con lo stesso SKU
   const groupHasMultiple = allRows.some((r) => r !== row && r.sku === row.sku);
 
   const shadows: string[] = [];
   if (groupHasMultiple) shadows.push(`inset 6px 0 0 0 ${colorForSku(row.sku)}`); // banda SKU
-  // linea di separazione interna ai gruppi (opzionale: puoi lasciarla in Table)
-  // shadows.push("inset 0 1px 0 0 rgba(15,23,42,0.12)");
 
-  // ---- Totali flusso per CANALE: lookup O(1) dalla mappa; fallback locale esplicito
+  // Totali flusso per CANALE: lookup O(1) dalla mappa; fallback locale esplicito
   const totalsKey = `${row.sku}__${row.canale ?? ""}`;
-
   const initTotals: Record<StatoProduzione, number> = {
     "Da Stampare": 0, "Stampato": 0, "Calandrato": 0, "Cucito": 0,
     "Confezionato": 0, "Trasferito": 0, "Deposito": 0, "Rimossi": 0,
@@ -93,11 +102,14 @@ function RowViewBase({
     flowTotals = local;
   }
 
-  const initialTotal = ORDER_STATES.reduce((acc, st) => acc + (flowTotals[st] || 0), 0);
+  // Per mostrare Qty live e riepilogo: DS usa localDS, gli altri stati come da flowTotals
+  const othersTotal = ORDER_STATES
+    .filter((st) => st !== "Da Stampare")
+    .reduce((acc, st) => acc + (flowTotals[st] || 0), 0);
 
   const summaryParts: ReactNode[] = [];
   for (const st of ORDER_STATES) {
-    const q = flowTotals[st] || 0;
+    const q = st === "Da Stampare" ? localDS : (flowTotals[st] || 0);
     if (q > 0) {
       if (summaryParts.length > 0) summaryParts.push(" + ");
       summaryParts.push(
@@ -109,7 +121,7 @@ function RowViewBase({
   }
 
   const qtyColValue =
-    row.stato_produzione === "Da Stampare" ? initialTotal : row.da_produrre;
+    row.stato_produzione === "Da Stampare" ? othersTotal + localDS : row.da_produrre;
 
   return (
     <tr
@@ -159,19 +171,39 @@ function RowViewBase({
         </div>
 
         {row.stato_produzione === "Da Stampare" ? (
-          <input
-            type="number"
-            min={0}
-            defaultValue={row.da_produrre}
-            className="input input-bordered px-2 py-1 rounded-xl text-blue-800 font-bold w-20 text-center"
-            aria-label="Modifica da produrre"
-            onBlur={async (e) => {
-              const vParsed = parseInt(e.target.value, 10);
-              const v = Number.isFinite(vParsed) ? vParsed : 0;
-              if (v !== row.da_produrre) await onInlineChangeDaStampare(row.id, v);
-            }}
-            onKeyDown={(e) => { if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur(); }}
-          />
+          <div className="flex items-center gap-2 justify-center">
+            <input
+              type="number"
+              min={0}
+              value={localDS}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setLocalDS(Number.isFinite(v) ? Math.max(0, v) : 0);
+                setSaved(false);
+              }}
+              className="input input-bordered px-2 py-1 rounded-xl text-blue-800 font-bold w-20 text-center"
+              aria-label="Modifica da produrre"
+              onBlur={async (e) => {
+                const v = Number(e.currentTarget.value);
+                const next = Number.isFinite(v) ? Math.max(0, v) : 0;
+                if (next === row.da_produrre) return;
+                try {
+                  setSaving(true);
+                  await onInlineChangeDaStampare(row.id, next);
+                  setSaved(true);
+                } finally {
+                  setSaving(false);
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+              }}
+            />
+            <span className="text-xs h-5 inline-flex items-center">
+              {saving && <span className="text-slate-500">Salvataggio…</span>}
+              {!saving && saved && <span className="text-emerald-700 font-semibold">Salvato ✓</span>}
+            </span>
+          </div>
         ) : (
           <div className="inline-flex items-center gap-2">
             <span>{row.da_produrre}</span>
