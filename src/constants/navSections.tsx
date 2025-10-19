@@ -63,7 +63,7 @@ export const navSections: NavSectionType[] = [
     label: "Produzione",
     icon: <Factory size={24} strokeWidth={1.5} />,
     items: [
-      { label: "Produzione Vendor", icon: <Factory size={24} strokeWidth={1.5} />, path: "/produzione-vendor" }
+      { label: "Produzione Vendor", icon: <Factory size={24} strokeWidth={1.5} />, path: "/produzione-new" }
     ],
   },
   {

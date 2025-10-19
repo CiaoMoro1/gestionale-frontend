@@ -1,13 +1,9 @@
+/* src/App.tsx */
 import { useState, useEffect, Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
-import {
-  QueryClient,
-  QueryClientProvider,
-  QueryCache,
-  MutationCache,
-} from "@tanstack/react-query";
 import { Session } from "@supabase/supabase-js";
 import { supabase } from "./lib/supabase";
+
 import Sidebar from "./components/layout/Sidebar";
 import BottomNav from "./components/layout/BottomNav";
 import MobileDrawer from "./components/layout/MobileDrawer";
@@ -15,14 +11,16 @@ import SearchProductModal from "./modals/SearchProductModal";
 import HeaderMobile from "./components/layout/HeaderMobile";
 import ConfermaPrelievo from "./routes/ConfermaPrelievo";
 import { Toaster } from "react-hot-toast";
-import toast from "react-hot-toast";
+
 import RiepilogoNuovi from "./routes/ordini-amazon/nuovi";
-import DettaglioDestinazione from './routes/ordini-amazon/dettaglio';
+import DettaglioDestinazione from "./routes/ordini-amazon/dettaglio";
 import Parziali from "./routes/ordini-amazon/parziali";
-import DraftOrdini from "./routes/ordini-amazon/draft";  // <--- AGGIUNGI QUESTO!
+import DraftOrdini from "./routes/ordini-amazon/draft";
 import CompletatiOrdini from "./routes/ordini-amazon/completi";
-import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";
+/* import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";*/
 import NoteCreditoResoPage from "./routes/ordini-amazon/notecreditoreso";
+
+import ProduzioneVendorPage from "@/features/produzione/pages/ProduzioneVendorPage";
 
 
 // Lazy load delle route
@@ -41,37 +39,6 @@ const EtichetteVendor = lazy(() => import("./routes/ordini-amazon/etichettevendo
 const PrelievoAmazon = lazy(() => import("./routes/ordini-amazon/prelievo"));
 const FattureVendor = lazy(() => import("./routes/ordini-amazon/fatturevendor"));
 const NoteCreditoOrdini = lazy(() => import("./routes/ordini-amazon/notecreditoordini"));
-
-
-
-
-// ⚡ QueryClient React Query v5+ (con error handler globale)
-const queryClient = new QueryClient({
-  queryCache: new QueryCache({
-    onError: (err) => {
-      toast.error(
-        "Errore: " +
-          (err instanceof Error
-            ? err.message
-            : typeof err === "string"
-            ? err
-            : "Errore sconosciuto")
-      );
-    },
-  }),
-  mutationCache: new MutationCache({
-    onError: (err) => {
-      toast.error(
-        "Errore: " +
-          (err instanceof Error
-            ? err.message
-            : typeof err === "string"
-            ? err
-            : "Errore sconosciuto")
-      );
-    },
-  }),
-});
 
 function AppContent() {
   const location = useLocation();
@@ -100,21 +67,26 @@ function AppContent() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col sm:flex-row bg-gray-200 relative">
+    <div className="min-h-screen bg-gray-200 grid grid-cols-1
+                    sm:grid-cols-[12rem,1fr] md:grid-cols-[12rem,1fr] lg:grid-cols-[15rem,1fr]
+                    relative">
       <Toaster position="top-center" /> {/* Provider toast globale */}
 
       {/* Header Mobile */}
       <HeaderMobile onMenuToggle={() => setIsMenuOpen(true)} />
 
       {/* Sidebar Desktop */}
-      <Sidebar />
+      <div className="hidden sm:block sticky top-0 self-start h-screen overflow-y-auto">
+        <Sidebar />
+      </div>
 
       {/* Drawer Mobile */}
       <MobileDrawer isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} session={session} />
 
       {/* Main Content */}
-      <main className="flex-1 sm:ml-40 sm:p-4 flex flex-col justify-between sm:items-center">
-        <section className="safe-bottom flex-grow w-full mx-auto px-4 sm:px-8 max-w-screen-lg pt-4 sm:pt-0">
+    <main className="flex-1 flex flex-col overflow-x-hidden">
+      <div className="container mx-auto px-3 lg:px-4">
+        <section className="safe-bottom flex-grow mx-auto w-[100%] ">
           <Suspense fallback={<div>Caricamento...</div>}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
@@ -132,24 +104,20 @@ function AppContent() {
               <Route path="/ordini-amazon/dashboard" element={<OrdiniAmazonDashboard />} />
               <Route path="/etichettati" element={<Etichettati />} />
               <Route path="/ordini-amazon/nuovi" element={<RiepilogoNuovi />} />
-              <Route path="/ordini-amazon/draft" element={<DraftOrdini />} /> {/* <-- ECCO LA ROUTE */}
-              <Route path="/ordini-amazon/completi" element={<CompletatiOrdini />} /> {/* <-- ECCO LA ROUTE */}
+              <Route path="/ordini-amazon/draft" element={<DraftOrdini />} />
+              <Route path="/ordini-amazon/completi" element={<CompletatiOrdini />} />
               <Route path="/ordini-amazon/etichettevendor" element={<EtichetteVendor />} />
               <Route path="/ordini-amazon/prelievo" element={<PrelievoAmazon />} />
-              <Route path="/produzione-vendor" element={<ProduzioneVendor />} />
+            {/* Redirect legacy paths  <Route path="/produzione-vendor" element={<ProduzioneVendor />} />*/}
               <Route path="/ordini-amazon/fatturevendor" element={<FattureVendor />} />
               <Route path="/ordini-amazon/notecreditoreso" element={<NoteCreditoResoPage />} />
               <Route path="/ordini-amazon/nota-credito-upload" element={<NoteCreditoOrdini />} />
-
-
-
-
-
-
+              <Route path="/produzione-new" element={<ProduzioneVendorPage />} />
 
             </Routes>
           </Suspense>
         </section>
+      </div>  
       </main>
 
       {/* Bottom Navigation Mobile */}
@@ -164,9 +132,7 @@ function AppContent() {
 export default function App() {
   return (
     <BrowserRouter>
-      <QueryClientProvider client={queryClient}>
-        <AppContent />
-      </QueryClientProvider>
+      <AppContent />
     </BrowserRouter>
   );
 }
