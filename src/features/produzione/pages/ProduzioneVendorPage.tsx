@@ -356,18 +356,38 @@ const sortedRows = useMemo(() => {
   /* Bulk ops con conferma */
   async function handleBulkSetState(st: StatoProduzione) {
     if (selected.length === 0) return;
+
+    // mappa id -> row (uso la lista ordinata/attuale)
+    const byId = new Map<number, ProduzioneRow>();
+    // se usi sortedRows, usa quello; altrimenti rows va bene
+    rows.forEach((r) => byId.set(r.id, r));
+
+    const toChange = selected.filter((id) => byId.get(id)?.stato_produzione !== st);
+    const toSkip   = selected.filter((id) => byId.get(id)?.stato_produzione === st);
+
+    // conferma esplicita: quante righe cambiano e quante vengono ignorate
     const ok = await confirmToast({
-      title: "Cambia stato",
-      message: `Impostare ${selected.length} righe su “${TITOLO_DA_PRODURRE[st]}”?`,
+      title: "Cambia stato (bulk)",
+      message: `Verranno impostate ${toChange.length} righe su “${TITOLO_DA_PRODURRE[st]}”.` +
+              (toSkip.length > 0 ? `\n(${toSkip.length} righe sono già in “${TITOLO_DA_PRODURRE[st]}” e saranno ignorate)` : ""),
       confirmLabel: "Conferma",
       cancelLabel: "Annulla",
-      from: "Stato corrente",
+      from: "Stato attuale",
       to: TITOLO_DA_PRODURRE[st],
     });
     if (!ok) return;
 
-    setSelected([]); // UI più immediata
-    await api.bulkSetState(selected, st);
+    if (toChange.length === 0) {
+      // niente da fare (tutto già in target)
+      setSelected([]);
+      return;
+    }
+
+    // esegui solo su quelli che DEVONO cambiare
+    await api.bulkSetState(toChange, st);
+
+    // pulizia selezione (se preferisci lasciare selezionati i "saltati", usa setSelected(toSkip))
+    setSelected([]);
   }
 
   async function handleBulkDelete() {
@@ -440,7 +460,7 @@ const sortedRows = useMemo(() => {
           onExportPdf={() => setExportOpen(true)}
           onBulkCaricaMagazzino={handleBulkCaricaMagazzino}
           disabled={bulkBusy}
-          currentState= {stato as StatoProduzione}
+          currentState={stato as StatoProduzione}
         />
       )}
 

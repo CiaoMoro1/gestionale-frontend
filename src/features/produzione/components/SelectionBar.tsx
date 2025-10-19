@@ -1,8 +1,8 @@
 /* src/features/produzione/components/SelectionBar.tsx */
-import React, { useRef } from "react";
+import React from "react";
 import type { StatoProduzione } from "@/features/produzione";
 import { STATE_STYLES } from "@/features/produzione";
-import { Trash2, Upload, FileText, X, ChevronLeft, ChevronRight } from "lucide-react";
+import { Trash2, Upload, FileText, X } from "lucide-react";
 
 type Props = {
   count: number;
@@ -14,7 +14,7 @@ type Props = {
   onExportPdf: (orderBy: "az" | "misura") => void;
   onBulkCaricaMagazzino: () => void;
   disabled?: boolean;
-  /** stato corrente (opzionale): quello non selezionabile */
+  /** Stato corrente (quello non selezionabile e barrato). Se vuoto, nessuno disabilitato */
   currentState?: StatoProduzione | "";
 };
 
@@ -41,8 +41,45 @@ export default function SelectionBar({
 }: Props) {
   if (count <= 0) return null;
 
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const scrollByX = (dx: number) => scrollerRef.current?.scrollBy({ left: dx, behavior: "smooth" });
+  // suddividi in due righe (bilanciate)
+  const mid = Math.ceil(states.length / 2);
+  const rowA = states.slice(0, mid);
+  const rowB = states.slice(mid);
+
+  const renderRow = (row: StatoProduzione[]) => (
+    <div className="flex flex-wrap items-center justify-center gap-2">
+      {row.map((st) => {
+        const isCurrent = !!currentState && st === currentState;
+        return (
+          <button
+            key={st}
+            type="button"
+            className={`px-2.5 py-1.5 rounded-xl font-bold text-xs sm:text-sm border shadow transition
+                        focus:outline-none focus:ring-2 focus:ring-cyan-300
+                        ${isCurrent ? "opacity-60 cursor-not-allowed line-through pointer-events-none" : "hover:brightness-105"}`}
+            style={stateButtonStyle(st)}
+            onClick={() => {
+              if (!isCurrent && !disabled) onBulkSetState(st);
+            }}
+            title={
+              isCurrent
+                ? `Stato corrente: ${stateLabels[st]}`
+                : `Segna i selezionati come ${stateLabels[st]}`
+            }
+            aria-label={
+              isCurrent
+                ? `Stato corrente: ${stateLabels[st]}`
+                : `Segna i selezionati come ${stateLabels[st]}`
+            }
+            disabled={disabled || isCurrent}
+            aria-disabled={disabled || isCurrent}
+          >
+            Segna come {stateLabels[st]}
+          </button>
+        );
+      })}
+    </div>
+  );
 
   return (
     <div
@@ -55,7 +92,7 @@ export default function SelectionBar({
         overflow-x-hidden
       "
     >
-      {/* Testata */}
+      {/* Testata: conteggio + deselect */}
       <div className="flex items-center justify-between min-w-0">
         <div className="text-base sm:text-lg font-bold text-cyan-800 truncate">
           {count} selezionat{count === 1 ? "o" : "i"}
@@ -73,68 +110,10 @@ export default function SelectionBar({
         </button>
       </div>
 
-      {/* Stati: scorrimento semplice con frecce, niente scrollbar visibile */}
-      <div className="relative">
-        <button
-          type="button"
-          className="hidden sm:flex absolute left-0 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full bg-white/90 border shadow hover:bg-slate-50"
-          onClick={() => scrollByX(-240)}
-          aria-label="Scorri a sinistra"
-          title="Scorri a sinistra"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-
-        <div
-          ref={scrollerRef}
-          className="w-full min-w-0 overflow-x-auto no-scrollbar"
-          style={{ scrollbarWidth: "none" as const }}
-        >
-          <div className="flex items-center gap-2 pr-1 whitespace-nowrap">
-            {states.map((st) => {
-              const isCurrent = !!currentState && st === currentState;
-              return (
-                <button
-                  key={st}
-                  type="button"
-                  className={`
-                    shrink-0
-                    px-2.5 py-1.5
-                    rounded-xl font-bold text-xs sm:text-sm
-                    border shadow transition
-                    focus:outline-none focus:ring-2 focus:ring-cyan-300
-                    ${isCurrent ? "opacity-60 cursor-not-allowed" : "hover:brightness-105"}
-                  `}
-                  style={stateButtonStyle(st)}
-                  onClick={() => !isCurrent && !disabled && onBulkSetState(st)}
-                  title={
-                    isCurrent
-                      ? `Stato corrente: ${stateLabels[st]}`
-                      : `Segna i selezionati come ${stateLabels[st]}`
-                  }
-                  aria-label={
-                    isCurrent
-                      ? `Stato corrente: ${stateLabels[st]}`
-                      : `Segna i selezionati come ${stateLabels[st]}`
-                  }
-                  disabled={disabled || isCurrent}
-                >
-                  Segna come {stateLabels[st]}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="hidden sm:flex absolute right-0 top-1/2 -translate-y-1/2 z-10 p-1 rounded-full bg-white/90 border shadow hover:bg-slate-50"
-          onClick={() => scrollByX(240)}
-          aria-label="Scorri a destra"
-          title="Scorri a destra"
-        >
-          <ChevronRight className="w-4 h-4" />
-        </button>
+      {/* Stati: due righe centrate, senza scroll né frecce */}
+      <div className="w-full min-w-0">
+        {renderRow(rowA)}
+        <div className="mt-2">{renderRow(rowB)}</div>
       </div>
 
       {/* Export a sinistra, Carica/Rimuovi a destra */}
@@ -190,9 +169,6 @@ export default function SelectionBar({
           </button>
         </div>
       </div>
-
-      {/* nasconde le scrollbar webkit della riga stati */}
-      <style>{`.no-scrollbar::-webkit-scrollbar{display:none;}`}</style>
     </div>
   );
 }

@@ -38,6 +38,8 @@ export default function MoveQtyModal({
   const zero = () => setQty(0);
   const max = () => setQty(maxQty);
 
+  const selectedSty = STATE_STYLES[toState];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl p-6 shadow-2xl border w-full max-w-md animate-fade-in relative">
@@ -63,30 +65,53 @@ export default function MoveQtyModal({
         </div>
 
         {/* Selettore stato A DESTINAZIONE: griglia bottoni colorati */}
-        <div className="mb-4">
+        <div className="mb-3">
           <div className="text-xs font-semibold text-slate-600 mb-1">Sposta a</div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
             {statiDisponibili.map((s) => {
               const sty = STATE_STYLES[s];
               const active = s === toState;
+              const isSameAsFrom = s === fromState;
               return (
                 <button
                   key={s}
                   type="button"
-                  className={`px-2 py-2 rounded-xl border text-sm font-semibold focus:outline-none focus:ring-2 ${
-                    active ? "ring-2 ring-cyan-300" : ""
-                  }`}
+                  className={[
+                    "px-2 py-2 rounded-xl border text-sm font-semibold transition focus:outline-none focus:ring-2",
+                    active ? "ring-2 ring-cyan-300" : "",
+                    isSameAsFrom ? "opacity-50 cursor-not-allowed line-through" : "hover:brightness-105",
+                  ].join(" ")}
                   style={{
                     background: `linear-gradient(135deg, ${sty.fill}, #ffffff)`,
                     borderColor: sty.stroke,
                     color: sty.text,
                   }}
-                  onClick={() => setToState(s)}
+                  onClick={() => !isSameAsFrom && setToState(s)}
+                  disabled={isSameAsFrom}
+                  title={isSameAsFrom ? "Stato corrente" : `Sposta a ${s}`}
+                  aria-pressed={active}
+                  aria-label={isSameAsFrom ? `Stato corrente: ${s}` : `Sposta a ${s}`}
                 >
                   {s}
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        {/* Stato selezionato: pill informativa */}
+        <div className="mb-4">
+          <div className="text-xs text-slate-600 mb-1">Stato selezionato</div>
+          <div
+            className="inline-flex items-center gap-2 px-3 py-1 rounded-full border text-sm font-semibold"
+            style={{
+              background: `linear-gradient(135deg, ${selectedSty.fill}, #ffffff)`,
+              borderColor: selectedSty.stroke,
+              color: selectedSty.text,
+            }}
+            aria-live="polite"
+          >
+            {toState}
           </div>
         </div>
 
@@ -167,7 +192,7 @@ export default function MoveQtyModal({
           <button
             className="px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 shadow"
             onClick={() => onMove(row, toState, qty)}
-            disabled={qty <= 0 || maxQty === 0}
+            disabled={qty <= 0 || maxQty === 0 || toState === fromState}
             type="button"
           >
             Sposta
