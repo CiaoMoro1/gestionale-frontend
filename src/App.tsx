@@ -86,7 +86,7 @@ function AppContent() {
       {/* Main Content */}
     <main className="flex-1 flex flex-col overflow-x-hidden">
       <div className="container mx-auto px-3 lg:px-4">
-        <section className=" flex-grow mx-auto w-[100%] ">
+        <section className=" safe-bottom flex-grow mx-auto w-[100%] ">
           <Suspense fallback={<div>Caricamento...</div>}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />

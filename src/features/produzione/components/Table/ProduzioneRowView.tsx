@@ -107,9 +107,13 @@ function RowViewBase({
     .filter((st) => st !== "Da Stampare")
     .reduce((acc, st) => acc + (flowTotals[st] || 0), 0);
 
-  const summaryParts: ReactNode[] = [];
-  for (const st of ORDER_STATES) {
-    const q = st === "Da Stampare" ? localDS : (flowTotals[st] || 0);
+ const dsValue = (row.stato_produzione === "Da Stampare")
+   ? localDS
+   : (flowTotals["Da Stampare"] || 0);
+
+ const summaryParts: ReactNode[] = [];
+ for (const st of ORDER_STATES) {
+   const q = st === "Da Stampare" ? dsValue : (flowTotals[st] || 0);
     if (q > 0) {
       if (summaryParts.length > 0) summaryParts.push(" + ");
       summaryParts.push(
