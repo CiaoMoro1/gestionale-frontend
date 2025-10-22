@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { ChevronRight,} from "lucide-react";
 import { useParams } from "react-router-dom";
 import PrelievoModal, { PrelievoRow } from "../../components/PrelievoModal";
+import SearchInput from "@/features/produzione/components/FiltersBar/SearchInput";
 
 /* ===========================
    Utils ricerca / ordinamento
@@ -124,6 +125,10 @@ export default function DettaglioPrelievo() {
   const PAGE_SIZE = 10;
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
+
+
+
+  
   // Chiudi dropdown radici cliccando fuori
   useEffect(() => {
     function handleClick(e: MouseEvent) {
@@ -166,8 +171,12 @@ export default function DettaglioPrelievo() {
 
   // --- Filtro ricerca (supporta suffisso ;)
   function normalizeTight(s: string) {
-    return stripMZ(s).toLowerCase().replace(/[^a-z0-9]/g, "");
+    return (s || "")
+      .toLowerCase()
+      .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+      .replace(/[^a-z0-9]/g, "");  // rimuove tutto tranne lettere/numeri
   }
+
   const raw = (search || "").trim();
   const tokens = raw.split(/\s+/).filter(Boolean);
   const suffixTokens = tokens
@@ -197,7 +206,13 @@ export default function DettaglioPrelievo() {
           ? true
           : suffixTokens.some(suf => skuTight.endsWith(suf));
 
-        return baseOk && suffixOk;
+        // NEW: fallback tight-contains (gestisce spazi, trattini, doppie spaziature)
+        const searchTight = normalizeTight(search);
+        const fallbackOk = searchTight
+          ? skuTight.includes(searchTight) || (normalizeTight(r.ean || "").includes(searchTight))
+          : true;
+
+        return (baseOk && suffixOk) || fallbackOk;
       })
     : prelieviAfterRadice;
 
@@ -212,6 +227,28 @@ export default function DettaglioPrelievo() {
   if (isTotali && !search) {
     prelieviToShow = prelieviToShow.slice(0, itemsToShow);
   }
+
+// --- Admin guard (password = "petti") ---------------------------------------
+    const ADMIN_PWD = "petti";
+
+    function askAdminPassword(): boolean {
+      const pwd = window.prompt("Inserisci password amministratore:");
+      if (pwd === null) return false; // utente ha annullato
+      const ok = pwd === ADMIN_PWD;
+      if (!ok) setToast({ msg: "Password errata.", type: "error" });
+      return ok;
+    }
+
+    // wrapper per i bottoni protetti
+    async function secureReload() {
+      if (!askAdminPassword()) return;
+      window.location.reload();
+    }
+
+    async function secureSvuotaLista() {
+      if (!askAdminPassword()) return;
+      await svuotaLista();
+    }
 
   // --- ProgressBar
   function ProgressBar({ perc, text }: { perc: number; text: string }) {
@@ -288,13 +325,6 @@ export default function DettaglioPrelievo() {
       setProgressPerc(75);
       setProgressText("Sincronizzo produzione (filtrati)…");
 
-      const body = radice ? { radice } : { ids: pendingIds };
-      const cleanRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
-      );
-      if (!cleanRes.ok) throw new Error("Pulizia produzione parziale fallita.");
-
       setProgressPerc(100);
       setProgressText("Completato!");
       setTimeout(() => setProgressActive(false), 600);
@@ -309,8 +339,15 @@ export default function DettaglioPrelievo() {
   }
 
   async function completaSelezionati() {
-    const ids = selectedIds;
-    if (ids.length === 0) return;
+    // filtra SOLO i PENDING (stato === "in verifica")
+    const ids = selectedIds.filter(id => {
+      const r = prelieviToShow.find(x => x.id === id);
+      return r?.stato === "in verifica";
+    });
+    if (ids.length === 0) {
+      alert("Nessun PENDING selezionato.");
+      return;
+    }
     if (!window.confirm("Vuoi segnare come MANCA i selezionati?")) return;
 
     try {
@@ -321,18 +358,13 @@ export default function DettaglioPrelievo() {
       const setRes = await fetch(`${import.meta.env.VITE_API_URL}/api/prelievi/bulk`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, fields: { riscontro: 0 } }),
+        body: JSON.stringify({
+          ids,
+          fields: { riscontro: 0 } // opzionale: aggiungi plus: 0 per non creare DS
+          // fields: { riscontro: 0, plus: 0 },
+        }),
       });
       if (!setRes.ok) throw new Error("Impossibile aggiornare i prelievi selezionati.");
-
-      setProgressPerc(75);
-      setProgressText("Sincronizzo produzione (selezionati)…");
-
-      const cleanRes = await fetch(
-        `${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare-parziale`,
-        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) }
-      );
-      if (!cleanRes.ok) throw new Error("Pulizia produzione parziale fallita.");
 
       setProgressPerc(100);
       setProgressText("Completato!");
@@ -340,12 +372,13 @@ export default function DettaglioPrelievo() {
 
       await refreshListe();
       setSelectedIds([]);
-      setToast({ msg: "Completati selezionati e pulita produzione!", type: "success" });
+      setToast({ msg: "Completati selezionati!", type: "success" });
     } catch (err) {
-      setToast({ msg: err instanceof Error ? err.message : "Errore durante la pulizia.", type: "error" });
+      setToast({ msg: err instanceof Error ? err.message : "Errore durante il completamento.", type: "error" });
       setProgressActive(false);
     }
   }
+
 
   async function completaPending() {
     try {
@@ -375,11 +408,6 @@ export default function DettaglioPrelievo() {
 
       setProgressPerc(85);
       setProgressText("Sincronizzo produzione (globale)…");
-
-      const cleanRes = await fetch(`${import.meta.env.VITE_API_URL}/api/produzione/pulisci-da-stampare`, {
-        method: "POST",
-      });
-      if (!cleanRes.ok) throw new Error("Pulizia produzione globale fallita.");
 
       setProgressPerc(100);
       setProgressText("Completato!");
@@ -512,19 +540,18 @@ export default function DettaglioPrelievo() {
       {/* Importa nuova data (Refresh) */}
       <button
         type="button"
-        onClick={() => window.location.reload()}
+        onClick={secureReload}   // <-- protetto da password
         className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-cyan-300 text-cyan-800 bg-white hover:bg-cyan-50 shadow-sm focus:outline-none focus:ring-2 focus:ring-cyan-200"
         title="Importa una nuova data (ricarica)"
         aria-label="Importa nuova data"
       >
         ↻ Importa nuova data
       </button>
-
       {/* Svuota lista (destructive) */}
       <button
         type="button"
         className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-white border border-red-300 text-red-700 hover:bg-red-50 shadow-sm focus:outline-none focus:ring-2 focus:ring-red-200"
-        onClick={svuotaLista}
+        onClick={secureSvuotaLista}   // <-- protetto da password
         title="Svuota lista prelievi"
         aria-label="Svuota lista prelievi"
       >
@@ -578,14 +605,18 @@ export default function DettaglioPrelievo() {
         </div>
 
         {/* Ricerca */}
+        {/* Ricerca */}
         <div className="flex-1 min-w-[180px]">
-          <label className="block text-xs font-semibold mb-1">Cerca per SKU o EAN</label>
-          <input
-            type="text"
-            className="rounded-xl border border-cyan-400 px-3 py-2 text-[15px] outline-cyan-700 w-full font-medium"
-            placeholder="Cerca per SKU o EAN"
+          <SearchInput
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            onChange={(q) => {
+              setSearch(q);
+              // se hai già una lista "prelievi" in stato, filtra qui:
+              // setPrelieviVisibili(filterLocal(q, prelievi));
+            }}
+            onCommit={() => { /* opzionale in client-only */ }}
+            debounce={150}
+            idleCommitMs={600}
           />
         </div>
       </div>
