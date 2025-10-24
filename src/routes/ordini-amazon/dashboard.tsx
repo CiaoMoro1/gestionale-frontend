@@ -12,6 +12,7 @@ type OrderSummary = {
   colli_confermati: number | null;
   stato_ordine: "nuovo" | "parziale" | string;
   po_list?: string[];
+  parziale_chiuso?: boolean;
 };
 
 type JobStatus =
@@ -156,7 +157,7 @@ const DashboardAmazonVendor: React.FC = () => {
   };
 
   // Helpers per gruppi dashboard (come prima)
-  function filterGroup(t: 1 | 2 | 3 | 4): OrderSummary[] {
+  function filterGroup(t: 1 | 2 | 3 | 4 | 5): OrderSummary[] {
     switch (t) {
       case 1:
         return orders.filter(
@@ -171,12 +172,14 @@ const DashboardAmazonVendor: React.FC = () => {
             (o.colli_confermati ?? 0) < (o.colli_totali ?? 0)
         );
       case 3:
+        // Parziali con TUTTI i colli confermati **e parziale CHIUSO**
         return orders.filter(
           o =>
             o.stato_ordine === "parziale" &&
             o.numero_parziale != null &&
             (o.colli_totali ?? 0) > 0 &&
-            (o.colli_confermati ?? 0) === (o.colli_totali ?? 0)
+            (o.colli_confermati ?? 0) === (o.colli_totali ?? 0) &&
+            o.parziale_chiuso !== false // esclude i "non chiusi"; include true o undefined per retrocompatibilità
         );
       case 4:
         return orders.filter(
@@ -186,6 +189,16 @@ const DashboardAmazonVendor: React.FC = () => {
             (o.colli_totali ?? 0) > 0 &&
             (o.colli_confermati ?? 0) < (o.colli_totali ?? 0)
         );
+      case 5:
+      // Parziali con TUTTI i colli confermati ma PARZIALE NON CHIUSO
+        return orders.filter(
+          o =>
+            o.stato_ordine === "parziale" &&
+            o.numero_parziale != null &&
+            (o.colli_totali ?? 0) > 0 &&
+            (o.colli_confermati ?? 0) === (o.colli_totali ?? 0) &&
+            o.parziale_chiuso === false
+      );
       default:
         return [];
     }
@@ -248,13 +261,18 @@ const DashboardAmazonVendor: React.FC = () => {
           navigate={navigate}
         />
         <DashboardGroup
-          title="3) Ordini parziali con tutti i colli confermati"
+          title="3) Ordini parziali con tutti i colli confermati (CHIUSI)"
           orders={filterGroup(3)}
           navigate={navigate}
         />
         <DashboardGroup
           title="4) Ordini parziali con colli non confermati"
           orders={filterGroup(4)}
+          navigate={navigate}
+        />
+        <DashboardGroup
+          title="5) Ordini parziali: tutti i colli confermati ma PARZIALE NON CHIUSO"
+          orders={filterGroup(5)}
           navigate={navigate}
         />
       </div>

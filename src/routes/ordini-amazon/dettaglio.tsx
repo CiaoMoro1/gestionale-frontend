@@ -1,5 +1,5 @@
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Package, CheckCircle, ChevronRight, CircleChevronLeft, Plus, Minus, Search } from "lucide-react";
 import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 import BarcodeScannerModal from "../../components/BarcodeScannerModal";
@@ -33,7 +33,8 @@ type RigaParziale = {
   numero_parziale?: number; // per getParzialiStorici
 };
 
-type RigaInput = { id: string; quantita: number | ""; collo: number };
+type RigaInput = { id: string; quantita: number | ""; collo: number; fromWip?: boolean };
+
 
 type ColloRiepilogo = {
   collo: number;
@@ -139,12 +140,65 @@ export default function DettaglioDestinazione() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [toast, setToast] = useState<string | null>(null);
-
+  const [reservedNewByRow, setReservedNewByRow] = useState<Record<string, number>>({});
 
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
-  // Filtro ricerca globale
-  const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+    // Filtro ricerca globale
+    const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+
+const colliInfo = useMemo(() => {
+  // 1) Fonte autorevole: colli esistenti dal WIP (server)
+  const exist = new Set<number>();
+  for (const p of parziali) {
+    const c = Number(p.collo) || 0;
+    if (c > 0) exist.add(c);
+  }
+
+  // 2) Lock: colli confermati
+  const confirmed = new Set<number>();
+  for (const [k, v] of Object.entries(confermaCollo)) {
+    if (v) confirmed.add(Number(k));
+  }
+
+  // 3) Primo mancante rispetto al WIP
+  const firstMissingFrom = (s: Set<number>) => {
+    let i = 1;
+    while (s.has(i)) i++;
+    return i;
+  };
+  const minMissingWip = firstMissingFrom(exist);
+
+// 4) Prenotazioni locali: NUOVI numeri già “presi” da una riga
+const reservedSet = new Set<number>(Object.values(reservedNewByRow || {}));
+
+// 5) Next dinamico: salta solo i PRENOTATI
+let nextDynamic = minMissingWip;
+while (reservedSet.has(nextDynamic)) {
+  nextDynamic += 1;
+}
+
+  const last = exist.size ? Math.max(...exist) : 0;
+  const maxContinuousWip = (() => {
+    let i = 1;
+    while (exist.has(i)) i++;
+    return i - 1; // es: exist={1,2,4} -> maxContinuousWip=2
+  })();
+
+  return {
+    exist,            // colli già “reali” (WIP)
+    confirmed,        // colli bloccati
+    last,             // solo per UI
+    minMissingWip,    // primo mancante nel WIP
+    nextDynamic,      // prossimo collo NUOVO consentito (WIP + inputs correnti, senza buchi)
+    maxContinuousWip, // ⬅️ fino a dove la sequenza è continua
+  };
+}, [parziali, confermaCollo, reservedNewByRow]);
+
+
+const lastCollo = colliInfo.last;
+const nextCollo = colliInfo.nextDynamic; // <-- usa questo ovunque
+const [colloErrorIdx, setColloErrorIdx] = useState<number | null>(null);
 
   const articoliFiltrati = queryWords.length === 0
     ? articoli
@@ -154,7 +208,6 @@ export default function DettaglioDestinazione() {
           queryWords
         )
       );
-
   // Solo X articoli, tranne se ricerca attiva
   const articoliToShow = skuSearch.length > 0
     ? articoliFiltrati
@@ -220,17 +273,20 @@ export default function DettaglioDestinazione() {
       setInputs(wip.map(r => ({
         id: crypto.randomUUID(),
         quantita: r.quantita,
-        collo: r.collo
+        collo: r.collo,
+        fromWip: true,
       })));
+      setReservedNewByRow({});
     } else {
-      setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
+      setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1, fromWip: false }]);
     }
   }, [modaleArticolo, parziali]);
 
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
-    setInputs(prev =>
-      prev.map((r, i) =>
+    setInputs(prev => {
+      // 1) aggiorna la riga target
+      const updated = prev.map((r, i) =>
         i === idx
           ? {
               ...r,
@@ -240,19 +296,73 @@ export default function DettaglioDestinazione() {
                   : val === "" ? "" : Number(val),
             }
           : r
-      )
-    );
+      );
+
+      // 2) se ho cambiato "collo" e collide con un collo esistente, MERGE quantità e rimuovi duplicato
+      if (campo === "collo") {
+        const newCollo = Number(val) || 0;
+        if (newCollo > 0) {
+          // cerca un'altra riga con stesso collo
+          const otherIdx = updated.findIndex((r, i) => i !== idx && Number(r.collo) === newCollo);
+          if (otherIdx !== -1) {
+            const qIdx = Number(updated[idx].quantita) || 0;
+            const qOther = Number(updated[otherIdx].quantita) || 0;
+            // somma quantità sulla riga "other" e rimuovi quella corrente
+            const merged = updated.map((r, i) =>
+              i === otherIdx ? { ...r, quantita: qIdx + qOther } : r
+            ).filter((_, i) => i !== idx);
+            setToast(`Unito sul collo #${newCollo}`);
+            setTimeout(() => setToast(null), 1400);
+            const removedId = prev[idx].id;
+            setReservedNewByRow(prevRes => {
+              if (!prevRes[removedId]) return prevRes;
+              const rest = { ...prevRes };
+              delete rest[removedId];
+              return rest;
+            });
+            return merged;
+          }
+        }
+      }
+      return updated;
+    });
+
     if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
       setShakeIdx(idx);
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
-  function aggiungiRiga() {
-    setInputs(prev => [...prev, { id: crypto.randomUUID(), quantita: "", collo: 1 }]);
-  }
-  function rimuoviRiga(idToRemove: string) {
-    setInputs(prev => prev.filter(inp => inp.id !== idToRemove));
-  }
+
+function aggiungiRiga() {
+  const newId = crypto.randomUUID(); // id della nuova riga
+
+  setInputs(prev => {
+    if (colliInfo.confirmed.has(nextCollo)) {
+      setToast(`Collo #${nextCollo} è confermato: non aggiungibile`);
+      setTimeout(() => setToast(null), 1400);
+      return prev;
+    }
+    if (prev.some(r => Number(r.collo) === nextCollo)) {
+      setToast(`Collo #${nextCollo} è già in modifica`);
+      setTimeout(() => setToast(null), 1400);
+      return prev;
+    }
+    return [...prev, { id: newId, quantita: "", collo: nextCollo, fromWip: false }];
+  });
+
+  setReservedNewByRow(prev => ({ ...prev, [newId]: nextCollo })); // prenota
+  setToast(`Aggiunto collo #${nextCollo}`);
+  setTimeout(() => setToast(null), 1400);
+}
+function rimuoviRiga(idToRemove: string) {
+  setInputs(prev => prev.filter(inp => inp.id !== idToRemove));
+  setReservedNewByRow(prev => {
+    if (!(idToRemove in prev)) return prev;
+    const rest = { ...prev };
+    delete rest[idToRemove];
+    return rest;
+  });
+}
   function handleOpenScanner() {
     if (inputRef.current) inputRef.current.blur();
     if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
@@ -319,15 +429,24 @@ export default function DettaglioDestinazione() {
         : latest?.last_modified_at;
 
       // 2) costruisco i parziali NUOVI per questo articolo (solo righe valide)
-      const nuoviParziali: RigaParziale[] = nextInputs
-        .filter(r => Number(r.quantita) > 0 && r.collo > 0)
-        .map(r => ({
-          model_number: art.model_number,
-          quantita: Number(r.quantita),
-          collo: r.collo,
-          po_number: art.po_number,
-          confermato: false,
-        }));
+const tmp = nextInputs
+  .filter(r => Number(r.quantita) > 0 && Number(r.collo) > 0)
+  .map(r => ({ collo: Number(r.collo), quantita: Number(r.quantita) }));
+
+// collapse per collo: somma quantità sullo stesso collo
+const byCollo = new Map<number, number>();
+for (const r of tmp) {
+  byCollo.set(r.collo, (byCollo.get(r.collo) || 0) + r.quantita);
+}
+
+const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo, quantita]) => ({
+  model_number: art.model_number,
+  quantita,
+  collo,
+  po_number: art.po_number,
+  confermato: false,
+}));
+
 
       // 3) MERGE: tengo TUTTO ciò che non è dell’articolo, e sostituisco solo l’articolo corrente
       const mergedParziali = [
@@ -549,6 +668,119 @@ export default function DettaglioDestinazione() {
     doc.output("dataurlnewwindow");
   }
 
+
+
+
+  // ---- Helpers per bottoni +/- ----
+function bumpQuantita(idx: number, delta: number) {
+  const cur = Number(inputs[idx]?.quantita) || 0;
+  let next = cur + delta;
+  const max = getResiduoInput(idx);
+  if (next > max) next = max;
+  if (next < 0) next = 0;
+  aggiornaInput(idx, "quantita", next);
+}
+
+function setColloSafe(idx: number, inpId: string, proposed: number) {
+  if (Number.isNaN(proposed) || proposed < 1) proposed = 1;
+
+  const { exist, confirmed, maxContinuousWip } = colliInfo;
+  const nextRequired = colliInfo.nextDynamic;
+  const reserved = reservedNewByRow[inpId]; // collo prenotato per QUESTA riga (se esiste)
+
+  // Vietato usare un collo confermato
+  if (confirmed.has(proposed)) {
+    setColloErrorIdx(idx);
+    setToast(`Collo #${proposed} è confermato`);
+    setTimeout(() => setToast(null), 1400);
+    setTimeout(() => setColloErrorIdx(null), 450);
+    aggiornaInput(idx, "collo", reserved ?? nextRequired);
+    return;
+  }
+
+  const isExisting = exist.has(proposed);
+
+  // Se la riga ha una prenotazione attiva
+  if (reserved !== undefined) {
+    if (isExisting) {
+      // Passi a un collo del WIP: libera la prenotazione
+      setReservedNewByRow(prev => {
+        if (!(inpId in prev)) return prev;
+        const rest = { ...prev };
+        delete rest[inpId];
+        return rest;
+      });
+      if (proposed > maxContinuousWip) {
+        setColloErrorIdx(idx);
+        setToast(`Prima devi creare il collo #${maxContinuousWip + 1}`);
+        setTimeout(() => setToast(null), 1600);
+        setTimeout(() => setColloErrorIdx(null), 450);
+        aggiornaInput(idx, "collo", maxContinuousWip + 1);
+        return;
+      }
+      aggiornaInput(idx, "collo", proposed);
+      return;
+    } else {
+      // Nuovo: DEV'ESSERE il prenotato
+      if (proposed !== reserved) {
+        setColloErrorIdx(idx);
+        setToast(`Questa riga ha prenotato il collo #${reserved}`);
+        setTimeout(() => setToast(null), 1400);
+        setTimeout(() => setColloErrorIdx(null), 450);
+        aggiornaInput(idx, "collo", reserved);
+        return;
+      }
+      aggiornaInput(idx, "collo", proposed); // ok, è proprio il prenotato
+      return;
+    }
+  }
+
+  // La riga NON ha prenotazione
+  if (isExisting) {
+    // Ammesso solo entro la continuità
+    if (proposed > maxContinuousWip) {
+      setColloErrorIdx(idx);
+      setToast(`Prima devi creare il collo #${maxContinuousWip + 1}`);
+      setTimeout(() => setToast(null), 1600);
+      setTimeout(() => setColloErrorIdx(null), 450);
+      aggiornaInput(idx, "collo", maxContinuousWip + 1);
+      return;
+    }
+    aggiornaInput(idx, "collo", proposed);
+    return;
+  }
+
+  // Nuovo: DEVE essere il prossimo richiesto → prenota questa riga
+  if (proposed !== nextRequired) {
+    setColloErrorIdx(idx);
+    setToast(`Prossimo collo valido: #${nextRequired}`);
+    setTimeout(() => setToast(null), 1400);
+    setTimeout(() => setColloErrorIdx(null), 450);
+    aggiornaInput(idx, "collo", nextRequired);
+    setReservedNewByRow(prev => ({ ...prev, [inpId]: nextRequired }));
+    return;
+  }
+
+  // È esattamente il prossimo richiesto: prenota e accetta
+  setReservedNewByRow(prev => ({ ...prev, [inpId]: nextRequired }));
+  aggiornaInput(idx, "collo", proposed);
+}
+function bumpCollo(idx: number, delta: number) {
+  const cur = Number(inputs[idx]?.collo) || 0;
+  let next = cur + delta;
+  if (next < 1) next = 1;
+
+  const { maxContinuousWip, minMissingWip } = colliInfo;
+  // Se c'è un buco, limita al prossimo richiesto (maxContinuousWip + 1)
+  if (next > maxContinuousWip + 1) {
+    next = Math.max(minMissingWip, maxContinuousWip + 1);
+  }
+
+  setColloSafe(idx, inputs[idx].id, next);
+}
+
+
+
   // Cavallotto: apertura PDF (formati A5/A4/A3)
   function openCavallottoPdf(sku: string, formato: string) {
     setCavallottoLoading(true);
@@ -748,6 +980,17 @@ export default function DettaglioDestinazione() {
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b>
               {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
+              {parziali.some(p => p.model_number === modaleArticolo.model_number && p.po_number === modaleArticolo.po_number) && (
+  <div className="mb-2 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-300 text-yellow-900 text-xs font-semibold">
+    Articolo già presente in questo parziale:
+    {" "}
+    {Array.from(new Set(
+      parziali
+        .filter(p => p.model_number === modaleArticolo.model_number && p.po_number === modaleArticolo.po_number)
+        .map(p => p.collo)
+    )).sort((a,b)=>a-b).map(c => `Collo ${c}`).join(", ")}
+  </div>
+)}
               {/* Bottoni stampa */}
               <div className="flex gap-2 mt-1">
                 {modaleArticolo.vendor_product_id && (
@@ -767,6 +1010,15 @@ export default function DettaglioDestinazione() {
                 </button>
               </div>
             </div>
+{/* Indicatore ultimo/prossimo collo */}
+<div className="mb-3 flex items-center gap-2 text-xs">
+  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+    Ultimo collo: <b>{lastCollo}</b>
+  </span>
+  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-50 text-cyan-800 border border-cyan-200">
+    Prossimo disponibile: <b>{nextCollo}</b>
+  </span>
+</div>
 
             <div className="flex-1 overflow-y-auto" style={{ minHeight: 0, maxHeight: "50vh" }}>
               <div className="mb-2">
@@ -794,49 +1046,97 @@ export default function DettaglioDestinazione() {
                   <div key={inp.id} className="flex gap-2 items-end">
                     <div className="flex-1">
                       <label className="block text-xs mb-1">Quantità</label>
-                      <input
-                        type="number"
-                        min={1}
-                        max={getResiduoInput(idx)}
-                        value={inp.quantita === 0 ? "" : inp.quantita}
-                        onChange={e => {
-                          let vNum = Number(e.target.value);
-                          if (isNaN(vNum)) vNum = 0;
-                          const max = getResiduoInput(idx);
-                          if (vNum > max) {
-                            vNum = max;
-                            setShakeIdx(idx);
-                            setTimeout(() => setShakeIdx(null), 400);
-                          }
-                          if (vNum < 1) vNum = 0;
-                          aggiornaInput(idx, "quantita", vNum);
-                        }}
-                        className={`w-full border rounded-lg p-2 text-center font-bold text-blue-700 outline-blue-400 ${shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""}`}
-                        placeholder="Quantità"
-                        disabled={isBusy}
-                      />
+                      <div className="rounded-lg border overflow-hidden">
+                        <input
+                          type="number"
+                            inputMode="numeric"    // chiede tastiera numerica
+                            pattern="\d*"          // limita a cifre
+                            autoComplete="off"
+                          min={1}
+                          max={getResiduoInput(idx)}
+                          value={inp.quantita === 0 ? "" : inp.quantita}
+                          onChange={e => {
+                            let vNum = Number(e.target.value);
+                            if (isNaN(vNum)) vNum = 0;
+                            const max = getResiduoInput(idx);
+                            if (vNum > max) {
+                              vNum = max;
+                              setShakeIdx(idx);
+                              setTimeout(() => setShakeIdx(null), 400);
+                            }
+                            if (vNum < 1) vNum = 0;
+                            aggiornaInput(idx, "quantita", vNum);
+                          }}
+                          className={`w-full border-0 p-2 text-center font-bold text-blue-700 outline-blue-400 ${shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""}`}
+                          placeholder="Quantità"
+                          disabled={isBusy}
+                        />
+                        <div className="grid grid-cols-2 divide-x">
+                          <button
+                            type="button"
+                            className="py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+                            onClick={() => bumpQuantita(idx, -1)}
+                            disabled={isBusy}
+                            aria-label="Diminuisci quantità"
+                          >
+                            −
+                          </button>
+                          <button
+                            type="button"
+                            className="py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+                            onClick={() => bumpQuantita(idx, +1)}
+                            disabled={isBusy}
+                            aria-label="Aumenta quantità"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="flex-1">
-                      <label className="block text-xs mb-1">Collo</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={inp.collo === 0 ? "" : inp.collo}
-                        onChange={e => {
-                          const v = e.target.value;
-                          if (v === "" || v === "0") {
-                            aggiornaInput(idx, "collo", "");
-                          } else {
-                            let num = Number(v);
-                            if (isNaN(num) || num < 1) num = 1;
-                            aggiornaInput(idx, "collo", num);
-                          }
-                        }}
-                        className="w-full border rounded-lg p-2 text-center font-bold outline-blue-400"
-                        placeholder="Collo"
-                        disabled={isBusy}
-                      />
-                    </div>
+  <label className="block text-xs mb-1">Collo</label>
+
+  <div className={`rounded-lg border overflow-hidden ${colloErrorIdx === idx ? "ring-2 ring-red-500" : ""}`}>
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="\d*"
+      autoComplete="off"
+      value={inp.collo === 0 ? "" : String(inp.collo)}
+onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+  const raw = e.target.value.replace(/\D+/g, "");
+  if (raw === "") { aggiornaInput(idx, "collo", ""); return; }
+  const num = Math.max(1, Number(raw) || 1);
+  setColloSafe(idx, inp.id, num);
+}}
+      className={`w-full border-0 p-2 text-center font-bold outline-blue-400 ${
+        colloErrorIdx === idx ? "animate-shake text-red-700" : ""
+      }`}
+      placeholder={`Collo (prossimo: ${nextCollo})`}
+      disabled={isBusy}
+    />
+    <div className="grid grid-cols-2 divide-x">
+      <button
+        type="button"
+        className="py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+        onClick={() => bumpCollo(idx, -1)}
+        disabled={isBusy}
+        aria-label="Diminuisci numero collo"
+      >
+        −
+      </button>
+      <button
+        type="button"
+        className="py-1.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+        onClick={() => bumpCollo(idx, +1)}
+        disabled={isBusy}
+        aria-label="Aumenta numero collo"
+      >
+        +
+      </button>
+    </div>
+  </div>
+</div>
                     <button
                       className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
                       onClick={() => rimuoviRiga(inp.id)}
@@ -913,13 +1213,19 @@ export default function DettaglioDestinazione() {
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
         ) : (
           <div className="flex flex-wrap gap-6">
-            {colliRiepilogo().map(collo => (
-              <div
-                key={collo.collo}
-                className={`bg-white rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2 ${
-                  collo.confermato ? "border-green-500" : "border-blue-200"
-                }`}
-              >
+              {colliRiepilogo().map(collo => {
+                const containsCurrent =
+                  !!modaleArticolo &&
+                  collo.righe.some(r => r.model_number === modaleArticolo.model_number);
+
+                return (
+                  <div
+                    key={collo.collo}
+                    className={`rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2
+                      ${collo.confermato ? "border-green-500" : "border-blue-200"}
+                      ${containsCurrent ? "bg-yellow-50" : "bg-white"}
+                    `}
+                  >
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
                   {collo.righe.map((r, i) => (
@@ -953,8 +1259,9 @@ export default function DettaglioDestinazione() {
                     <CheckCircle size={20} />
                   </div>                
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

@@ -1,5 +1,5 @@
 import { useParams, useLocation, useNavigate } from "react-router-dom";
-import { useEffect, useState, useRef, useCallback } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo } from "react";
 import { Package, CheckCircle, ChevronRight, CircleChevronLeft, Plus, Minus, Search } from "lucide-react";
 import GeneraEtichetteModal from "../../components/GeneraEtichetteModal";
 import BarcodeScannerModal from "../../components/BarcodeScannerModal";
@@ -33,7 +33,8 @@ type RigaParziale = {
   numero_parziale?: number; // per getParzialiStorici
 };
 
-type RigaInput = { id: string; quantita: number | ""; collo: number };
+type RigaInput = { id: string; quantita: number | ""; collo: number; fromWip?: boolean };
+
 
 type ColloRiepilogo = {
   collo: number;
@@ -143,8 +144,61 @@ export default function DettaglioDestinazione() {
 
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
-  // Filtro ricerca globale
-  const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+    // Filtro ricerca globale
+    const queryWords = normalizza(skuSearch).split(" ").filter(Boolean);
+
+const colliInfo = useMemo(() => {
+  // 1) Fonte autorevole: colli esistenti dal WIP (server)
+  const exist = new Set<number>();
+  for (const p of parziali) {
+    const c = Number(p.collo) || 0;
+    if (c > 0) exist.add(c);
+  }
+
+  // 2) Lock: colli confermati
+  const confirmed = new Set<number>();
+  for (const [k, v] of Object.entries(confermaCollo)) {
+    if (v) confirmed.add(Number(k));
+  }
+
+  // 3) Primo mancante rispetto al WIP
+  const firstMissingFrom = (s: Set<number>) => {
+    let i = 1;
+    while (s.has(i)) i++;
+    return i;
+  };
+  const minMissingWip = firstMissingFrom(exist);
+
+  // 4) Proposte locali: numeri NUOVI già presenti negli input (positivi, non confermati, non nel WIP)
+  const proposedNew = new Set<number>();
+  for (const r of inputs) {
+    const n = Number(r.collo) || 0;
+    if (n > 0 && !exist.has(n) && !confirmed.has(n)) {
+      proposedNew.add(n);
+    }
+  }
+
+  // 5) Next dinamico: consenti una sequenza continua a partire da minMissingWip,
+  //    includendo gli inputs già popolati (senza buchi).
+  let nextDynamic = minMissingWip;
+  while (proposedNew.has(nextDynamic)) {
+    nextDynamic += 1;
+  }
+
+  const last = exist.size ? Math.max(...exist) : 0;
+
+  return {
+    exist,            // colli già “reali” (WIP)
+    confirmed,        // colli bloccati
+    last,             // solo per UI
+    minMissingWip,    // primo mancante nel WIP
+    nextDynamic,      // prossimo collo NUOVO consentito (WIP + inputs correnti, senza buchi)
+    proposedNew,      // set informativo
+  };
+}, [parziali, inputs, confermaCollo]);
+
+const lastCollo = colliInfo.last;
+const nextCollo = colliInfo.nextDynamic; // <-- usa questo ovunque
 
   const articoliFiltrati = queryWords.length === 0
     ? articoli
@@ -154,7 +208,6 @@ export default function DettaglioDestinazione() {
           queryWords
         )
       );
-
   // Solo X articoli, tranne se ricerca attiva
   const articoliToShow = skuSearch.length > 0
     ? articoliFiltrati
@@ -220,19 +273,19 @@ export default function DettaglioDestinazione() {
       setInputs(wip.map(r => ({
         id: crypto.randomUUID(),
         quantita: r.quantita,
-        collo: r.collo
+        collo: r.collo,
+        fromWip: true,        // <--- importante
       })));
     } else {
-      setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1 }]);
-      setToast("Inizia dal collo 1");
-      setTimeout(()=>setToast(null), 1800);
+      setInputs([{ id: crypto.randomUUID(), quantita: "", collo: 1, fromWip: false }]); // <---
     }
   }, [modaleArticolo, parziali]);
 
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
-    setInputs(prev =>
-      prev.map((r, i) =>
+    setInputs(prev => {
+      // 1) aggiorna la riga target
+      const updated = prev.map((r, i) =>
         i === idx
           ? {
               ...r,
@@ -242,15 +295,54 @@ export default function DettaglioDestinazione() {
                   : val === "" ? "" : Number(val),
             }
           : r
-      )
-    );
+      );
+
+      // 2) se ho cambiato "collo" e collide con un collo esistente, MERGE quantità e rimuovi duplicato
+      if (campo === "collo") {
+        const newCollo = Number(val) || 0;
+        if (newCollo > 0) {
+          // cerca un'altra riga con stesso collo
+          const otherIdx = updated.findIndex((r, i) => i !== idx && Number(r.collo) === newCollo);
+          if (otherIdx !== -1) {
+            const qIdx = Number(updated[idx].quantita) || 0;
+            const qOther = Number(updated[otherIdx].quantita) || 0;
+            // somma quantità sulla riga "other" e rimuovi quella corrente
+            const merged = updated.map((r, i) =>
+              i === otherIdx ? { ...r, quantita: qIdx + qOther } : r
+            ).filter((_, i) => i !== idx);
+            setToast(`Unito sul collo #${newCollo}`);
+            setTimeout(() => setToast(null), 1400);
+            return merged;
+          }
+        }
+      }
+      return updated;
+    });
+
     if (campo === "quantita" && Number(val) > getResiduoInput(idx)) {
       setShakeIdx(idx);
       setTimeout(() => setShakeIdx(null), 400);
     }
   }
+
   function aggiungiRiga() {
-    setInputs(prev => [...prev, { id: crypto.randomUUID(), quantita: "", collo: 1 }]);
+    setInputs(prev => {
+      // se il prossimo mancante è confermato (edge raro), non aggiungere
+      if (colliInfo.confirmed.has(nextCollo)) {
+        setToast(`Collo #${nextCollo} è confermato: non aggiungibile`);
+        setTimeout(() => setToast(null), 1400);
+        return prev;
+      }
+      // evita duplicare lo stesso collo in più righe input
+      if (prev.some(r => Number(r.collo) === nextCollo)) {
+        setToast(`Collo #${nextCollo} è già in modifica`);
+        setTimeout(() => setToast(null), 1400);
+        return prev;
+      }
+      return [...prev, { id: crypto.randomUUID(), quantita: "", collo: nextCollo, fromWip: false }];
+    });
+    setToast(`Aggiunto collo #${nextCollo}`);
+    setTimeout(() => setToast(null), 1400);
   }
   function rimuoviRiga(idToRemove: string) {
     setInputs(prev => prev.filter(inp => inp.id !== idToRemove));
@@ -321,15 +413,24 @@ export default function DettaglioDestinazione() {
         : latest?.last_modified_at;
 
       // 2) costruisco i parziali NUOVI per questo articolo (solo righe valide)
-      const nuoviParziali: RigaParziale[] = nextInputs
-        .filter(r => Number(r.quantita) > 0 && r.collo > 0)
-        .map(r => ({
-          model_number: art.model_number,
-          quantita: Number(r.quantita),
-          collo: r.collo,
-          po_number: art.po_number,
-          confermato: false,
-        }));
+const tmp = nextInputs
+  .filter(r => Number(r.quantita) > 0 && Number(r.collo) > 0)
+  .map(r => ({ collo: Number(r.collo), quantita: Number(r.quantita) }));
+
+// collapse per collo: somma quantità sullo stesso collo
+const byCollo = new Map<number, number>();
+for (const r of tmp) {
+  byCollo.set(r.collo, (byCollo.get(r.collo) || 0) + r.quantita);
+}
+
+const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo, quantita]) => ({
+  model_number: art.model_number,
+  quantita,
+  collo,
+  po_number: art.po_number,
+  confermato: false,
+}));
+
 
       // 3) MERGE: tengo TUTTO ciò che non è dell’articolo, e sostituisco solo l’articolo corrente
       const mergedParziali = [
@@ -420,51 +521,6 @@ export default function DettaglioDestinazione() {
   }
   async function aggiungiParziali() {
     if (!modaleArticolo) return;
-
-    // --- Validazione (SKU/Collo no doppioni nel WIP, e colli sequenziali) ---
-    const sku = modaleArticolo.model_number;
-    // set di colli già presenti nel WIP
-    const wipColli = new Set<number>(parziali.map(p => p.collo).filter(c => c > 0));
-    // set (per check doppioni) di (collo) già usati per questo SKU nel WIP
-    const wipSkuColli = new Set<number>(
-      parziali.filter(p => p.model_number === sku).map(p => p.collo)
-    );
-
-    const seenInputsPerCollo = new Set<number>();
-    const candColli = new Set<number>(wipColli);
-
-    for (const r of inputs) {
-      const q = Number(r.quantita) || 0;
-      const c = Number(r.collo) || 0;
-      if (q <= 0 || c <= 0) continue;
-
-      // (1) no doppioni SKU/collo
-      if (wipSkuColli.has(c) || seenInputsPerCollo.has(c)) {
-        setToast(`SKU già presente nel collo ${c}. Aumenta la quantità nella riga esistente.`);
-        setTimeout(() => setToast(null), 2500);
-        return;
-      }
-      seenInputsPerCollo.add(c);
-
-      // (2) colli sequenziali: se introduci un nuovo collo, deve essere il più piccolo mancante
-      if (!candColli.has(c)) {
-        // calcola il prossimo valido rispetto a candColli attuali
-        let n = 1;
-        const ord = Array.from(candColli).sort((a,b)=>a-b);
-        for (const x of ord) {
-          if (x === n) n++; else if (x > n) break;
-        }
-        const next = n;
-        if (c !== next) {
-          setToast(`Hai saltato un collo. Il prossimo collo valido è ${next}.`);
-          setTimeout(() => setToast(null), 2500);
-          return;
-        }
-        candColli.add(c); // “occupa” il nuovo collo
-      }
-    }
-
-    // Se tutto ok, procedi
     setIsBusy(true);
     await salvaParzialiLiveGenerico(modaleArticolo, inputs);
     setModaleArticolo(null);
@@ -559,46 +615,6 @@ export default function DettaglioDestinazione() {
         totaleWipAltri -
         sommaAltriInput
     );
-  }
-
-  // --- Vincoli colli nel PARZIALE WIP -----------------------------------------
-function getExistingColliNumbers(): number[] {
-  const set = new Set<number>();
-  // colli già presenti nel WIP corrente
-  parziali.forEach(p => { if (p.collo > 0) set.add(p.collo); });
-  // più i colli che stai digitando (inputs)
-  inputs.forEach(r => {
-    const c = typeof r.collo === "number" ? r.collo : Number(r.collo);
-    if (c > 0) set.add(c);
-  });
-  return Array.from(set).sort((a,b)=>a-b);
-}
-
-/** Piccolo “stato di avanzamento” dei colli: il prossimo collo creabile è il più piccolo mancante da 1..N+1 */
-function smallestMissingCollo(): number {
-  const arr = getExistingColliNumbers(); // ordinati
-  let n = 1;
-  for (const c of arr) {
-    if (c === n) { n++; }
-    else if (c > n) { return n; } // trovato un buco
-  }
-  return n; // nessun buco: next è max+1 oppure 1 se vuoto
-}
-
-/** True se lo SKU è già presente nel WIP per quel collo (inputs escluso l'input corrente) */
-  function isSkuPresentInCollo(sku: string, collo: number, excludeInputId?: string): boolean {
-    if (!collo || collo <= 0) return false;
-    // già salvati nel WIP
-    if (parziali.some(p => p.collo === collo && p.model_number === sku)) return true;
-    // righe in digitazione (altre righe del modale)
-    if (inputs.some(i =>
-        i.id !== excludeInputId &&
-        Number(i.quantita) > 0 &&
-        i.collo === collo &&
-        modaleArticolo?.model_number === sku
-      )) return true;
-
-    return false;
   }
   function colliRiepilogo(): ColloRiepilogo[] {
     const gruppi: { [collo: number]: ColloRiepilogo } = {};
@@ -835,6 +851,17 @@ function smallestMissingCollo(): number {
             <div className="mb-2 text-xs text-neutral-500 flex flex-wrap items-center gap-2">
               <b>EAN:</b>
               {modaleArticolo.vendor_product_id || <span className="text-neutral-300">N/A</span>}
+              {parziali.some(p => p.model_number === modaleArticolo.model_number && p.po_number === modaleArticolo.po_number) && (
+  <div className="mb-2 px-3 py-2 rounded-lg bg-yellow-50 border border-yellow-300 text-yellow-900 text-xs font-semibold">
+    Articolo già presente in questo parziale:
+    {" "}
+    {Array.from(new Set(
+      parziali
+        .filter(p => p.model_number === modaleArticolo.model_number && p.po_number === modaleArticolo.po_number)
+        .map(p => p.collo)
+    )).sort((a,b)=>a-b).map(c => `Collo ${c}`).join(", ")}
+  </div>
+)}
               {/* Bottoni stampa */}
               <div className="flex gap-2 mt-1">
                 {modaleArticolo.vendor_product_id && (
@@ -854,7 +881,15 @@ function smallestMissingCollo(): number {
                 </button>
               </div>
             </div>
-
+{/* Indicatore ultimo/prossimo collo */}
+<div className="mb-3 flex items-center gap-2 text-xs">
+  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+    Ultimo collo: <b>{lastCollo}</b>
+  </span>
+  <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-cyan-50 text-cyan-800 border border-cyan-200">
+    Prossimo disponibile: <b>{nextCollo}</b>
+  </span>
+</div>
             <div className="flex-1 overflow-y-auto" style={{ minHeight: 0, maxHeight: "50vh" }}>
               <div className="mb-2">
                 <div className="text-sm font-semibold mb-1">Parziali precedenti:</div>
@@ -905,51 +940,101 @@ function smallestMissingCollo(): number {
                     </div>
                     <div className="flex-1">
                       <label className="block text-xs mb-1">Collo</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={inp.collo === 0 ? "" : inp.collo}
-                        onChange={e => {
-                          const prevCollo = inputs[idx]?.collo; // conserva il valore precedente
-                          const sku = modaleArticolo?.model_number || "";
-                          const raw = e.target.value;
 
-                          if (raw === "" || raw === "0") {
-                            // consenti vuoto temporaneo per editing
-                            aggiornaInput(idx, "collo", "");
-                            return;
-                          }
+<input
+  type="text"
+  inputMode="numeric"
+  pattern="\d*"
+  value={inp.collo === 0 ? "" : String(inp.collo)}
+  onBeforeInput={(e: React.FormEvent<HTMLInputElement>) => {
+    const ne = e.nativeEvent as InputEvent;
+    // Considera tutti i tipi di inserimento con data (insertText, insertFromPaste, insertReplacementText, insertCompositionText)
+    if (!("data" in ne)) return;
+    const data = (ne.data ?? "").replace(/\D+/g, "");
+    if (!data) return;
 
-                          let num = Number(raw);
-                          if (isNaN(num) || num < 1) num = 1;
+    const el = e.currentTarget;
+    const start = el.selectionStart ?? el.value.length;
+    const end   = el.selectionEnd   ?? el.value.length;
+    const nextStr = el.value.slice(0, start) + data + el.value.slice(end);
+    const nextNum = Number(nextStr);
 
-                          // 1) blocca DOPPIONI (SKU, collo) nel WIP corrente
-                          if (isSkuPresentInCollo(sku, num, inputs[idx].id)) {
-                            setToast(`SKU già presente nel collo ${num}. Modifica la quantità nella riga esistente.`);
-                            setTimeout(() => setToast(null), 2500);
-                            // ripristina il valore precedente
-                            aggiornaInput(idx, "collo", prevCollo || 1);
-                            return;
-                          }
+    const { exist, confirmed, minMissingWip, nextDynamic } = colliInfo;
+    const rowIsFromWip = !!inputs[idx]?.fromWip; // <--- ORIGINE DELLA RIGA
 
-                          // 2) regola SEQUENZIALE: se stai creando un collo nuovo, deve essere il prossimo valido
-                          const existing = getExistingColliNumbers();
-                          const esisteCollo = existing.includes(num);
-                          if (!esisteCollo) {
-                            const next = smallestMissingCollo();
-                            if (num !== next) {
-                              setToast(`Hai saltato un collo. Il prossimo collo valido è ${next}.`);
-                              setTimeout(() => setToast(null), 2500);
-                              num = next; // forza al prossimo consentito
-                            }
-                          }
+    const nextIsExisting = exist.has(nextNum);
+    const isNewInRange   = nextNum >= minMissingWip && nextNum <= nextDynamic;
 
-                          aggiornaInput(idx, "collo", num);
-                        }}
-                        className="w-full border rounded-lg p-2 text-center font-bold outline-blue-400"
-                        placeholder="Collo"
-                        disabled={isBusy}
-                      />
+    // Regole:
+    // - mai scrivere su confermato
+    // - riga NUOVA: vietato puntare a colli esistenti (solo nuovi nel range)
+    // - riga da WIP: non migrare verso ALTRI colli esistenti (mantieni il suo)
+    const invalid =
+      confirmed.has(nextNum) ||
+      (!rowIsFromWip && nextIsExisting) ||                 // nuova -> no esistenti
+      (rowIsFromWip && nextIsExisting && nextNum !== inp.collo) || // wip -> non cambiare esistente
+      (!nextIsExisting && !isNewInRange);                  // nuovi fuori range
+
+    if (invalid) {
+      e.preventDefault();
+      setToast(`Prossimo collo disponibile: ${nextDynamic}`);
+      setTimeout(() => setToast(null), 1400);
+    }
+  }}
+  onPaste={(e: React.ClipboardEvent<HTMLInputElement>) => {
+    const text = (e.clipboardData.getData("text") || "").replace(/\D+/g, "");
+    if (!text) return;
+    const num = Number(text);
+
+    const { exist, confirmed, minMissingWip, nextDynamic } = colliInfo;
+    const rowIsFromWip = !!inputs[idx]?.fromWip;
+
+    const nextIsExisting = exist.has(num);
+    const isNewInRange   = num >= minMissingWip && num <= nextDynamic;
+
+    if (
+      confirmed.has(num) ||
+      (!rowIsFromWip && nextIsExisting) ||
+      (rowIsFromWip && nextIsExisting && num !== inp.collo) ||
+      (!nextIsExisting && !isNewInRange)
+    ) {
+      e.preventDefault();
+      setToast(`Puoi incollare solo un numero valido (≤ ${nextDynamic})`);
+      setTimeout(() => setToast(null), 1600);
+    }
+  }}
+  onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+    // Rete di sicurezza (normalizza + clamp)
+    const raw = e.target.value.replace(/\D+/g, "");
+    if (raw === "") { aggiornaInput(idx, "collo", ""); return; }
+
+    let num = Number(raw);
+    if (num < 1) num = 1;
+
+    const { exist, confirmed, minMissingWip, nextDynamic } = colliInfo;
+    const rowIsFromWip = !!inputs[idx]?.fromWip;
+
+    const nextIsExisting = exist.has(num);
+    const isNewInRange   = num >= minMissingWip && num <= nextDynamic;
+
+    if (
+      confirmed.has(num) ||
+      (!rowIsFromWip && nextIsExisting) ||
+      (rowIsFromWip && nextIsExisting && num !== inp.collo) ||
+      (!nextIsExisting && !isNewInRange)
+    ) {
+      // clamp al più vicino valido (il prossimo dinamico)
+      num = nextDynamic;
+    }
+    aggiornaInput(idx, "collo", num);
+  }}
+  className={`w-full border rounded-lg p-2 text-center font-bold outline-blue-400 ${
+    shakeIdx === idx ? "ring-2 ring-red-400 animate-shake" : ""
+  }`}
+  placeholder={`Collo (prossimo: ${nextCollo})`}
+  disabled={isBusy}
+/>
+
                     </div>
                     <button
                       className="ml-2 p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100"
@@ -1027,13 +1112,19 @@ function smallestMissingCollo(): number {
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
         ) : (
           <div className="flex flex-wrap gap-6">
-            {colliRiepilogo().map(collo => (
-              <div
-                key={collo.collo}
-                className={`bg-white rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2 ${
-                  collo.confermato ? "border-green-500" : "border-blue-200"
-                }`}
-              >
+              {colliRiepilogo().map(collo => {
+                const containsCurrent =
+                  !!modaleArticolo &&
+                  collo.righe.some(r => r.model_number === modaleArticolo.model_number);
+
+                return (
+                  <div
+                    key={collo.collo}
+                    className={`rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2
+                      ${collo.confermato ? "border-green-500" : "border-blue-200"}
+                      ${containsCurrent ? "bg-yellow-50" : "bg-white"}
+                    `}
+                  >
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
                   {collo.righe.map((r, i) => (
@@ -1067,8 +1158,9 @@ function smallestMissingCollo(): number {
                     <CheckCircle size={20} />
                   </div>                
                 )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
