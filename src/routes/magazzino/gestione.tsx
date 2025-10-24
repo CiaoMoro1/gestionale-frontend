@@ -47,6 +47,18 @@ type SortKey =
   | "sito_qta" | "sito_prenotati"
   | "seller_qta" | "seller_prenotati";
 
+const SORT_OPTIONS: { label: string; key: SortKey }[] = [
+    { label: "SKU",               key: "sku" },
+    { label: "EAN",               key: "ean" },
+    { label: "Totale",            key: "giacenza_totale" },
+    { label: "Prenotati",         key: "prenotati_totali" },
+    { label: "Vendor (qta)",      key: "vendor_qta" },
+    { label: "Vendor (pren.)",    key: "vendor_prenotati" },
+    { label: "Sito (qta)",        key: "sito_qta" },
+    { label: "Sito (pren.)",      key: "sito_prenotati" },
+    { label: "Seller (qta)",      key: "seller_qta" },
+    { label: "Seller (pren.)",    key: "seller_prenotati" },
+];
 /* =============================== UTILS/UI ================================ */
 const SERVER_PAGE = 50;
 const CLIENT_SIZES = [25, 50, 100];
@@ -364,6 +376,37 @@ export default function GestioneMagazzinoPage() {
           </div>
         </div>
       )}
+
+{/* ORDINAMENTO MOBILE */}
+<div className="sm:hidden mt-3 grid grid-cols-2 gap-2">
+  <div>
+    <label className="block text-[11px] uppercase tracking-wide text-slate-500">Ordina per</label>
+    <select
+      value={sortKey}
+      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
+        const v = e.target.value as SortKey;
+        // evita che un value non valido sporchi lo state
+        if (SORT_OPTIONS.some(o => o.key === v)) setSortKey(v);
+      }}
+      className="border rounded-lg px-2 py-2 w-full"
+    >
+      {SORT_OPTIONS.map(opt => (
+        <option key={opt.key} value={opt.key}>{opt.label}</option>
+      ))}
+    </select>
+  </div>
+  <div>
+    <label className="block text-[11px] uppercase tracking-wide text-slate-500">Direzione</label>
+    <select
+      value={sortDir}
+      onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setSortDir(e.target.value === "asc" ? "asc" : "desc")}
+      className="border rounded-lg px-2 py-2 w-full"
+    >
+      <option value="asc">Crescente</option>
+      <option value="desc">Decrescente</option>
+    </select>
+  </div>
+</div>
 
       {/* LISTA MOBILE (card) */}
       <div className="sm:hidden mt-3 space-y-2">
