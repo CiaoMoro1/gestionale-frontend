@@ -55,6 +55,7 @@ export const navSections: NavSectionType[] = [
     label: "Magazzino",
     icon: <Package size={24} strokeWidth={1.5} />,
     items: [
+      { label: "Gestione",  icon: <Package size={24} strokeWidth={1.5} />, path: "/magazzino/gestione" },
       { label: "Prodotti", icon: <Package size={24} strokeWidth={1.5} />, path: "/prodotti" },
       { label: "Movimenti", icon: <ArrowLeftRight size={24} strokeWidth={1.5} />, path: "/movimenti" },
     ],

@@ -19,6 +19,7 @@ import DraftOrdini from "./routes/ordini-amazon/draft";
 import CompletatiOrdini from "./routes/ordini-amazon/completi";
 /* import ProduzioneVendor from "./routes/produzione/Produzione_Vendor";*/
 import NoteCreditoResoPage from "./routes/ordini-amazon/notecreditoreso";
+import GestioneMagazzinoPage from "./routes/magazzino/gestione";
 
 import ProduzioneVendorPage from "@/features/produzione/pages/ProduzioneVendorPage";
 
@@ -113,6 +114,8 @@ function AppContent() {
               <Route path="/ordini-amazon/notecreditoreso" element={<NoteCreditoResoPage />} />
               <Route path="/ordini-amazon/nota-credito-upload" element={<NoteCreditoOrdini />} />
               <Route path="/produzione-new" element={<ProduzioneVendorPage />} />
+              <Route path="/magazzino/gestione" element={<GestioneMagazzinoPage />} />
+
 
             </Routes>
           </Suspense>
