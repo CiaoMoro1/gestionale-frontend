@@ -227,49 +227,89 @@ export default function GestioneMagazzinoPage() {
   /* ============================== RENDER ================================ */
   return (
     <div className="mx-auto max-w-[1400px] px-2 pb-24">
-      {/* TOOLBAR STICKY */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/70 border-b">
-        <div className="flex flex-wrap items-center justify-between gap-2 px-1 py-2">
-          <div className="flex items-center gap-2">
-            <button onClick={() => navigate(-1)} className="gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-3 py-2 flex items-center">
-              <ArrowLeft size={18} /> <span className="hidden sm:inline">Indietro</span>
+        {/* TOOLBAR (responsive, mobile-first) */}
+        <div className="sticky top-0 z-40 bg-white/85 backdrop-blur-md supports-[backdrop-filter]:bg-white/70 border-b">
+        <div className="px-2 py-2 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-between">
+            {/* Colonna SX: back + titolo (sempre su una riga, mai si spezza) */}
+            <div className="flex items-center gap-2 min-w-0 shrink-0">
+            <button
+                onClick={() => navigate(-1)}
+                className="shrink-0 gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-3 py-2 inline-flex items-center"
+            >
+                <ArrowLeft size={18} />
+                <span className="hidden sm:inline">Indietro</span>
             </button>
-            <div className="flex items-center gap-2">
-              <Boxes className="text-cyan-700" />
-              <h1 className="text-base sm:text-lg font-bold text-cyan-900">Gestione Magazzino</h1>
+            <div className="flex items-center gap-2 min-w-0">
+                <Boxes className="text-cyan-700 shrink-0" />
+                <h1 className="text-base sm:text-lg font-bold text-cyan-900 truncate">
+                Gestione Magazzino
+                </h1>
             </div>
-          </div>
-
-          <div className="flex flex-1 sm:flex-none items-center gap-2 justify-end">
-            <div className="flex items-stretch rounded-lg overflow-hidden border flex-1 max-w-[560px]">
-              <input
-                type="text" value={query} onChange={e=>setQuery(e.target.value)}
-                placeholder="Cerca SKU o EAN" className="px-3 py-2 outline-none flex-1" autoComplete="off"
-              />
-              <button onClick={() => load()} className="px-3 py-2 bg-cyan-600 text-white hover:bg-cyan-700 flex items-center gap-1">
-                <Search size={16} /> <span className="hidden sm:inline">Cerca</span>
-              </button>
             </div>
 
-            <button onClick={() => setScannerOpen(true)} className="gap-1 sm:gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-2 sm:px-3 py-2 flex items-center">
-              <ScanLine size={18} /> <span className="hidden sm:inline">Scanner</span>
-            </button>
+            {/* Colonna DX: azioni (impilata su mobile, allineata su tablet/desktop) */}
+            <div className="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap sm:items-center sm:justify-end">
+            {/* Search: prende tutta la larghezza su mobile/tablet stretto */}
+            <div className="flex items-stretch rounded-lg overflow-hidden border min-w-0">
+                <input
+                type="text"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Cerca SKU o EAN"
+                className="px-3 py-2 outline-none flex-1 min-w-0"
+                autoComplete="off"
+                />
+                <button
+                onClick={() => load()}
+                className="px-3 py-2 bg-cyan-600 text-white hover:bg-cyan-700 inline-flex items-center gap-1 shrink-0"
+                >
+                <Search size={16} />
+                <span className="hidden md:inline">Cerca</span>
+                </button>
+            </div>
 
-            <button onClick={exportCsv} className="gap-1 sm:gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-2 sm:px-3 py-2 flex items-center">
-              <Download size={16} /> <span className="hidden sm:inline">Esporta</span>
-            </button>
+            {/* Pulsanti compatti; non si spezzano, ma vanno a nuova riga in modo pulito */}
+            <div className="flex flex-wrap items-center gap-2">
+                <button
+                onClick={() => setScannerOpen(true)}
+                className="gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-3 py-2 inline-flex items-center"
+                >
+                <ScanLine size={18} />
+                <span className="hidden md:inline">Scanner</span>
+                </button>
 
-            <button onClick={() => setFiltersOpen(o=>!o)} className={`gap-1 sm:gap-2 rounded-lg px-2 sm:px-3 py-2 flex items-center ${filtersOpen ? "bg-cyan-50 border border-cyan-300 text-cyan-800" : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"}`}>
-              <Filter size={16} /> <span className="hidden sm:inline">Filtri</span>
-            </button>
+                <button
+                onClick={exportCsv}
+                className="gap-2 border border-gray-300 bg-white text-gray-700 hover:bg-gray-100 rounded-lg px-3 py-2 inline-flex items-center"
+                >
+                <Download size={16} />
+                <span className="hidden md:inline">Esporta</span>
+                </button>
 
-            <button onClick={load} disabled={loading} className="gap-1 sm:gap-2 rounded-lg px-2 sm:px-3 py-2 bg-cyan-600 text-white hover:bg-cyan-700 flex items-center disabled:opacity-50">
-              <RefreshCw size={18} className={loading ? "animate-spin" : ""} /> <span className="hidden sm:inline">Aggiorna</span>
-            </button>
-          </div>
+                <button
+                onClick={() => setFiltersOpen((o) => !o)}
+                className={`gap-2 rounded-lg px-3 py-2 inline-flex items-center ${
+                    filtersOpen
+                    ? "bg-cyan-50 border border-cyan-300 text-cyan-800"
+                    : "border border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                }`}
+                >
+                <Filter size={16} />
+                <span className="hidden md:inline">Filtri</span>
+                </button>
+
+                <button
+                onClick={load}
+                disabled={loading}
+                className="gap-2 rounded-lg px-3 py-2 bg-cyan-600 text-white hover:bg-cyan-700 inline-flex items-center disabled:opacity-50"
+                >
+                <RefreshCw size={18} className={loading ? "animate-spin" : ""} />
+                <span className="hidden md:inline">Aggiorna</span>
+                </button>
+            </div>
+            </div>
         </div>
-      </div>
-
+        </div>
       {/* FILTRI (mobile full width / desktop compatto) */}
       {filtersOpen && (
         <div className="rounded-2xl border bg-white shadow p-3 mt-3 sm:p-4">
@@ -346,10 +386,19 @@ export default function GestioneMagazzinoPage() {
               <div className="font-semibold">Tot: {fmt(r.giacenza_totale)}</div>
               <div className="text-slate-600">Pren: {fmt(r.prenotati_totali)}</div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Chip label={fmt(r.vendor_qta)} sub={`pren ${fmt(r.vendor_prenotati)}`} tone="blue" />
-              <Chip label={fmt(r.sito_qta)}   sub={`pren ${fmt(r.sito_prenotati)}`}   tone="emerald" />
-              <Chip label={fmt(r.seller_qta)} sub={`pren ${fmt(r.seller_prenotati)}`} tone="amber" />
+            <div className="flex flex-wrap gap-3">
+            <div className="inline-flex items-center gap-1">
+                <span className="text-[11px] text-slate-500">Vendor</span>
+                <Chip label={fmt(r.vendor_qta)} sub={`pren ${fmt(r.vendor_prenotati)}`} tone="blue" />
+            </div>
+            <div className="inline-flex items-center gap-1">
+                <span className="text-[11px] text-slate-500">Sito</span>
+                <Chip label={fmt(r.sito_qta)} sub={`pren ${fmt(r.sito_prenotati)}`} tone="emerald" />
+            </div>
+            <div className="inline-flex items-center gap-1">
+                <span className="text-[11px] text-slate-500">Seller</span>
+                <Chip label={fmt(r.seller_qta)} sub={`pren ${fmt(r.seller_prenotati)}`} tone="amber" />
+            </div>
             </div>
           </div>
         ))}
