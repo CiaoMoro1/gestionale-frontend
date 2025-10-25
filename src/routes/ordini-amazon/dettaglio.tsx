@@ -952,12 +952,25 @@ function bumpCollo(idx: number, delta: number) {
       </div>
 
       {/* MODALE INSERIMENTO PARZIALI */}
-      {modaleArticolo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div
-            className="bg-white rounded-2xl p-5 shadow-lg min-w-[90vw] sm:min-w-[360px] w-full max-w-sm relative border flex flex-col"
-            style={{ maxHeight: "92vh", minWidth: 0, width: "100%" }}
-          >
+          {modaleArticolo && (
+            <div
+              // overlay FULLSCREEN con z-index estremo: supera qualsiasi bottomnav
+              className="fixed inset-0 z-[2147483647] pointer-events-auto"
+              style={{ isolation: "isolate" }} // crea stacking context ‘alto’ per i figli
+            >
+              {/* sfondo scuro */}
+              <div className="absolute inset-0 bg-black/40" />
+
+              {/* contenitore della card, centrato e SOPRA lo sfondo */}
+              <div
+                className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[2147483647]
+                          bg-white rounded-2xl p-5 shadow-lg border flex flex-col w-full max-w-sm"
+                style={{
+                  maxHeight: "92vh",
+                  minWidth: "min(90vw, 720px)",
+                  paddingBottom: "max(1rem, env(safe-area-inset-bottom))" // evita sovrapposizioni in basso
+                }}
+              >
             <button
               className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
               onClick={() => {
@@ -1265,16 +1278,20 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         )}
       </div>
-      {/* Toast globale UNA sola volta */}
-      {toast && (
-        <div
-          className="fixed bottom-4 right-4 z-[9999] bg-neutral-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg"
-          role="status"
-          aria-live="polite"
-        >
-          {toast}
+    {/* Toast globale (senza portal, sopra a tutto) */}
+    {toast && (
+      <div
+        className="fixed inset-0 z-[2147483647] pointer-events-none"
+        style={{ isolation: "isolate" }} // crea uno stacking context superiore
+      >
+        <div className="absolute right-4 bottom-[max(1rem,env(safe-area-inset-bottom))] pointer-events-auto">
+          <div className="inline-block bg-neutral-900 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
+            {toast}
+          </div>
         </div>
-      )}
+      </div>
+    )}
+);
 
       {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
