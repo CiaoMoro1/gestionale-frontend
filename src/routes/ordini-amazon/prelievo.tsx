@@ -194,27 +194,40 @@ export default function DettaglioPrelievo() {
     : prelievi;
 
   // 2) Filtro search (ignora MZ-)
-  const prelieviAfterSearch = (search.length > 0)
-    ? prelieviAfterRadice.filter(r => {
-        const skuNorm = stripMZ(r.sku);
-        const baseOk = normalTokens.length === 0
-          ? true
-          : matchAllWords(`${skuNorm} ${r.ean}`, normalTokens);
-
-        const skuTight = normalizeTight(r.sku);
-        const suffixOk = suffixTokens.length === 0
-          ? true
-          : suffixTokens.some(suf => skuTight.endsWith(suf));
-
-        // NEW: fallback tight-contains (gestisce spazi, trattini, doppie spaziature)
-        const searchTight = normalizeTight(search);
-        const fallbackOk = searchTight
-          ? skuTight.includes(searchTight) || (normalizeTight(r.ean || "").includes(searchTight))
-          : true;
-
-        return (baseOk && suffixOk) || fallbackOk;
-      })
-    : prelieviAfterRadice;
+   const prelieviAfterSearch = (search.length > 0)
+     ? prelieviAfterRadice.filter(r => {
+         const skuNoMZ = stripMZ(r.sku);
+   
+         // --- base: tutti i token "normali" devono matchare parole (o prefix) su SKU/EAN
+         const baseOk = normalTokens.length === 0
+           ? true
+           : matchAllWords(`${skuNoMZ} ${r.ean}`, normalTokens);
+   
+         // --- exact close: token con ';' devono eguagliare il segmento FINALE dello SKU
+         //     Esempio: "cfdm-abc-x2" => lastSeg === "x2"
+         const lastSeg = normalizeTight(skuNoMZ)
+           .split(/[^a-z0-9]+/g)
+           .filter(Boolean)
+           .at(-1) ?? "";
+   
+         const suffixOk = suffixTokens.length === 0
+           ? true
+           : suffixTokens.some(suf => lastSeg === suf); // suf è già normalizzato sopra
+   
+         // --- fallback "tight-contains" SOLO se NON sto usando ';'
+         const allowFallback = suffixTokens.length === 0;
+         const skuTight = normalizeTight(skuNoMZ);
+         const searchTight = normalizeTight(search.replace(/;+/g, "")); // togli i ';' dal fallback
+         const eanTight = normalizeTight(r.ean || "");
+         const fallbackOk = allowFallback
+           ? (searchTight
+               ? skuTight.includes(searchTight) || eanTight.includes(searchTight)
+               : true)
+           : false;
+   
+         return (baseOk && suffixOk) || fallbackOk;
+       })
+     : prelieviAfterRadice;
 
   // 3) Ordinamento A→Z ignorando MZ-
   let prelieviToShow = [...prelieviAfterSearch].sort((a, b) =>
