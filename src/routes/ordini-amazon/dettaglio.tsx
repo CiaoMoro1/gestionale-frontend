@@ -1291,7 +1291,6 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
         </div>
       </div>
     )}
-);
 
       {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
