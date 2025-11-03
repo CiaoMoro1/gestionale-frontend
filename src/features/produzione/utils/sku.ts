@@ -35,6 +35,7 @@ const RADICE_COLLAPSE: Record<string, string> = {
   RNNCDN: "RNNCD",
   TOVCDN: "TOVCD",
   CFD: "CFDM",
+  TENDA: "CSA",
   TPCDN: "TPCD",
 };
 
