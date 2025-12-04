@@ -140,7 +140,7 @@ export default function DettaglioDestinazione() {
   const [eanCollo, setEanCollo] = useState("");
   const [colloError, setColloError] = useState<string | null>(null);
   const eanColloInputRef = useRef<HTMLInputElement | null>(null);
-
+  const [eanKeyboardEnabled, setEanKeyboardEnabled] = useState(false);  // 👈 NEW
 
 
 
@@ -296,10 +296,11 @@ const [colloErrorIdx, setColloErrorIdx] = useState<number | null>(null);
 
     // autofocus input EAN quando apro il modale del collo
   useEffect(() => {
-    if (modaleCollo !== null && eanColloInputRef.current) {
+    // autofocus solo se la tastiera manuale è attiva
+    if (modaleCollo !== null && eanKeyboardEnabled && eanColloInputRef.current) {
       eanColloInputRef.current.focus();
     }
-  }, [modaleCollo]);
+  }, [modaleCollo, eanKeyboardEnabled]);
 
 
   // Funzioni di utility, input, conferme, etc
@@ -1277,16 +1278,33 @@ function bumpCollo(idx: number, delta: number) {
             </div>
 
             {/* Input EAN */}
-            <form onSubmit={handleSubmitEanCollo} className="mb-3 flex gap-2">
+            <form onSubmit={handleSubmitEanCollo} className="mb-3 flex gap-2 items-center">
               <input
                 ref={eanColloInputRef}
                 type="text"
+                inputMode={eanKeyboardEnabled ? "numeric" : "none"}   // 👈 prova a bloccare tastiera
                 value={eanCollo}
                 onChange={e => setEanCollo(e.target.value)}
                 placeholder="EAN o SKU"
                 className="flex-1 border rounded-lg px-3 py-2 text-sm"
                 disabled={isBusy}
               />
+              <button
+                type="button"
+                className="px-2 py-2 rounded-lg border text-[11px] font-semibold hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => {
+                  setEanKeyboardEnabled(k => !k);
+                  // se la appena attivata, porta il focus sul campo
+                  setTimeout(() => {
+                    if (!isBusy && eanColloInputRef.current) {
+                      eanColloInputRef.current.focus();
+                    }
+                  }, 50);
+                }}
+                disabled={isBusy}
+              >
+                {eanKeyboardEnabled ? "Nascondi" : "Tastiera"}
+              </button>
               <button
                 type="submit"
                 className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-800 disabled:opacity-50"
@@ -1295,6 +1313,7 @@ function bumpCollo(idx: number, delta: number) {
                 Aggiungi
               </button>
             </form>
+
             {colloError && (
               <div className="mb-2 text-xs text-red-600">{colloError}</div>
             )}
@@ -1334,16 +1353,16 @@ function bumpCollo(idx: number, delta: number) {
           {ordered !== null ? ordered : "-"}
         </td>
         <td className="py-1 text-center">
-          <input
-            type="number"
-            min={0}
-            className="w-16 border rounded px-1 py-0.5 text-right"
-            value={Number(r.quantita)}
-            onChange={e =>
-              aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
-            }
-            disabled={isBusy}
-          />
+        <input
+          type="number"
+          min={0}
+          className="w-20 border rounded px-3 py-2 text-right text-sm"
+          value={Number(r.quantita)}
+          onChange={e =>
+            aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
+          }
+          disabled={isBusy}
+        />
         </td>
         <td className="py-1 text-center">
           <button
