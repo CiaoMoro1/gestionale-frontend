@@ -142,7 +142,7 @@ export default function DettaglioDestinazione() {
   const eanColloInputRef = useRef<HTMLInputElement | null>(null);
   const [eanKeyboardEnabled, setEanKeyboardEnabled] = useState(false);  // 👈 NEW
 
-
+  const [alertModal, setAlertModal] = useState<string | null>(null); // 👈 NEW
 
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
@@ -679,11 +679,11 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       let qty = Math.max(0, nuovaQty || 0);
       if (qty > maxDisponibile) {
         qty = maxDisponibile;
-        const msg = "Limite massimo raggiunto per questo articolo";
+        const msg = "Limite massimo raggiunto per questo articolo.";
         setColloError(msg);
-        setToast(msg);
-        setTimeout(() => setToast(null), 2000);
+        setAlertModal(msg);   // 👈 fa apparire il popup
       }
+
 
 
       const next = [...prev];
@@ -751,7 +751,9 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       a => a.vendor_product_id === ean || a.model_number === ean
     );
     if (!found) {
-      setColloError("Articolo non trovato per questo EAN/SKU");
+      const msg = "Articolo non trovato per questo EAN/SKU.";
+      setColloError(msg);
+      setAlertModal(msg);   // 👈 popup
       return;
     }
 
@@ -761,12 +763,12 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
 
       const residuo = calcolaResiduoArticoloInCollo(prev, po, mn);
       if (residuo <= 0) {
-        const msg = "Quantità massima già raggiunta per questo articolo";
+        const msg = "Quantità massima già raggiunta per questo articolo.";
         setColloError(msg);
-        setToast(msg);
-        setTimeout(() => setToast(null), 2000);
+        setAlertModal(msg);   // 👈 popup
         return prev;
       }
+
 
       const idx = prev.findIndex(
         r => r.model_number === mn && r.po_number === po
@@ -780,12 +782,12 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
         const clamped = Math.min(nuovaQty, maxQty);
 
       if (clamped === currentQty) {
-        const msg = "Quantità massima già raggiunta per questo articolo";
+        const msg = "Quantità massima già raggiunta per questo articolo.";
         setColloError(msg);
-        setToast(msg);
-        setTimeout(() => setToast(null), 2000);
+        setAlertModal(msg);   // 👈 popup
         return prev;
       }
+
 
         next[idx] = {
           ...next[idx],
@@ -1778,6 +1780,35 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
         </div>
       </div>
     )}
+
+
+    {/* POPUP ALERT BLOCCANTE */}
+    {alertModal && (
+      <div
+        className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/40"
+        style={{ isolation: "isolate" }}
+      >
+        <div className="bg-white rounded-2xl shadow-xl border px-5 py-4 w-full max-w-xs">
+          <div className="mb-3 font-semibold text-base text-blue-800">
+            Attenzione
+          </div>
+          <div className="mb-4 text-sm text-neutral-800 whitespace-pre-line">
+            {alertModal}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-800"
+              onClick={() => setAlertModal(null)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+
 
       {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">
