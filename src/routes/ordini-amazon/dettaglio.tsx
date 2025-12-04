@@ -142,8 +142,6 @@ export default function DettaglioDestinazione() {
   const eanColloInputRef = useRef<HTMLInputElement | null>(null);
   const [eanKeyboardEnabled, setEanKeyboardEnabled] = useState(false);  // 👈 NEW
 
-  const errorAudioRef = useRef<HTMLAudioElement | null>(null);
-
   const [alertModal, setAlertModal] = useState<string | null>(null); // 👈 NEW
   const [confirmDeleteCollo, setConfirmDeleteCollo] = useState(false);
 
@@ -309,40 +307,6 @@ const [colloErrorIdx, setColloErrorIdx] = useState<number | null>(null);
   }, [modaleCollo, eanKeyboardEnabled]);
 
 
-
-  useEffect(() => {
-    const handler = () => {
-      const audio = errorAudioRef.current;
-      if (!audio) {
-        return;
-      }
-      // tentativo di play+pause legato a un vero evento utente (touch/click)
-      audio
-        .play()
-        .then(() => {
-          audio.pause();
-          audio.currentTime = 0;
-        })
-        .catch(() => {
-          // se fallisce, pazienza: sui prossimi tocchi riproveremo
-        });
-
-      // registriamo il priming solo una volta
-      window.removeEventListener("touchstart", handler);
-      window.removeEventListener("click", handler);
-    };
-
-    window.addEventListener("touchstart", handler, { passive: true });
-    window.addEventListener("click", handler, { passive: true });
-
-    return () => {
-      window.removeEventListener("touchstart", handler);
-      window.removeEventListener("click", handler);
-    };
-  }, []);
-
-
-
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs(prev => {
@@ -439,20 +403,17 @@ function rimuoviRiga(idToRemove: string) {
     setAlertMessage(msg);
   }
 
-function playErrorSound() {
-  const audio = errorAudioRef.current;
-  if (!audio) return;
-  try {
-    audio.currentTime = 0;
-    audio.play().catch(() => {
-      // su mobile può fallire se non c'è ancora stato un gesto "di sblocco"
-    });
-  } catch {
-    // non bloccare mai il flusso se l'audio fallisce
+  function playErrorSound() {
+    try {
+      const audio = new Audio("/sound/error-170796.mp3");
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        // ignora errori di autoplay
+      });
+    } catch {
+      // niente, è solo un extra
+    }
   }
-}
-
-
 
 
 
@@ -1878,11 +1839,7 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         )}
       </div>
-<audio
-  ref={errorAudioRef}
-  src="/sound/error-170796.mp3"
-  preload="auto"
-/>
+
 
 {/* POPUP AVVISO ROSSO */}
 {alertMessage && (
