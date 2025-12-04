@@ -143,6 +143,7 @@ export default function DettaglioDestinazione() {
   const [eanKeyboardEnabled, setEanKeyboardEnabled] = useState(false);  // 👈 NEW
 
   const [alertModal, setAlertModal] = useState<string | null>(null); // 👈 NEW
+  const [confirmDeleteCollo, setConfirmDeleteCollo] = useState(false);
 
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
@@ -151,6 +152,9 @@ export default function DettaglioDestinazione() {
 
   const [toast, setToast] = useState<string | null>(null);
   const [reservedNewByRow, setReservedNewByRow] = useState<Record<string, number>>({});
+
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
 
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
@@ -391,6 +395,28 @@ function rimuoviRiga(idToRemove: string) {
     setTimeout(() => setBarcodeModalOpen(true), 150);
   }
 
+  function showAlert(msg: string) {
+    // chiudi eventuale tastiera (soft keyboard)
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setAlertMessage(msg);
+  }
+
+  function playErrorSound() {
+    try {
+      const audio = new Audio("/sound/error-170796.mp3");
+      audio.currentTime = 0;
+      audio.play().catch(() => {
+        // ignora errori di autoplay
+      });
+    } catch {
+      // niente, è solo un extra
+    }
+  }
+
+
+
   async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: Record<number, boolean>) {
     if (!center || !data) return;
     setIsBusy(true);
@@ -610,6 +636,7 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
     setRigheCollo([]);
     setEanCollo("");
     setColloError(null);
+    setConfirmDeleteCollo(false);   // 👈 reset fase di conferma
   }
 
   // Calcola quanto residuo massimo puoi ancora mettere per (po, model) nel collo corrente
@@ -679,10 +706,12 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       let qty = Math.max(0, nuovaQty || 0);
       if (qty > maxDisponibile) {
         qty = maxDisponibile;
-        const msg = "Limite massimo raggiunto per questo articolo.";
+        const msg = "Limite massimo raggiunto per questo articolo";
         setColloError(msg);
-        setAlertModal(msg);   // 👈 fa apparire il popup
+        showAlert(msg);
+        playErrorSound();
       }
+
 
 
 
@@ -751,11 +780,13 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       a => a.vendor_product_id === ean || a.model_number === ean
     );
     if (!found) {
-      const msg = "Articolo non trovato per questo EAN/SKU.";
+      const msg = "Articolo non trovato per questo EAN/SKU";
       setColloError(msg);
-      setAlertModal(msg);   // 👈 popup
+      showAlert(msg);
+      playErrorSound();
       return;
     }
+
 
     setRigheCollo(prev => {
       const po = found.po_number;
@@ -763,9 +794,10 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
 
       const residuo = calcolaResiduoArticoloInCollo(prev, po, mn);
       if (residuo <= 0) {
-        const msg = "Quantità massima già raggiunta per questo articolo.";
+        const msg = "Quantità massima già raggiunta per questo articolo";
         setColloError(msg);
-        setAlertModal(msg);   // 👈 popup
+        showAlert(msg);
+        playErrorSound();
         return prev;
       }
 
@@ -782,9 +814,10 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
         const clamped = Math.min(nuovaQty, maxQty);
 
       if (clamped === currentQty) {
-        const msg = "Quantità massima già raggiunta per questo articolo.";
+        const msg = "Quantità massima già raggiunta per questo articolo";
         setColloError(msg);
-        setAlertModal(msg);   // 👈 popup
+        showAlert(msg);
+        playErrorSound();
         return prev;
       }
 
@@ -833,15 +866,22 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       setSkuSearch("");
       setSkuSearchError("");
     } else {
-      setError("Articolo non trovato! Riprova.");
+      const msg = "Articolo non trovato! Riprova.";
+      setError(msg);
+      showAlert(msg);
+      playErrorSound();
     }
   };
+
 
   // Ricerca manuale
   function handleSkuSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!skuSearch.trim()) {
-      setSkuSearchError("Inserisci SKU o EAN");
+      const msg = "Inserisci SKU o EAN";
+      setSkuSearchError(msg);
+      showAlert(msg);
+      playErrorSound();
       return;
     }
     const found = articoli.find(a =>
@@ -853,9 +893,13 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       setSkuSearch("");
       setSkuSearchError("");
     } else {
-      setSkuSearchError("Articolo non trovato");
+      const msg = "Articolo non trovato";
+      setSkuSearchError(msg);
+      showAlert(msg);
+      playErrorSound();
     }
   }
+
 
   // --------- UI HELPERS ---------
   function getParzialiStorici(model: string) {
@@ -1387,16 +1431,43 @@ function bumpCollo(idx: number, delta: number) {
               )}
             </div>
 
-<div className="flex gap-2 justify-between">
-  <button
-    type="button"
-    className="px-3 py-2 rounded-lg border text-sm text-red-600 border-red-300 hover:bg-red-50"
-    onClick={eliminaColloCorrente}
-    disabled={isBusy}
-  >
-    Elimina collo
-  </button>
-  <div className="flex gap-2">
+<div className="flex gap-2 justify-between items-center">
+  <div className="flex-1 max-w-[260px]">
+    {!confirmDeleteCollo ? (
+      // 1ª fase: bottone normale
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg border text-sm text-red-600 border-red-300 hover:bg-red-50 disabled:opacity-50"
+        onClick={() => setConfirmDeleteCollo(true)}
+        disabled={isBusy}
+      >
+        Elimina collo
+      </button>
+    ) : (
+      // 2ª fase: slide to confirm
+      <SlideToConfirm
+        onConfirm={() => {
+          setConfirmDeleteCollo(false);
+          void eliminaColloCorrente();
+        }}
+        text="Elimina collo"
+        colorClass="bg-red-500"
+        disabled={isBusy}
+      />
+    )}
+  </div>
+
+  <div className="flex gap-2 items-center">
+    {confirmDeleteCollo && (
+      <button
+        type="button"
+        className="px-2 py-1 rounded-lg border text-[11px]"
+        onClick={() => setConfirmDeleteCollo(false)}
+        disabled={isBusy}
+      >
+        Annulla
+      </button>
+    )}
     <button
       type="button"
       className="px-3 py-2 rounded-lg border text-sm"
@@ -1415,6 +1486,7 @@ function bumpCollo(idx: number, delta: number) {
     </button>
   </div>
 </div>
+
 
           </div>
         </div>
@@ -1767,6 +1839,43 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         )}
       </div>
+
+
+{/* POPUP AVVISO ROSSO */}
+{alertMessage && (
+  <div
+    className="fixed inset-0 z-[2147483647] flex items-center justify-center pointer-events-auto"
+    style={{ isolation: "isolate" }}
+  >
+    <div className="absolute inset-0 bg-black/40" />
+    <div className="relative bg-red-600 text-white rounded-2xl min-h-[60%] px-5 py-4 w-[90%] shadow-xl border border-red-300">
+      <div className="flex items-center gap-2 mb-2 border-b border-red-300 pb-2">
+        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/100">
+          {/* semplice icona warning testuale */}
+          <span className="text-3xl">⚠️</span>
+        </div>
+        <span className="font-extrabold text-3xl tracking-wide uppercase">
+          ATTENZIONE
+        </span>
+      </div>
+      <div className="text-3xl leading-snug ">
+        {alertMessage}
+      </div>
+      <div className="flex justify-center mt-[20%]">
+        <button
+          type="button"
+          className="px-4 py-1.5 rounded-lg bg-white text-red-700 text-[50px] font-semibold hover:bg-red-50"
+          onClick={() => setAlertMessage(null)}
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
     {/* Toast globale (senza portal, sopra a tutto) */}
     {toast && (
       <div
