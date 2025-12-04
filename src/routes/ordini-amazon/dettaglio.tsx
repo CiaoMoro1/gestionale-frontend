@@ -134,6 +134,16 @@ export default function DettaglioDestinazione() {
   const [cavallottoModal, setCavallottoModal] = useState<string | null>(null);
   const [cavallottoLoading, setCavallottoLoading] = useState(false);
 
+  // Modale per singolo collo
+  const [modaleCollo, setModaleCollo] = useState<number | null>(null);
+  const [righeCollo, setRigheCollo] = useState<RigaParziale[]>([]);
+  const [eanCollo, setEanCollo] = useState("");
+  const [colloError, setColloError] = useState<string | null>(null);
+  const eanColloInputRef = useRef<HTMLInputElement | null>(null);
+
+
+
+
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
   const [skuSearchError, setSkuSearchError] = useState("");
@@ -282,6 +292,16 @@ const [colloErrorIdx, setColloErrorIdx] = useState<number | null>(null);
     }
   }, [modaleArticolo, parziali]);
 
+
+
+    // autofocus input EAN quando apro il modale del collo
+  useEffect(() => {
+    if (modaleCollo !== null && eanColloInputRef.current) {
+      eanColloInputRef.current.focus();
+    }
+  }, [modaleCollo]);
+
+
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs(prev => {
@@ -376,12 +396,12 @@ function rimuoviRiga(idToRemove: string) {
     try {
       const latest = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`).then(r=>r.json());
       const serverParziali: RigaParziale[] = Array.isArray(latest) ? latest : (latest?.parziali ?? []);
-      const serverConferma: Record<number, boolean> = Array.isArray(latest) ? {} : (latest?.confermaCollo ?? {});
       const serverTs: string | undefined = Array.isArray(latest) ? undefined : latest?.last_modified_at;
 
       const payload: SaveWipPayload = {
         parziali: nextParziali.length ? nextParziali : serverParziali,
-        confermaCollo: { ...serverConferma, ...nextConfermaCollo },
+        // USIAMO SOLO la mappa che passiamo dal client
+        confermaCollo: nextConfermaCollo,
         merge: true,
       };
       if (serverTs) payload.client_last_modified_at = serverTs;
@@ -556,6 +576,239 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
     setIsBusy(false);
   }
 
+
+  async function aggiungiColloVuoto() {
+    if (!center || !data) return;
+    const nuovo = colliInfo.nextDynamic;
+
+    // se per qualche strano motivo esiste già confermato, blocca
+    if (confermaCollo[nuovo]) {
+      setToast(`Collo #${nuovo} è già confermato`);
+      setTimeout(() => setToast(null), 2000);
+      return;
+    }
+
+    await salvaParzialiLive(parziali, { ...confermaCollo, [nuovo]: false });
+    setToast(`Collo #${nuovo} creato`);
+    setTimeout(() => setToast(null), 1500);
+  }
+
+
+  function apriModaleCollo(collo: number) {
+    if (isBusy) return;
+    const righe = parziali.filter(p => p.collo === collo);
+    setRigheCollo(righe);
+    setEanCollo("");
+    setColloError(null);
+    setModaleCollo(collo);
+  }
+
+
+  function chiudiModaleCollo() {
+    setModaleCollo(null);
+    setRigheCollo([]);
+    setEanCollo("");
+    setColloError(null);
+  }
+
+  // Calcola quanto residuo massimo puoi ancora mettere per (po, model) nel collo corrente
+  function calcolaResiduoArticoloInCollo(
+    prevRighe: RigaParziale[],
+    po_number: string,
+    model_number: string,
+    excludeIndex?: number
+  ): number {
+    if (modaleCollo == null) return 0;
+
+    const art = articoli.find(
+      a => a.po_number === po_number && a.model_number === model_number
+    );
+    if (!art) return 0;
+
+    const qtyOrdered = art.qty_ordered;
+
+    // Storici già confermati
+    const totalStorici = parzialiStorici
+      .filter(p => p.po_number === po_number && p.model_number === model_number)
+      .reduce((sum, r) => sum + r.quantita, 0);
+
+    // WIP sugli altri colli (tutti tranne quello corrente)
+    const totalWipAltriColli = parziali
+      .filter(
+        p =>
+          p.po_number === po_number &&
+          p.model_number === model_number &&
+          p.collo !== modaleCollo
+      )
+      .reduce((sum, r) => sum + r.quantita, 0);
+
+    // Quantità già nel collo corrente (in prevRighe), escludendo eventualmente una riga
+    const qtyInCollo = prevRighe.reduce((sum, r, idx) => {
+      if (
+        excludeIndex !== undefined &&
+        idx === excludeIndex
+      ) {
+        return sum;
+      }
+      if (
+        r.po_number === po_number &&
+        r.model_number === model_number
+      ) {
+        return sum + (Number(r.quantita) || 0);
+      }
+      return sum;
+    }, 0);
+
+    const residuo = qtyOrdered - totalStorici - totalWipAltriColli - qtyInCollo;
+    return Math.max(0, residuo);
+  }
+
+  function aggiornaQuantitaRigaCollo(idx: number, nuovaQty: number) {
+    setRigheCollo(prev => {
+      const riga = prev[idx];
+      if (!riga) return prev;
+
+      const maxDisponibile = calcolaResiduoArticoloInCollo(
+        prev,
+        riga.po_number,
+        riga.model_number,
+        idx
+      );
+
+      let qty = Math.max(0, nuovaQty || 0);
+      if (qty > maxDisponibile) {
+        qty = maxDisponibile;
+        setColloError("Limite massimo raggiunto per questo articolo");
+      }
+
+      const next = [...prev];
+      next[idx] = { ...riga, quantita: qty };
+      return next;
+    });
+  }
+
+  function rimuoviRigaCollo(idx: number) {
+    // Se sto eliminando l'ULTIMA riga del collo,
+    // considero che l'utente voglia proprio eliminare il collo intero
+    if (righeCollo.length === 1) {
+      // questa funzione fa già:
+      // - filter su parziali per togliere tutte le righe di quel collo
+      // - delete su confermaCollo[collo]
+      // - salva lato server con salvaParzialiLive
+      // - chiude il modale
+      void eliminaColloCorrente();
+      return;
+    }
+
+    // Altrimenti comportamento "normale": tolgo solo quella riga dal modale
+    setRigheCollo(prev => prev.filter((_, i) => i !== idx));
+  }
+
+
+
+  async function salvaColloCorrente() {
+    if (modaleCollo == null) return;
+    const collo = modaleCollo;
+
+    const cleaned = righeCollo
+      .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+      .filter(r => r.quantita > 0);
+
+    const altri = parziali.filter(p => p.collo !== collo);
+    const mergedParziali = [...altri, ...cleaned];
+
+    await salvaParzialiLive(mergedParziali, confermaCollo);
+    chiudiModaleCollo();
+  }
+
+  async function eliminaColloCorrente() {
+    if (modaleCollo == null) return;
+    const collo = modaleCollo;
+
+    const nuoviParziali = parziali.filter(p => p.collo !== collo);
+    const newConferma: Record<number, boolean> = { ...confermaCollo };
+    delete newConferma[collo];
+
+    await salvaParzialiLive(nuoviParziali, newConferma);
+    chiudiModaleCollo();
+    setToast(`Collo #${collo} eliminato`);
+    setTimeout(() => setToast(null), 2000);
+  }
+
+
+
+  function aggiungiEANAlCollo(eanRaw: string) {
+    if (modaleCollo == null) return;
+    const ean = eanRaw.trim();
+    if (!ean) return;
+
+    const found = articoli.find(
+      a => a.vendor_product_id === ean || a.model_number === ean
+    );
+    if (!found) {
+      setColloError("Articolo non trovato per questo EAN/SKU");
+      return;
+    }
+
+    setRigheCollo(prev => {
+      const po = found.po_number;
+      const mn = found.model_number;
+
+      const residuo = calcolaResiduoArticoloInCollo(prev, po, mn);
+      if (residuo <= 0) {
+        setColloError("Quantità massima già raggiunta per questo articolo");
+        return prev;
+      }
+
+      const idx = prev.findIndex(
+        r => r.model_number === mn && r.po_number === po
+      );
+
+      if (idx >= 0) {
+        const next = [...prev];
+        const currentQty = Number(next[idx].quantita) || 0;
+        const nuovaQty = currentQty + 1;
+        const maxQty = currentQty + residuo;
+        const clamped = Math.min(nuovaQty, maxQty);
+
+        if (clamped === currentQty) {
+          setColloError("Quantità massima già raggiunta per questo articolo");
+          return prev;
+        }
+
+        next[idx] = {
+          ...next[idx],
+          quantita: clamped,
+        };
+        return next;
+      }
+
+      // nuovo articolo nel collo
+      const toAdd = Math.min(1, residuo);
+      return [
+        ...prev,
+        {
+          model_number: found.model_number,
+          po_number: found.po_number,
+          quantita: toAdd,
+          collo: modaleCollo,
+          confermato: false,
+        },
+      ];
+    });
+
+    setEanCollo("");
+    setColloError(null);
+  }
+
+
+  function handleSubmitEanCollo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!eanCollo.trim()) return;
+    aggiungiEANAlCollo(eanCollo);
+  }
+
+
   // Ricerca scanner
   const handleScannerFound = async (ean: string, setError: (msg: string) => void) => {
     const found = articoli.find(a =>
@@ -634,13 +887,42 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
   }
   function colliRiepilogo(): ColloRiepilogo[] {
     const gruppi: { [collo: number]: ColloRiepilogo } = {};
+
+    // 1) colli che hanno almeno una riga in parziali
     for (const p of parziali) {
-      if (!gruppi[p.collo])
-        gruppi[p.collo] = { collo: p.collo, righe: [], confermato: !!confermaCollo[p.collo] };
-      gruppi[p.collo].righe.push({ model_number: p.model_number, quantita: Number(p.quantita) });
+      const c = Number(p.collo);
+      if (!c) continue;
+      if (!gruppi[c]) {
+        gruppi[c] = {
+          collo: c,
+          righe: [],
+          confermato: !!confermaCollo[c],
+        };
+      }
+      gruppi[c].righe.push({
+        model_number: p.model_number,
+        quantita: Number(p.quantita),
+      });
     }
+
+    // 2) colli "vuoti": presenti solo in confermaCollo
+    for (const [k, v] of Object.entries(confermaCollo)) {
+      const c = Number(k);
+      if (!c) continue;
+      if (!gruppi[c]) {
+        gruppi[c] = {
+          collo: c,
+          righe: [],
+          confermato: !!v,
+        };
+      }
+    }
+
     return Object.values(gruppi).sort((a, b) => a.collo - b.collo);
   }
+
+
+
   const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every(c => c.confermato);
 
   function exportColliPDF() {
@@ -951,6 +1233,148 @@ function bumpCollo(idx: number, delta: number) {
         )}
       </div>
 
+
+
+      {/* MODALE GESTIONE COLLO */}
+      {modaleCollo !== null && (
+        <div
+          className="fixed inset-0 z-[2147483647] pointer-events-auto"
+          style={{ isolation: "isolate" }}
+        >
+          <div className="absolute inset-0 bg-black/40" onClick={chiudiModaleCollo} />
+
+          <div
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[2147483647]
+                       bg-white rounded-2xl p-5 shadow-lg border flex flex-col w-full max-w-md"
+            style={{
+              maxHeight: "92vh",
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            }}
+          >
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
+              onClick={chiudiModaleCollo}
+              disabled={isBusy}
+            >
+              ×
+            </button>
+
+            <div className="mb-1 font-bold text-blue-700 text-lg">
+              Gestisci Collo #{modaleCollo}
+            </div>
+            <div className="mb-3 text-xs text-neutral-500">
+              Scansiona EAN/SKU con la pistola o modifica le quantità manualmente.
+            </div>
+
+            {/* Input EAN */}
+            <form onSubmit={handleSubmitEanCollo} className="mb-3 flex gap-2">
+              <input
+                ref={eanColloInputRef}
+                type="text"
+                value={eanCollo}
+                onChange={e => setEanCollo(e.target.value)}
+                placeholder="EAN o SKU"
+                className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                disabled={isBusy}
+              />
+              <button
+                type="submit"
+                className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-800 disabled:opacity-50"
+                disabled={isBusy || !eanCollo.trim()}
+              >
+                Aggiungi
+              </button>
+            </form>
+            {colloError && (
+              <div className="mb-2 text-xs text-red-600">{colloError}</div>
+            )}
+
+            {/* Lista righe del collo */}
+            <div className="flex-1 overflow-auto mb-3 border rounded-lg p-2">
+              {righeCollo.length === 0 ? (
+                <div className="text-xs text-neutral-400">
+                  Nessun articolo in questo collo. Scansiona un EAN/SKU per iniziare.
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+<thead>
+  <tr className="border-b">
+    <th className="text-left py-1">SKU</th>
+    <th className="text-center py-1">PO</th>
+    <th className="text-center py-1 w-16">Qtà</th>
+    <th className="text-center py-1 w-8"></th>
+  </tr>
+</thead>
+<tbody>
+  {righeCollo.map((r, idx) => (
+    <tr key={`${r.po_number}-${r.model_number}-${idx}`} className="border-b last:border-0">
+      <td className="py-1 font-mono">{r.model_number}</td>
+      <td className="py-1 text-center">{r.po_number}</td>
+      <td className="py-1 text-center">
+        <input
+          type="number"
+          min={0}
+          className="w-16 border rounded px-1 py-0.5 text-right"
+          value={Number(r.quantita)}
+          onChange={e =>
+            aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
+          }
+          disabled={isBusy}
+        />
+      </td>
+      <td className="py-1 text-center">
+        <button
+          type="button"
+          className="text-red-500 text-xs font-bold px-1"
+          onClick={() => rimuoviRigaCollo(idx)}
+          disabled={isBusy}
+          title="Rimuovi dal collo"
+        >
+          ✕
+        </button>
+      </td>
+    </tr>
+  ))}
+</tbody>
+
+                </table>
+              )}
+            </div>
+
+<div className="flex gap-2 justify-between">
+  <button
+    type="button"
+    className="px-3 py-2 rounded-lg border text-sm text-red-600 border-red-300 hover:bg-red-50"
+    onClick={eliminaColloCorrente}
+    disabled={isBusy}
+  >
+    Elimina collo
+  </button>
+  <div className="flex gap-2">
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg border text-sm"
+      onClick={chiudiModaleCollo}
+      disabled={isBusy}
+    >
+      Chiudi
+    </button>
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50"
+      onClick={salvaColloCorrente}
+      disabled={isBusy}
+    >
+      Salva collo
+    </button>
+  </div>
+</div>
+
+          </div>
+        </div>
+      )}
+
+
       {/* MODALE INSERIMENTO PARZIALI */}
           {modaleArticolo && (
             <div
@@ -1212,16 +1636,26 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
 
       {/* RIEPILOGO COLLI */}
       <div className="mt-10">
-        <div className="mb-4 flex justify-end">
-          <button
-            className="px-4 py-2 rounded bg-cyan-700 text-white font-semibold hover:bg-cyan-900"
-            onClick={exportColliPDF}
-            disabled={isBusy}
-          >
-            Esporta PDF colli attuali
-          </button>
+        <div className="mb-4 flex justify-between items-center">
+          <h3 className="font-bold text-lg">Riepilogo colli</h3>
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded bg-cyan-700 text-white font-semibold hover:bg-cyan-900"
+              onClick={exportColliPDF}
+              disabled={isBusy}
+            >
+              Esporta PDF colli attuali
+            </button>
+            <button
+              className="px-4 py-2 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-800"
+              onClick={aggiungiColloVuoto}
+              disabled={isBusy}
+            >
+              + Aggiungi collo
+            </button>
+          </div>
         </div>
-        <h3 className="font-bold text-lg mb-3">Riepilogo colli</h3>
+
         {colliRiepilogo().length === 0 ? (
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
         ) : (
@@ -1237,7 +1671,9 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     className={`rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2
                       ${collo.confermato ? "border-green-500" : "border-blue-200"}
                       ${containsCurrent ? "bg-yellow-50" : "bg-white"}
+                      ${!collo.confermato ? "cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition" : ""}
                     `}
+                    onClick={() => !collo.confermato && apriModaleCollo(collo.collo)}
                   >
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
@@ -1251,7 +1687,10 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 <div className="flex gap-2 mt-3">
                   {!collo.confermato ? (
                     <button
-                      onClick={() => confermaUnCollo(collo.collo)}
+                      onClick={e => {
+                        e.stopPropagation();          // 👈 blocca il click dal salire alla card
+                        confermaUnCollo(collo.collo);
+                      }}
                       className="w-full py-2 font-bold rounded-lg shadow bg-blue-600 text-white hover:bg-blue-800 transition"
                       disabled={isBusy}
                     >
@@ -1259,7 +1698,10 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     </button>
                   ) : (
                     <button
-                      onClick={() => annullaConfermaCollo(collo.collo)}
+                      onClick={e => {
+                        e.stopPropagation();          // 👈 idem qui
+                        annullaConfermaCollo(collo.collo);
+                      }}
                       className="w-full py-2 font-bold rounded-lg shadow bg-red-100 text-red-600 hover:bg-red-200 transition"
                       disabled={isBusy}
                     >
@@ -1267,6 +1709,7 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     </button>
                   )}
                 </div>
+
                 {collo.confermato && (
                   <div className="absolute top-2 right-2 text-green-500">
                     <CheckCircle size={20} />
