@@ -456,35 +456,73 @@ function playErrorSound() {
 
 
 
-  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: Record<number, boolean>) {
+  async function salvaParzialiLive(
+    nextParziali: RigaParziale[],
+    nextConfermaCollo: Record<number, boolean>,
+    opts?: { silent?: boolean }
+  ) {
     if (!center || !data) return;
-    setIsBusy(true);
+    const silent = !!opts?.silent;
+
+    if (!silent) setIsBusy(true);
     try {
-      const latest = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`).then(r=>r.json());
-      const serverParziali: RigaParziale[] = Array.isArray(latest) ? latest : (latest?.parziali ?? []);
-      const serverTs: string | undefined = Array.isArray(latest) ? undefined : latest?.last_modified_at;
+      const latest = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`
+      ).then(r => r.json());
+
+      const serverParziali: RigaParziale[] = Array.isArray(latest)
+        ? latest
+        : (latest?.parziali ?? []);
+      const serverTs: string | undefined = Array.isArray(latest)
+        ? undefined
+        : latest?.last_modified_at;
 
       const payload: SaveWipPayload = {
         parziali: nextParziali.length ? nextParziali : serverParziali,
-        // USIAMO SOLO la mappa che passiamo dal client
         confermaCollo: nextConfermaCollo,
         merge: true,
       };
-      if (serverTs) payload.client_last_modified_at = serverTs;
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
-      });
+      // SOLO se NON è silent mandiamo il timestamp per il locking ottimistico
+      if (!silent && serverTs) {
+        payload.client_last_modified_at = serverTs;
+      }
+
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
       if (res.status === 409) {
-        setToast("Aggiornato altrove, ricarico…"); setTimeout(()=>setToast(null), 3000);
-        await reloadAll(); return;
+        if (!silent) {
+          setToast("Aggiornato altrove, ricarico…");
+          setTimeout(() => setToast(null), 3000);
+        }
+        await reloadAll();
+        return;
       }
-      if (!res.ok) { setToast("Errore salvataggio."); setTimeout(()=>setToast(null), 3000); return; }
+      if (!res.ok) {
+        if (!silent) {
+          setToast("Errore salvataggio.");
+          setTimeout(() => setToast(null), 3000);
+        }
+        return;
+      }
 
       setParziali(payload.parziali);
       setConfermaCollo(payload.confermaCollo);
-    } finally { setIsBusy(false); }
+    } finally {
+      if (!silent) setIsBusy(false);
+    }
   }
 
 
@@ -756,26 +794,54 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
 
       const next = [...prev];
       next[idx] = { ...riga, quantita: qty };
+
+      // autosave silenzioso
+      if (modaleCollo != null) {
+        const collo = modaleCollo;
+        const cleaned = next
+          .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+          .filter(r => r.quantita > 0);
+        const altri = parziali.filter(p => p.collo !== collo);
+        const mergedParziali = [...altri, ...cleaned];
+        void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+      }
+
       return next;
     });
   }
 
   function rimuoviRigaCollo(idx: number) {
-    // Se sto eliminando l'ULTIMA riga del collo,
-    // considero che l'utente voglia proprio eliminare il collo intero
+    // Se è l'unica riga, proponi di eliminare l'intero collo
     if (righeCollo.length === 1) {
-      // questa funzione fa già:
-      // - filter su parziali per togliere tutte le righe di quel collo
-      // - delete su confermaCollo[collo]
-      // - salva lato server con salvaParzialiLive
-      // - chiude il modale
+      const ok = window.confirm(
+        "Questo è l'ultimo articolo del collo.\nVuoi eliminare l'intero collo?"
+      );
+      if (!ok) return;
       void eliminaColloCorrente();
       return;
     }
 
-    // Altrimenti comportamento "normale": tolgo solo quella riga dal modale
+    // Più righe: conferma solo la rimozione della riga
+    const ok = window.confirm("Vuoi davvero rimuovere questo articolo dal collo?");
+    if (!ok) return;
+
     setRigheCollo(prev => prev.filter((_, i) => i !== idx));
+
+    // autosave dopo la rimozione
+    if (modaleCollo != null) {
+      const collo = modaleCollo;
+      setTimeout(() => {
+        const cleaned = righeCollo
+          .filter((_, i) => i !== idx)
+          .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+          .filter(r => r.quantita > 0);
+        const altri = parziali.filter(p => p.collo !== collo);
+        const mergedParziali = [...altri, ...cleaned];
+        void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+      }, 0);
+    }
   }
+
 
 
 
@@ -882,8 +948,20 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       ];
     });
 
+    if (modaleCollo != null) {
+      const collo = modaleCollo;
+      const cleaned = righeCollo
+        .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+        .filter(r => r.quantita > 0);
+      const altri = parziali.filter(p => p.collo !== collo);
+      const mergedParziali = [...altri, ...cleaned];
+      void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+    }
+
     setEanCollo("");
     setColloError(null);
+    setToast("Articolo aggiunto al collo");
+    setTimeout(() => setToast(null), 1200);
   }
 
 
@@ -1413,11 +1491,16 @@ function bumpCollo(idx: number, delta: number) {
                 <table className="w-full text-xs">
 <thead>
   <tr className="border-b">
-    <th className="text-left py-1">SKU</th>
-    <th className="text-center py-1">PO</th>
-    <th className="text-center py-1 w-16">Ord.</th>
-    <th className="text-center py-1 w-16">Qtà</th>
-    <th className="text-center py-1 w-8"></th>
+    {/* SKU prende tutto lo spazio che può */}
+    <th className="text-left py-1 pr-2 w-52">SKU</th>
+
+    {/* colonne compatte, larghezza fissa piccola */}
+    <th className="text-center py-1 w-10 sm:w-12">Prec.</th>
+    <th className="text-center py-1 w-14 sm:w-16">Altri colli</th>
+    <th className="text-center py-1 w-10 sm:w-12">Ord.</th>
+    <th className="text-center py-1 w-12 sm:w-14">Residuo</th>
+    <th className="text-center py-1 w-12 sm:w-14">Qtà</th>
+    <th className="text-center py-1 w-6 sm:w-8"></th>
   </tr>
 </thead>
 <tbody>
@@ -1427,28 +1510,88 @@ function bumpCollo(idx: number, delta: number) {
     );
     const ordered = art?.qty_ordered ?? null;
 
+    // Quantità confermata nei parziali PRECEDENTI (storici) per stesso PO+SKU
+    const storiciQty = parzialiStorici
+      .filter(
+        p =>
+          p.model_number === r.model_number &&
+          p.po_number === r.po_number
+      )
+      .reduce((sum, rr) => sum + rr.quantita, 0);
+
+    // Quantità presente in ALTRI colli del parziale corrente (stesso PO+SKU, collo diverso)
+    const altriColliQty = parziali
+      .filter(
+        p =>
+          p.model_number === r.model_number &&
+          p.po_number === r.po_number &&
+          p.collo !== modaleCollo
+      )
+      .reduce((sum, rr) => sum + rr.quantita, 0);
+
+    // Residuo: quanto rimane ANCORA disponibile per altri pezzi (storici + WIP + questo collo)
+    const residuo = calcolaResiduoArticoloInCollo(
+      righeCollo,
+      r.po_number,
+      r.model_number
+    );
+
     return (
       <tr
         key={`${r.po_number}-${r.model_number}-${idx}`}
         className="border-b last:border-0"
       >
-        <td className="py-1 font-mono">{r.model_number}</td>
-        <td className="py-1 text-center">{r.po_number}</td>
-        <td className="py-1 text-center">
+        <td className="py-1 font-semibold text-xs">{r.model_number}</td>
+
+        {/* Prec. = storici */}
+        <td className="py-1 text-center text-base">
+          {storiciQty > 0 ? (
+            <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold">
+              {storiciQty}
+            </span>
+          ) : (
+            <span className="text-neutral-300">0</span>
+          )}
+        </td>
+
+        {/* Altri colli = WIP altri colli stessa riga */}
+        <td className="py-1 text-center text-base">
+          {altriColliQty > 0 ? (
+            <span className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold">
+              {altriColliQty}
+            </span>
+          ) : (
+            <span className="text-neutral-300">0</span>
+          )}
+        </td>
+
+        {/* Ord. */}
+        <td className="py-1 text-center text-base">
           {ordered !== null ? ordered : "-"}
         </td>
-        <td className="py-1 text-center">
-        <input
-          type="number"
-          min={0}
-          className="w-20 border rounded px-3 py-2 text-right text-sm"
-          value={Number(r.quantita)}
-          onChange={e =>
-            aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
-          }
-          disabled={isBusy}
-        />
+
+        {/* Residuo live */}
+        <td className="py-1 text-center text-base">
+          <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">
+            {residuo}
+          </span>
         </td>
+
+        {/* Qtà = nel collo corrente */}
+        <td className="py-1 text-center text-base">
+          <input
+            type="number"
+            min={0}
+            className="w-14 border rounded px-3 py-2 text-center text-sm"
+            value={Number(r.quantita)}
+            onChange={e =>
+              aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
+            }
+            disabled={isBusy}
+          />
+        </td>
+
+        {/* X = elimina riga con conferma + autosave (come già stai facendo) */}
         <td className="py-1 text-center">
           <button
             type="button"
@@ -1464,6 +1607,9 @@ function bumpCollo(idx: number, delta: number) {
     );
   })}
 </tbody>
+
+
+
 
 
                 </table>
