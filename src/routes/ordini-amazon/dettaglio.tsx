@@ -678,8 +678,12 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       let qty = Math.max(0, nuovaQty || 0);
       if (qty > maxDisponibile) {
         qty = maxDisponibile;
-        setColloError("Limite massimo raggiunto per questo articolo");
+        const msg = "Limite massimo raggiunto per questo articolo";
+        setColloError(msg);
+        setToast(msg);
+        setTimeout(() => setToast(null), 2000);
       }
+
 
       const next = [...prev];
       next[idx] = { ...riga, quantita: qty };
@@ -756,7 +760,10 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
 
       const residuo = calcolaResiduoArticoloInCollo(prev, po, mn);
       if (residuo <= 0) {
-        setColloError("Quantità massima già raggiunta per questo articolo");
+        const msg = "Quantità massima già raggiunta per questo articolo";
+        setColloError(msg);
+        setToast(msg);
+        setTimeout(() => setToast(null), 2000);
         return prev;
       }
 
@@ -771,10 +778,13 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
         const maxQty = currentQty + residuo;
         const clamped = Math.min(nuovaQty, maxQty);
 
-        if (clamped === currentQty) {
-          setColloError("Quantità massima già raggiunta per questo articolo");
-          return prev;
-        }
+      if (clamped === currentQty) {
+        const msg = "Quantità massima già raggiunta per questo articolo";
+        setColloError(msg);
+        setToast(msg);
+        setTimeout(() => setToast(null), 2000);
+        return prev;
+      }
 
         next[idx] = {
           ...next[idx],
@@ -1301,41 +1311,56 @@ function bumpCollo(idx: number, delta: number) {
   <tr className="border-b">
     <th className="text-left py-1">SKU</th>
     <th className="text-center py-1">PO</th>
+    <th className="text-center py-1 w-16">Ord.</th>
     <th className="text-center py-1 w-16">Qtà</th>
     <th className="text-center py-1 w-8"></th>
   </tr>
 </thead>
 <tbody>
-  {righeCollo.map((r, idx) => (
-    <tr key={`${r.po_number}-${r.model_number}-${idx}`} className="border-b last:border-0">
-      <td className="py-1 font-mono">{r.model_number}</td>
-      <td className="py-1 text-center">{r.po_number}</td>
-      <td className="py-1 text-center">
-        <input
-          type="number"
-          min={0}
-          className="w-16 border rounded px-1 py-0.5 text-right"
-          value={Number(r.quantita)}
-          onChange={e =>
-            aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
-          }
-          disabled={isBusy}
-        />
-      </td>
-      <td className="py-1 text-center">
-        <button
-          type="button"
-          className="text-red-500 text-xs font-bold px-1"
-          onClick={() => rimuoviRigaCollo(idx)}
-          disabled={isBusy}
-          title="Rimuovi dal collo"
-        >
-          ✕
-        </button>
-      </td>
-    </tr>
-  ))}
+  {righeCollo.map((r, idx) => {
+    const art = articoli.find(
+      a => a.po_number === r.po_number && a.model_number === r.model_number
+    );
+    const ordered = art?.qty_ordered ?? null;
+
+    return (
+      <tr
+        key={`${r.po_number}-${r.model_number}-${idx}`}
+        className="border-b last:border-0"
+      >
+        <td className="py-1 font-mono">{r.model_number}</td>
+        <td className="py-1 text-center">{r.po_number}</td>
+        <td className="py-1 text-center">
+          {ordered !== null ? ordered : "-"}
+        </td>
+        <td className="py-1 text-center">
+          <input
+            type="number"
+            min={0}
+            className="w-16 border rounded px-1 py-0.5 text-right"
+            value={Number(r.quantita)}
+            onChange={e =>
+              aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
+            }
+            disabled={isBusy}
+          />
+        </td>
+        <td className="py-1 text-center">
+          <button
+            type="button"
+            className="text-red-500 text-xs font-bold px-1"
+            onClick={() => rimuoviRigaCollo(idx)}
+            disabled={isBusy}
+            title="Rimuovi dal collo"
+          >
+            ✕
+          </button>
+        </td>
+      </tr>
+    );
+  })}
 </tbody>
+
 
                 </table>
               )}
