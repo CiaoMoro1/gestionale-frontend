@@ -147,6 +147,13 @@ function RowViewBase({
         {row.sku}
       </td>
 
+      {/* Data */}
+      <td className="px-3 py-2 text-center">
+        {row.start_delivery
+          ? new Date(row.start_delivery).toLocaleDateString("it-IT")
+          : "—"}
+      </td>
+
       {/* Canale */}
       <td className="px-1 py-2 w-24 md:w-28 text-center align-middle">
         {badgeCanale(row.canale)}
