@@ -198,6 +198,9 @@ export function ProduzioneTable({
             {/* SKU */}
             <th className="px-3 py-2 text-left w-52 md:w-64 lg:w-[14rem]">SKU</th>
 
+            {/* Data */}
+            <th className="px-3 py-2 text-center w-28 md:w-32">Data</th>
+
             {/* Canale */}
             <th className="px-3 py-2 text-center w-24 md:w-28">Canale</th>
 
