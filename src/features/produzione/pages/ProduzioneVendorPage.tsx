@@ -21,6 +21,7 @@ import MoveQtyModal from "../components/Modals/MoveQtyModal";
 import CavallottoModal from "../components/Modals/CavallottoModal";
 import ExportMassivoModal from "../components/Modals/ExportMassivoModal";
 import LogMovimentiModal from "../components/Modals/LogMovimentiModal/LogMovimentiModal";
+import { useNavigate } from "react-router-dom";
 
 
   const STATO_ORDER: Record<string, number> = (() => {
@@ -30,7 +31,14 @@ import LogMovimentiModal from "../components/Modals/LogMovimentiModal/LogMovimen
     return map;
   })();
 
-
+type AllocationCard = {
+  sku: string;
+  order_id: string | null;
+  order_number: string | null;
+  qty: number;
+  customer_name?: string | null;
+  canale?: "Sito" | "Amazon Seller" | "Amazon Vendor";
+};
 
 type ManualPayload = {
   canale: "Amazon Seller" | "Sito";
@@ -49,6 +57,18 @@ export default function ProduzioneVendorPage() {
   const radice = sp.get("radice") ?? "";
   const searchUrl = sp.get("q") ?? "";
   const canale = sp.get("canale") ?? "";
+  const navigate = useNavigate();
+
+  const handleOpenOrderFromAllocation = (orderId: string) => {
+    const c = (notaCanale || "").toLowerCase();
+
+    if (c.includes("seller")) {
+      navigate(`/seller/ordini/${orderId}`);
+    } else {
+      navigate(`/ordini/${orderId}`);
+    }
+  };
+
 
   // stato locale della ricerca (fluido, NON URL)
   const [searchLocal, setSearchLocal] = useState<string>(searchUrl);
@@ -162,11 +182,9 @@ const sortedRows = useMemo(() => {
 
     setBulkBusy(true);
     try {
-      // mappa id -> riga
       const byId = new Map<number, ProduzioneRow>();
       sortedRows.forEach((r) => byId.set(r.id, r));
 
-      // payload per backend: qty = da_produrre
       const items = selected
         .map((id) => byId.get(id))
         .filter((r): r is ProduzioneRow => Boolean(r))
@@ -174,7 +192,7 @@ const sortedRows = useMemo(() => {
           id: r.id,
           sku: r.sku,
           ean: r.ean ?? null,
-          canale: r.canale ?? "Amazon Vendor",
+          canale: (r.canale ?? "Amazon Vendor") as "Amazon Vendor" | "Sito" | "Amazon Seller",
           qty: Math.max(0, r.da_produrre || 0),
         }))
         .filter((it) => it.qty > 0);
@@ -184,40 +202,144 @@ const sortedRows = useMemo(() => {
         return;
       }
 
-      // carico su Supabase (RPC lato backend)
-      const resp = await fetch(`${import.meta.env.VITE_API_URL}/api/magazzino/carica-da-produzione`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
-      });
+      // 1) CARICA A MAGAZZINO
+      const respMag = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/magazzino/carica-da-produzione`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ items }),
+        }
+      );
 
-      if (!(resp.ok || resp.status === 207)) {
-        // esito parziale/errore: non rimuovo righe
-        console.error("Carica magazzino KO:", resp.statusText);
-        return;
+      if (!(respMag.ok || respMag.status === 207)) {
+        console.error("Carica magazzino KO:", respMag.status, await respMag.text().catch(() => ""));
+        return; // se il carico fallisce, ci fermiamo qui
       }
 
-      // rimuovi dalla produzione le righe caricate (solo quelle con qty>0)
+      // 2) APPLICA STOCK AGLI ORDINI SITO (ENDPOINT SEPARATO)
+      const itemsSito = items.filter((it) => it.canale === "Sito");
+      if (itemsSito.length > 0) {
+        try {
+          const respOrders = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/orders/apply-stock-from-produzione`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ items: itemsSito }),
+            }
+          );
+
+          if (!(respOrders.ok || respOrders.status === 207)) {
+            console.error(
+              "apply-stock-from-produzione KO:",
+              respOrders.status,
+              await respOrders.text().catch(() => "")
+            );
+            // qui segnali solo nei log, niente blocchi ulteriori
+          }
+        } catch (e) {
+          console.error("Errore rete su apply-stock-from-produzione:", e);
+        }
+      }
+
+
+      // 2b) APPLICA STOCK AGLI ORDINI SELLER (solo Amazon Seller)
+      const itemsSeller = items.filter((it) => it.canale === "Amazon Seller");
+
+      if (itemsSeller.length > 0) {
+        try {
+          const respSeller = await fetch(
+            `${import.meta.env.VITE_API_URL}/api/orders-seller/apply-stock-from-produzione`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ items: itemsSeller }),
+            }
+          );
+
+          if (!(respSeller.ok || respSeller.status === 207)) {
+            console.error(
+              "apply-stock-from-produzione SELLER KO:",
+              respSeller.status,
+              await respSeller.text().catch(() => "")
+            );
+            // solo log, non bloccare oltre
+          }
+        } catch (e) {
+          console.error(
+            "Errore rete su apply-stock-from-produzione SELLER:",
+            e
+          );
+        }
+      }
+
+      // 3) RIMUOVI LE RIGHE DI PRODUZIONE CARICATE
       const movedIds = new Set(items.map((it) => it.id));
       const toDelete = selected.filter((id) => movedIds.has(id));
       if (toDelete.length > 0) {
         await api.bulkDelete(toDelete);
       }
 
-      // pulizia selezione
       setSelected([]);
     } finally {
       setBulkBusy(false);
     }
   }
 
+
   /* Nota */
   const [notaState, setNotaState] = useState<{ open: boolean; id: number | null; value: string }>(
     { open: false, id: null, value: "" }
   );
-  const openNota = (row: ProduzioneRow) =>
+  const [notaAllocations, setNotaAllocations] = useState<AllocationCard[]>([]);
+  const [notaSku, setNotaSku] = useState<string | undefined>(undefined);
+  const [notaCanale, setNotaCanale] = useState<string | null>(null);
+  const openNota = (row: ProduzioneRow) => {
     setNotaState({ open: true, id: row.id, value: row.note ?? "" });
-  const closeNota = () => setNotaState((s) => ({ ...s, open: false }));
+    setNotaSku(row.sku);
+    setNotaAllocations([]);
+    setNotaCanale(row.canale ?? null);
+
+    const API = import.meta.env.VITE_API_URL;
+
+    // 👇 SCEGLIAMO L'ENDPOINT GIUSTO IN BASE AL CANALE
+    const endpoint =
+      row.canale === "Amazon Seller"
+        ? "/api/prelievi-seller/allocazioni"
+        : "/api/prelievi-sito/allocazioni";
+
+    // fetch async delle allocazioni per questo SKU
+    (async () => {
+      try {
+        const resp = await fetch(
+          `${API}${endpoint}?sku=${encodeURIComponent(row.sku)}`
+        );
+
+        if (!resp.ok) {
+          console.error(
+            "Errore fetch allocazioni produzione:",
+            resp.status,
+            await resp.text().catch(() => "")
+          );
+          return;
+        }
+
+        const data = (await resp.json()) as { allocations?: AllocationCard[] };
+        setNotaAllocations(data.allocations ?? []);
+      } catch (e) {
+        console.error("Errore rete allocazioni prelievo:", e);
+      }
+    })();
+  };
+
+
+    const closeNota = () => {
+    setNotaState((s) => ({ ...s, open: false }));
+    setNotaAllocations([]);
+    setNotaSku(undefined);
+    setNotaCanale(null);
+  };
   async function saveNota() {
     if (!notaState.id) return;
     await api.patchProduzione({ id: notaState.id, body: { note: notaState.value } });
@@ -518,10 +640,14 @@ const sortedRows = useMemo(() => {
       <NotaModal
         open={notaState.open}
         value={notaState.value}
-        onChange={(v: string) => setNotaState((s) => ({ ...s, value: v }))}
+        onChange={(v) => setNotaState((s) => ({ ...s, value: v }))}
         onClose={closeNota}
         onSave={saveNota}
+        allocations={notaAllocations}
+        skuLabel={notaSku}
+        onOpenOrder={handleOpenOrderFromAllocation} 
       />
+
 
       <DaProdurreModal
         open={dpState.open}

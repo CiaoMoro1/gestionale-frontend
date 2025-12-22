@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Privacy & Data Policy – Amazon SP-API | PETTI Artigiani Italiani</title>
+  <meta name="description" content="Informativa SP-API: minimizzazione PII, retention <31 giorni con purge automatizzato, cifratura TLS/AES-256/KMS, RBAC/MFA, logging senza PII, monitoraggio (WAF/CloudWatch/SIEM/EDR), incident response entro 24h.">
+  <meta name="robots" content="index,follow">
+  <link rel="canonical" href="https://gestionale-frontend.vercel.app/privacy-spapi.html">
+  <style>
+    :root { --fg:#0f172a; --muted:#475569; --bg:#fff; --line:#e5e7eb; --accent:#0ea5e9; }
+    *{box-sizing:border-box}
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:var(--fg); background:var(--bg); }
+    .wrap { max-width: 920px; margin: 40px auto; padding: 0 18px; }
+    h1 { font-size: 28px; margin: 0 0 6px; }
+    h2 { font-size: 20px; margin-top: 28px; }
+    .meta { color: var(--muted); font-size: 14px; margin-bottom: 24px; }
+    .card { border:1px solid var(--line); border-radius: 12px; padding:16px; background:#fff; }
+    ul { padding-left: 18px; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .actions { display:flex; gap:8px; justify-content: flex-end; margin-bottom:16px; }
+    .btn { border:1px solid var(--line); background:#fff; padding:8px 12px; border-radius:10px; cursor:pointer; }
+    .muted { color: var(--muted); }
+    footer { margin-top: 32px; padding-top: 16px; border-top:1px solid var(--line); color:var(--muted); font-size:14px; }
+    @media print { .actions { display:none; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="actions">
+      <button class="btn" onclick="window.print()">Stampa / Scarica PDF</button>
+    </div>
+
+    <h1>Privacy & Data Policy – Amazon SP-API</h1>
+    <div class="meta">
+      Brand: <strong>PETTI Artigiani Italiani</strong> ·
+      Organizzazione: <strong>CYBORG INTERNATIONAL S.R.L.</strong> ·
+      Versione: <span id="ver"></span>
+      <script>document.getElementById('ver').textContent=new Date().toISOString().slice(0,10)</script>
+    </div>
+
+    <div class="card">
+      <p>
+        Questa pagina descrive il trattamento dei dati Amazon ottenuti tramite Selling Partner API (SP-API)
+        all’interno del gestionale aziendale (<a href="https://gestionale-frontend.vercel.app/" target="_blank" rel="noopener">gestionale-frontend.vercel.app</a>).
+        L’uso è <strong>privato</strong> e limitato all’account Seller/Vendor di CYBORG INTERNATIONAL S.R.L.
+      </p>
+    </div>
+
+    <h2>Ambito e finalità</h2>
+    <p>
+      Usiamo SP-API per <strong>importare e gestire ordini</strong> Seller-fulfilled (FBM) e, quando necessario,
+      <strong>acquistare etichette</strong> e confermare spedizioni; supportiamo assistenza post-vendita, resi e prevenzione frodi.
+    </p>
+
+    <h2>Dati trattati</h2>
+    <ul>
+      <li>Dati d’ordine/righe (SKU/ASIN, quantità, stato, importi, valute).</li>
+      <li><strong>PII solo al bisogno</strong> per evasione FBM: nome destinatario, indirizzo, contatti, riferimenti ordine.
+          Per endpoint “restricted” utilizziamo <strong>Restricted Data Token (RDT)</strong>.</li>
+    </ul>
+    <p class="muted">Nessun uso per marketing o profilazione; nessuna condivisione con terzi non necessari.</p>
+
+    <h2>Basi giuridiche</h2>
+    <p>
+      Esecuzione del contratto di vendita e adempimenti connessi (evasione, resi, assistenza) e obblighi legali/fiscali applicabili (art. 6(1)(b)(c) GDPR).
+    </p>
+
+    <h2>Minimizzazione e conservazione</h2>
+    <ul>
+      <li>Accesso a PII <strong>solo al momento della spedizione</strong> e limitato ai campi necessari (principio di minimizzazione).</li>
+      <li><strong>Retention PII &lt; 31 giorni dopo la consegna</strong> (salvo obblighi legali documentati), quindi cancellazione/anonimizzazione secondo NIST 800-88.</li>
+      <li><strong>Purge automatizzato</strong>: la cancellazione/anonimizzazione è gestita da job schedulato; i log mantengono solo metadati non PII.</li>
+      <li><strong>Su richiesta Amazon</strong>: eseguiamo la cancellazione entro <strong>30 giorni</strong> (e delle copie attive entro <strong>90 giorni</strong>), come previsto dalla DPP.</li>
+    </ul>
+
+    <h2>Misure di sicurezza</h2>
+    <ul>
+      <li><strong>Cifratura</strong> in transito (TLS 1.2+) e a riposo (AES-256 con KMS); per PII critiche applichiamo anche cifratura a livello di campo.</li>
+      <li><strong>Access control</strong>: SSO/MFA obbligatoria, RBAC e principio del minimo privilegio, segregazione ambienti (dev/stage/prod), review accessi trimestrale e revoca &lt; 24h all’offboarding.</li>
+      <li><strong>Gestione credenziali</strong>: secrets in Secrets Manager/KMS, rotazione periodica, divieto di hard-code; scanner di segreti in CI/CD.</li>
+      <li><strong>Logging & monitoraggio</strong>: log applicativi strutturati <em>senza PII</em> (mascheramento/omissione campi sensibili), AWS WAF, metriche/trace in CloudWatch, SIEM centralizzato, EDR sugli host.</li>
+      <li><strong>Alert</strong> in tempo reale su login anomali, escalation privilegi, esfiltrazione, picchi 4xx/5xx; immutabilità dei log di sicurezza per eventi critici.</li>
+      <li><strong>Incident response</strong>: triage → containment → eradication → ripristino; notifica a <code>security@amazon.com</code> entro 24h quando richiesto; post-mortem con azioni correttive tracciate.</li>
+    </ul>
+
+    <h2>Password policy & gestione credenziali (1.4)</h2>
+    <p>
+      Password min <strong>12</strong> caratteri con maiusc/minusc/numeri/speciali; lockout su tentativi falliti; rotazione periodica; nessun account condiviso/predefinito; <strong>MFA obbligatoria</strong> via SSO per chi accede a dati Amazon.
+      Review accessi <strong>trimestrale</strong>; segreti/API key in Secrets Manager (KMS) con rotazione; scanner di segreti in CI/CD.
+    </p>
+
+    <h2>Registrazione e monitoraggio (2.6)</h2>
+    <p>
+      Logging senza PII, WAF su edge, EDR sugli host, metriche/trace in CloudWatch e regole SIEM per comportamenti anomali; alert real-time on-call; retention log limitata e controllata; immutabilità per eventi di sicurezza; review periodiche e post-mortem.
+    </p>
+
+    <h2>Condivisioni</h2>
+    <p>
+      Condividiamo dati Amazon <strong>solo</strong> con corrieri/fornitori logistici necessari all’evasione FBM e solo i campi minimi indispensabili, tramite canali cifrati. Nessuna rivendita o diffusione a terzi.
+    </p>
+
+    <h2>Localizzazione dati e trasferimenti</h2>
+    <p>
+      Archiviazione primaria in UE. Eventuali trasferimenti extra-UE avvengono solo se necessari e con garanzie adeguate (SCC) e cifratura.
+    </p>
+
+    <h2>Diritti dell’interessato</h2>
+    <p>
+      Gli interessati possono esercitare i diritti previsti dal GDPR (accesso, rettifica, cancellazione, limitazione, opposizione) contattandoci ai recapiti sotto indicati.
+    </p>
+
+    <h2>Contatti e dati societari</h2>
+    <p>
+      <strong>CYBORG INTERNATIONAL S.R.L.</strong> – Brand: <strong>PETTI Artigiani Italiani</strong><br>
+      Email Seller: <a href="mailto:cyborginternational2021@gmail.com">cyborginternational2021@gmail.com</a><br>
+      Email Vendor: <a href="mailto:mariopettibusiness@gmail.com">mariopettibusiness@gmail.com</a><br>
+      PEC: <a href="mailto:cyborginternational2021@pec.it">cyborginternational2021@pec.it</a><br>
+      P.IVA/CF: 09780071214 – VAT: IT09780071214 – REA: 1056739<br>
+      Sede: VIA GABRIELE D'ANNUNZIO 58, 80053 CASTELLAMMARE DI STABIA (NA)
+    </p>
+
+    <footer>
+      Questa pagina copre esclusivamente i dati provenienti da Amazon SP-API usati nel gestionale interno.
+      Aggiornata automaticamente alla data indicata in alto.
+    </footer>
+  </div>
+
+  <!-- (Opzionale) JSON-LD Organization per chiarezza -->
+  <script type="application/ld+json">
+  {
+    "@context":"https://schema.org",
+    "@type":"Organization",
+    "name":"CYBORG INTERNATIONAL S.R.L.",
+    "brand":"PETTI Artigiani Italiani",
+    "url":"https://gestionale-frontend.vercel.app/privacy-spapi.html",
+    "email":"cyborginternational2021@gmail.com",
+    "address":{
+      "@type":"PostalAddress",
+      "streetAddress":"VIA GABRIELE D'ANNUNZIO 58",
+      "postalCode":"80053",
+      "addressLocality":"CASTELLAMMARE DI STABIA",
+      "addressRegion":"NA",
+      "addressCountry":"IT"
+    }
+  }
+  </script>
+</body>
+</html>

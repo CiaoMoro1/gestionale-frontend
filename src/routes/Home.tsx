@@ -12,6 +12,7 @@ import {
   ArrowDown,
 } from "lucide-react";
 
+
 export default function HomePage() {
   const [searchChoiceOpen, setSearchChoiceOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
@@ -20,7 +21,7 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   const menuItems = [
-    { label: "Cerca Articoli", icon: <Search size={24} />, action: "search" },
+    { label: "tracking", path: "/tracking", icon: <Search size={24} /> },
     { label: "Ordini", path: "/ordini", icon: <ClipboardList size={24} /> },
     { label: "Prodotti", path: "/prodotti", icon: <Package size={24} /> },
     { label: "Movimenti", path: "/movimenti", icon: <ArrowLeftRight size={24} /> },
@@ -53,12 +54,11 @@ export default function HomePage() {
       <div className="space-y-4 pb-20">
         {/* pb-20 per non far coprire i bottoni dalla bottomnav su mobile */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {menuItems.map(({ label, icon, path, action }) => (
+          {menuItems.map(({ label, icon, path }) => (
             <button
               key={label}
               onClick={() => {
-                if (action === "search") setSearchChoiceOpen(true);
-                else if (path) navigate(path);
+                if (path) navigate(path);
               }}
               className="flex flex-col items-center justify-center p-4 rounded-lg shadow-md bg-white hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300"
             >

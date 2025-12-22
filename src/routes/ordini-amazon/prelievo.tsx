@@ -27,6 +27,22 @@ function stripMZ(sku: string): string {
 function sortKeySku(sku: string): string {
   return stripMZ(sku).toUpperCase();
 }
+
+function lastSkuSegmentRaw(skuNoMZ: string): string {
+  // prendi l’ultimo segmento “visibile” separato da - _ / . o spazi
+  const parts = skuNoMZ
+    .trim()
+    .split(/[-_\s/.]+/g)
+    .filter(Boolean);
+  const last = parts.length ? parts[parts.length - 1] : "";
+  // normalizza in “tight” per confronti stabili
+  return (last || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/\p{Diacritic}/gu, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+
 // Mappa di "collasso" radici come richiesto
 const RADICE_COLLAPSE: Record<string, string> = {
   CCSCDN: "CCSCD",
@@ -38,6 +54,7 @@ const RADICE_COLLAPSE: Record<string, string> = {
   CPRFLLDN: "CPRFLLD",
   RNNCDN: "RNNCD",
   TOVCDN: "TOVCD",
+  TENDA:  "CSA",
   CFD: "CFDM",
   TPCDN: "TPCD",
 };
@@ -194,27 +211,33 @@ export default function DettaglioPrelievo() {
     : prelievi;
 
   // 2) Filtro search (ignora MZ-)
-  const prelieviAfterSearch = (search.length > 0)
-    ? prelieviAfterRadice.filter(r => {
-        const skuNorm = stripMZ(r.sku);
-        const baseOk = normalTokens.length === 0
-          ? true
-          : matchAllWords(`${skuNorm} ${r.ean}`, normalTokens);
-
-        const skuTight = normalizeTight(r.sku);
-        const suffixOk = suffixTokens.length === 0
-          ? true
-          : suffixTokens.some(suf => skuTight.endsWith(suf));
-
-        // NEW: fallback tight-contains (gestisce spazi, trattini, doppie spaziature)
-        const searchTight = normalizeTight(search);
-        const fallbackOk = searchTight
-          ? skuTight.includes(searchTight) || (normalizeTight(r.ean || "").includes(searchTight))
-          : true;
-
-        return (baseOk && suffixOk) || fallbackOk;
-      })
-    : prelieviAfterRadice;
+   const prelieviAfterSearch = (search.length > 0)
+     ? prelieviAfterRadice.filter(r => {
+         const skuNoMZ = stripMZ(r.sku);
+   
+         // --- token normali: tutte le parole devono matchare (word/prefix) su SKU+EAN
+         const baseOk = normalTokens.length === 0
+           ? true
+           : matchAllWords(`${skuNoMZ} ${r.ean || ""}`, normalTokens);
+   
+         // --- token con ';' = "chiusura esatta del segmento finale"
+         const lastSegTight = lastSkuSegmentRaw(skuNoMZ);  // <-- niente .at(-1)
+         const suffixOk = suffixTokens.length === 0
+           ? true
+           : suffixTokens.some(suf => lastSegTight === suf); // suf è già normalizeTight
+   
+         // --- fallback "contains" SOLO se non sto usando ';'
+         const allowFallback = suffixTokens.length === 0;
+         const skuTight = normalizeTight(skuNoMZ);
+         const eanTight = normalizeTight(r.ean || "");
+         const searchTight = normalizeTight(search.replace(/;+/g, "")); // togli i ';' dal fallback
+         const fallbackOk = allowFallback
+           ? (searchTight ? (skuTight.includes(searchTight) || eanTight.includes(searchTight)) : true)
+           : false;
+   
+         return (baseOk && suffixOk) || fallbackOk;
+       })
+     : prelieviAfterRadice;
 
   // 3) Ordinamento A→Z ignorando MZ-
   let prelieviToShow = [...prelieviAfterSearch].sort((a, b) =>

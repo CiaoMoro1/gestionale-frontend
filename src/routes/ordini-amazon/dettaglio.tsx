@@ -134,6 +134,19 @@ export default function DettaglioDestinazione() {
   const [cavallottoModal, setCavallottoModal] = useState<string | null>(null);
   const [cavallottoLoading, setCavallottoLoading] = useState(false);
 
+  // Modale per singolo collo
+  const [modaleCollo, setModaleCollo] = useState<number | null>(null);
+  const [righeCollo, setRigheCollo] = useState<RigaParziale[]>([]);
+  const [eanCollo, setEanCollo] = useState("");
+  const [colloError, setColloError] = useState<string | null>(null);
+  const eanColloInputRef = useRef<HTMLInputElement | null>(null);
+  const [eanKeyboardEnabled, setEanKeyboardEnabled] = useState(false);  // 👈 NEW
+
+  const errorAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const [alertModal, setAlertModal] = useState<string | null>(null); // 👈 NEW
+  const [confirmDeleteCollo, setConfirmDeleteCollo] = useState(false);
+
   // Ricerca
   const [skuSearch, setSkuSearch] = useState("");
   const [skuSearchError, setSkuSearchError] = useState("");
@@ -141,6 +154,9 @@ export default function DettaglioDestinazione() {
 
   const [toast, setToast] = useState<string | null>(null);
   const [reservedNewByRow, setReservedNewByRow] = useState<Record<string, number>>({});
+
+  const [alertMessage, setAlertMessage] = useState<string | null>(null);
+
 
   const [itemsToShow, setItemsToShow] = useState(PAGE_SIZE);
 
@@ -282,6 +298,51 @@ const [colloErrorIdx, setColloErrorIdx] = useState<number | null>(null);
     }
   }, [modaleArticolo, parziali]);
 
+
+
+    // autofocus input EAN quando apro il modale del collo
+  useEffect(() => {
+    // autofocus solo se la tastiera manuale è attiva
+    if (modaleCollo !== null && eanKeyboardEnabled && eanColloInputRef.current) {
+      eanColloInputRef.current.focus();
+    }
+  }, [modaleCollo, eanKeyboardEnabled]);
+
+
+
+  useEffect(() => {
+    const handler = () => {
+      const audio = errorAudioRef.current;
+      if (!audio) {
+        return;
+      }
+      // tentativo di play+pause legato a un vero evento utente (touch/click)
+      audio
+        .play()
+        .then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+        })
+        .catch(() => {
+          // se fallisce, pazienza: sui prossimi tocchi riproveremo
+        });
+
+      // registriamo il priming solo una volta
+      window.removeEventListener("touchstart", handler);
+      window.removeEventListener("click", handler);
+    };
+
+    window.addEventListener("touchstart", handler, { passive: true });
+    window.addEventListener("click", handler, { passive: true });
+
+    return () => {
+      window.removeEventListener("touchstart", handler);
+      window.removeEventListener("click", handler);
+    };
+  }, []);
+
+
+
   // Funzioni di utility, input, conferme, etc
   function aggiornaInput(idx: number, campo: "quantita" | "collo", val: string | number) {
     setInputs(prev => {
@@ -370,35 +431,98 @@ function rimuoviRiga(idToRemove: string) {
     setTimeout(() => setBarcodeModalOpen(true), 150);
   }
 
-  async function salvaParzialiLive(nextParziali: RigaParziale[], nextConfermaCollo: Record<number, boolean>) {
+  function showAlert(msg: string) {
+    // chiudi eventuale tastiera (soft keyboard)
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    setAlertMessage(msg);
+  }
+
+function playErrorSound() {
+  const audio = errorAudioRef.current;
+  if (!audio) return;
+  try {
+    audio.currentTime = 0;
+    audio.play().catch(() => {
+      // su mobile può fallire se non c'è ancora stato un gesto "di sblocco"
+    });
+  } catch {
+    // non bloccare mai il flusso se l'audio fallisce
+  }
+}
+
+
+
+
+
+  async function salvaParzialiLive(
+    nextParziali: RigaParziale[],
+    nextConfermaCollo: Record<number, boolean>,
+    opts?: { silent?: boolean }
+  ) {
     if (!center || !data) return;
-    setIsBusy(true);
+    const silent = !!opts?.silent;
+
+    if (!silent) setIsBusy(true);
     try {
-      const latest = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`).then(r=>r.json());
-      const serverParziali: RigaParziale[] = Array.isArray(latest) ? latest : (latest?.parziali ?? []);
-      const serverConferma: Record<number, boolean> = Array.isArray(latest) ? {} : (latest?.confermaCollo ?? {});
-      const serverTs: string | undefined = Array.isArray(latest) ? undefined : latest?.last_modified_at;
+      const latest = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`
+      ).then(r => r.json());
+
+      const serverParziali: RigaParziale[] = Array.isArray(latest)
+        ? latest
+        : (latest?.parziali ?? []);
+      const serverTs: string | undefined = Array.isArray(latest)
+        ? undefined
+        : latest?.last_modified_at;
 
       const payload: SaveWipPayload = {
         parziali: nextParziali.length ? nextParziali : serverParziali,
-        confermaCollo: { ...serverConferma, ...nextConfermaCollo },
+        confermaCollo: nextConfermaCollo,
         merge: true,
       };
-      if (serverTs) payload.client_last_modified_at = serverTs;
 
-      const res = await fetch(`${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(center)}&data=${encodeURIComponent(data)}`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload)
-      });
+      // SOLO se NON è silent mandiamo il timestamp per il locking ottimistico
+      if (!silent && serverTs) {
+        payload.client_last_modified_at = serverTs;
+      }
+
+
+      const res = await fetch(
+        `${import.meta.env.VITE_API_URL}/api/amazon/vendor/parziali-wip?center=${encodeURIComponent(
+          center
+        )}&data=${encodeURIComponent(data)}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }
+      );
 
       if (res.status === 409) {
-        setToast("Aggiornato altrove, ricarico…"); setTimeout(()=>setToast(null), 3000);
-        await reloadAll(); return;
+        if (!silent) {
+          setToast("Aggiornato altrove, ricarico…");
+          setTimeout(() => setToast(null), 3000);
+        }
+        await reloadAll();
+        return;
       }
-      if (!res.ok) { setToast("Errore salvataggio."); setTimeout(()=>setToast(null), 3000); return; }
+      if (!res.ok) {
+        if (!silent) {
+          setToast("Errore salvataggio.");
+          setTimeout(() => setToast(null), 3000);
+        }
+        return;
+      }
 
       setParziali(payload.parziali);
       setConfermaCollo(payload.confermaCollo);
-    } finally { setIsBusy(false); }
+    } finally {
+      if (!silent) setIsBusy(false);
+    }
   }
 
 
@@ -556,6 +680,298 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
     setIsBusy(false);
   }
 
+
+  async function aggiungiColloVuoto() {
+    if (!center || !data) return;
+    const nuovo = colliInfo.nextDynamic;
+
+    // se per qualche strano motivo esiste già confermato, blocca
+    if (confermaCollo[nuovo]) {
+      setToast(`Collo #${nuovo} è già confermato`);
+      setTimeout(() => setToast(null), 2000);
+      return;
+    }
+
+    await salvaParzialiLive(parziali, { ...confermaCollo, [nuovo]: false });
+    setToast(`Collo #${nuovo} creato`);
+    setTimeout(() => setToast(null), 1500);
+  }
+
+
+  function apriModaleCollo(collo: number) {
+    if (isBusy) return;
+    const righe = parziali.filter(p => p.collo === collo);
+    setRigheCollo(righe);
+    setEanCollo("");
+    setColloError(null);
+    setModaleCollo(collo);
+  }
+
+
+  function chiudiModaleCollo() {
+    setModaleCollo(null);
+    setRigheCollo([]);
+    setEanCollo("");
+    setColloError(null);
+    setConfirmDeleteCollo(false);   // 👈 reset fase di conferma
+  }
+
+  // Calcola quanto residuo massimo puoi ancora mettere per (po, model) nel collo corrente
+  function calcolaResiduoArticoloInCollo(
+    prevRighe: RigaParziale[],
+    po_number: string,
+    model_number: string,
+    excludeIndex?: number
+  ): number {
+    if (modaleCollo == null) return 0;
+
+    const art = articoli.find(
+      a => a.po_number === po_number && a.model_number === model_number
+    );
+    if (!art) return 0;
+
+    const qtyOrdered = art.qty_ordered;
+
+    // Storici già confermati
+    const totalStorici = parzialiStorici
+      .filter(p => p.po_number === po_number && p.model_number === model_number)
+      .reduce((sum, r) => sum + r.quantita, 0);
+
+    // WIP sugli altri colli (tutti tranne quello corrente)
+    const totalWipAltriColli = parziali
+      .filter(
+        p =>
+          p.po_number === po_number &&
+          p.model_number === model_number &&
+          p.collo !== modaleCollo
+      )
+      .reduce((sum, r) => sum + r.quantita, 0);
+
+    // Quantità già nel collo corrente (in prevRighe), escludendo eventualmente una riga
+    const qtyInCollo = prevRighe.reduce((sum, r, idx) => {
+      if (
+        excludeIndex !== undefined &&
+        idx === excludeIndex
+      ) {
+        return sum;
+      }
+      if (
+        r.po_number === po_number &&
+        r.model_number === model_number
+      ) {
+        return sum + (Number(r.quantita) || 0);
+      }
+      return sum;
+    }, 0);
+
+    const residuo = qtyOrdered - totalStorici - totalWipAltriColli - qtyInCollo;
+    return Math.max(0, residuo);
+  }
+
+  function aggiornaQuantitaRigaCollo(idx: number, nuovaQty: number) {
+    setRigheCollo(prev => {
+      const riga = prev[idx];
+      if (!riga) return prev;
+
+      const maxDisponibile = calcolaResiduoArticoloInCollo(
+        prev,
+        riga.po_number,
+        riga.model_number,
+        idx
+      );
+
+      let qty = Math.max(0, nuovaQty || 0);
+      if (qty > maxDisponibile) {
+        qty = maxDisponibile;
+        const msg = "Limite massimo raggiunto per questo articolo";
+        setColloError(msg);
+        showAlert(msg);
+        playErrorSound();
+      }
+
+
+
+
+      const next = [...prev];
+      next[idx] = { ...riga, quantita: qty };
+
+      // autosave silenzioso
+      if (modaleCollo != null) {
+        const collo = modaleCollo;
+        const cleaned = next
+          .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+          .filter(r => r.quantita > 0);
+        const altri = parziali.filter(p => p.collo !== collo);
+        const mergedParziali = [...altri, ...cleaned];
+        void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+      }
+
+      return next;
+    });
+  }
+
+  function rimuoviRigaCollo(idx: number) {
+    // Se è l'unica riga, proponi di eliminare l'intero collo
+    if (righeCollo.length === 1) {
+      const ok = window.confirm(
+        "Questo è l'ultimo articolo del collo.\nVuoi eliminare l'intero collo?"
+      );
+      if (!ok) return;
+      void eliminaColloCorrente();
+      return;
+    }
+
+    // Più righe: conferma solo la rimozione della riga
+    const ok = window.confirm("Vuoi davvero rimuovere questo articolo dal collo?");
+    if (!ok) return;
+
+    setRigheCollo(prev => prev.filter((_, i) => i !== idx));
+
+    // autosave dopo la rimozione
+    if (modaleCollo != null) {
+      const collo = modaleCollo;
+      setTimeout(() => {
+        const cleaned = righeCollo
+          .filter((_, i) => i !== idx)
+          .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+          .filter(r => r.quantita > 0);
+        const altri = parziali.filter(p => p.collo !== collo);
+        const mergedParziali = [...altri, ...cleaned];
+        void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+      }, 0);
+    }
+  }
+
+
+
+
+  async function salvaColloCorrente() {
+    if (modaleCollo == null) return;
+    const collo = modaleCollo;
+
+    const cleaned = righeCollo
+      .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+      .filter(r => r.quantita > 0);
+
+    const altri = parziali.filter(p => p.collo !== collo);
+    const mergedParziali = [...altri, ...cleaned];
+
+    await salvaParzialiLive(mergedParziali, confermaCollo);
+    chiudiModaleCollo();
+  }
+
+  async function eliminaColloCorrente() {
+    if (modaleCollo == null) return;
+    const collo = modaleCollo;
+
+    const nuoviParziali = parziali.filter(p => p.collo !== collo);
+    const newConferma: Record<number, boolean> = { ...confermaCollo };
+    delete newConferma[collo];
+
+    await salvaParzialiLive(nuoviParziali, newConferma);
+    chiudiModaleCollo();
+    setToast(`Collo #${collo} eliminato`);
+    setTimeout(() => setToast(null), 2000);
+  }
+
+
+
+  function aggiungiEANAlCollo(eanRaw: string) {
+    if (modaleCollo == null) return;
+    const ean = eanRaw.trim();
+    if (!ean) return;
+
+    const found = articoli.find(
+      a => a.vendor_product_id === ean || a.model_number === ean
+    );
+    if (!found) {
+      const msg = "Articolo non trovato per questo EAN/SKU";
+      setColloError(msg);
+      showAlert(msg);
+      playErrorSound();
+      return;
+    }
+
+
+    setRigheCollo(prev => {
+      const po = found.po_number;
+      const mn = found.model_number;
+
+      const residuo = calcolaResiduoArticoloInCollo(prev, po, mn);
+      if (residuo <= 0) {
+        const msg = "Quantità massima già raggiunta per questo articolo";
+        setColloError(msg);
+        showAlert(msg);
+        playErrorSound();
+        return prev;
+      }
+
+
+      const idx = prev.findIndex(
+        r => r.model_number === mn && r.po_number === po
+      );
+
+      if (idx >= 0) {
+        const next = [...prev];
+        const currentQty = Number(next[idx].quantita) || 0;
+        const nuovaQty = currentQty + 1;
+        const maxQty = currentQty + residuo;
+        const clamped = Math.min(nuovaQty, maxQty);
+
+      if (clamped === currentQty) {
+        const msg = "Quantità massima già raggiunta per questo articolo";
+        setColloError(msg);
+        showAlert(msg);
+        playErrorSound();
+        return prev;
+      }
+
+
+        next[idx] = {
+          ...next[idx],
+          quantita: clamped,
+        };
+        return next;
+      }
+
+      // nuovo articolo nel collo
+      const toAdd = Math.min(1, residuo);
+      return [
+        ...prev,
+        {
+          model_number: found.model_number,
+          po_number: found.po_number,
+          quantita: toAdd,
+          collo: modaleCollo,
+          confermato: false,
+        },
+      ];
+    });
+
+    if (modaleCollo != null) {
+      const collo = modaleCollo;
+      const cleaned = righeCollo
+        .map(r => ({ ...r, quantita: Number(r.quantita) || 0 }))
+        .filter(r => r.quantita > 0);
+      const altri = parziali.filter(p => p.collo !== collo);
+      const mergedParziali = [...altri, ...cleaned];
+      void salvaParzialiLive(mergedParziali, confermaCollo, { silent: true });
+    }
+
+    setEanCollo("");
+    setColloError(null);
+    setToast("Articolo aggiunto al collo");
+    setTimeout(() => setToast(null), 1200);
+  }
+
+
+  function handleSubmitEanCollo(e: React.FormEvent) {
+    e.preventDefault();
+    if (!eanCollo.trim()) return;
+    aggiungiEANAlCollo(eanCollo);
+  }
+
+
   // Ricerca scanner
   const handleScannerFound = async (ean: string, setError: (msg: string) => void) => {
     const found = articoli.find(a =>
@@ -567,15 +983,22 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       setSkuSearch("");
       setSkuSearchError("");
     } else {
-      setError("Articolo non trovato! Riprova.");
+      const msg = "Articolo non trovato! Riprova.";
+      setError(msg);
+      showAlert(msg);
+      playErrorSound();
     }
   };
+
 
   // Ricerca manuale
   function handleSkuSearch(e: React.FormEvent) {
     e.preventDefault();
     if (!skuSearch.trim()) {
-      setSkuSearchError("Inserisci SKU o EAN");
+      const msg = "Inserisci SKU o EAN";
+      setSkuSearchError(msg);
+      showAlert(msg);
+      playErrorSound();
       return;
     }
     const found = articoli.find(a =>
@@ -587,9 +1010,13 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
       setSkuSearch("");
       setSkuSearchError("");
     } else {
-      setSkuSearchError("Articolo non trovato");
+      const msg = "Articolo non trovato";
+      setSkuSearchError(msg);
+      showAlert(msg);
+      playErrorSound();
     }
   }
+
 
   // --------- UI HELPERS ---------
   function getParzialiStorici(model: string) {
@@ -634,13 +1061,42 @@ const nuoviParziali: RigaParziale[] = Array.from(byCollo.entries()).map(([collo,
   }
   function colliRiepilogo(): ColloRiepilogo[] {
     const gruppi: { [collo: number]: ColloRiepilogo } = {};
+
+    // 1) colli che hanno almeno una riga in parziali
     for (const p of parziali) {
-      if (!gruppi[p.collo])
-        gruppi[p.collo] = { collo: p.collo, righe: [], confermato: !!confermaCollo[p.collo] };
-      gruppi[p.collo].righe.push({ model_number: p.model_number, quantita: Number(p.quantita) });
+      const c = Number(p.collo);
+      if (!c) continue;
+      if (!gruppi[c]) {
+        gruppi[c] = {
+          collo: c,
+          righe: [],
+          confermato: !!confermaCollo[c],
+        };
+      }
+      gruppi[c].righe.push({
+        model_number: p.model_number,
+        quantita: Number(p.quantita),
+      });
     }
+
+    // 2) colli "vuoti": presenti solo in confermaCollo
+    for (const [k, v] of Object.entries(confermaCollo)) {
+      const c = Number(k);
+      if (!c) continue;
+      if (!gruppi[c]) {
+        gruppi[c] = {
+          collo: c,
+          righe: [],
+          confermato: !!v,
+        };
+      }
+    }
+
     return Object.values(gruppi).sort((a, b) => a.collo - b.collo);
   }
+
+
+
   const tuttiConfermati = colliRiepilogo().length > 0 && colliRiepilogo().every(c => c.confermato);
 
   function exportColliPDF() {
@@ -951,6 +1407,294 @@ function bumpCollo(idx: number, delta: number) {
         )}
       </div>
 
+
+
+      {/* MODALE GESTIONE COLLO */}
+      {modaleCollo !== null && (
+        <div
+          className="fixed inset-0 z-[2147483647] pointer-events-auto"
+          style={{ isolation: "isolate" }}
+        >
+          <div className="absolute inset-0 bg-black/40" onClick={chiudiModaleCollo} />
+
+          <div
+            className="fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-[2147483647]
+                       bg-white rounded-2xl p-5 shadow-lg border flex flex-col w-full max-w-md"
+            style={{
+              maxHeight: "92vh",
+              paddingBottom: "max(1rem, env(safe-area-inset-bottom))",
+            }}
+          >
+            <button
+              className="absolute top-3 right-3 text-neutral-400 hover:text-black text-2xl"
+              onClick={chiudiModaleCollo}
+              disabled={isBusy}
+            >
+              ×
+            </button>
+
+            <div className="mb-1 font-bold text-blue-700 text-lg">
+              Gestisci Collo #{modaleCollo}
+            </div>
+            <div className="mb-3 text-xs text-neutral-500">
+              Scansiona EAN/SKU con la pistola o modifica le quantità manualmente.
+            </div>
+
+            {/* Input EAN */}
+            <form onSubmit={handleSubmitEanCollo} className="mb-3 flex gap-2 items-center">
+              <input
+                ref={eanColloInputRef}
+                type="text"
+                inputMode={eanKeyboardEnabled ? "numeric" : "none"}   // 👈 prova a bloccare tastiera
+                value={eanCollo}
+                onChange={e => setEanCollo(e.target.value)}
+                placeholder="EAN o SKU"
+                className="flex-1 border rounded-lg px-3 py-2 text-sm"
+                disabled={isBusy}
+              />
+
+  {/* NUOVO: bottone SVUOTA */}
+  <button
+    type="button"
+    className="px-2 py-2 rounded-lg border text-[11px] font-semibold hover:bg-gray-50 disabled:opacity-50"
+    onClick={() => {
+      setEanCollo("");
+      // rimetti il focus nel campo dopo averlo svuotato
+      if (!isBusy && eanColloInputRef.current) {
+        eanColloInputRef.current.focus();
+      }
+    }}
+    disabled={isBusy || !eanCollo.trim()}
+  >
+    Svuota
+  </button>
+
+              <button
+                type="button"
+                className="px-2 py-2 rounded-lg border text-[11px] font-semibold hover:bg-gray-50 disabled:opacity-50"
+                onClick={() => {
+                  setEanKeyboardEnabled(k => !k);
+                  // se la appena attivata, porta il focus sul campo
+                  setTimeout(() => {
+                    if (!isBusy && eanColloInputRef.current) {
+                      eanColloInputRef.current.focus();
+                    }
+                  }, 50);
+                }}
+                disabled={isBusy}
+              >
+                {eanKeyboardEnabled ? "Nascondi" : "Tastiera"}
+              </button>
+              <button
+                type="submit"
+                className="px-3 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-800 disabled:opacity-50"
+                disabled={isBusy || !eanCollo.trim()}
+              >
+                Aggiungi
+              </button>
+            </form>
+
+            {colloError && (
+              <div className="mb-2 text-xs text-red-600">{colloError}</div>
+            )}
+
+            {/* Lista righe del collo */}
+            <div className="flex-1 overflow-auto mb-3 border rounded-lg p-2">
+              {righeCollo.length === 0 ? (
+                <div className="text-xs text-neutral-400">
+                  Nessun articolo in questo collo. Scansiona un EAN/SKU per iniziare.
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+<thead>
+  <tr className="border-b">
+    {/* SKU prende tutto lo spazio che può */}
+    <th className="text-left py-1 pr-2 w-52">SKU</th>
+
+    {/* colonne compatte, larghezza fissa piccola */}
+    <th className="text-center py-1 w-10 sm:w-12">Prec.</th>
+    <th className="text-center py-1 w-14 sm:w-16">Altri colli</th>
+    <th className="text-center py-1 w-10 sm:w-12">Ord.</th>
+    <th className="text-center py-1 w-12 sm:w-14">Residuo</th>
+    <th className="text-center py-1 w-12 sm:w-14">Qtà</th>
+    <th className="text-center py-1 w-6 sm:w-8"></th>
+  </tr>
+</thead>
+<tbody>
+  {righeCollo.map((r, idx) => {
+    const art = articoli.find(
+      a => a.po_number === r.po_number && a.model_number === r.model_number
+    );
+    const ordered = art?.qty_ordered ?? null;
+
+    // Quantità confermata nei parziali PRECEDENTI (storici) per stesso PO+SKU
+    const storiciQty = parzialiStorici
+      .filter(
+        p =>
+          p.model_number === r.model_number &&
+          p.po_number === r.po_number
+      )
+      .reduce((sum, rr) => sum + rr.quantita, 0);
+
+    // Quantità presente in ALTRI colli del parziale corrente (stesso PO+SKU, collo diverso)
+    const altriColliQty = parziali
+      .filter(
+        p =>
+          p.model_number === r.model_number &&
+          p.po_number === r.po_number &&
+          p.collo !== modaleCollo
+      )
+      .reduce((sum, rr) => sum + rr.quantita, 0);
+
+    // Residuo: quanto rimane ANCORA disponibile per altri pezzi (storici + WIP + questo collo)
+    const residuo = calcolaResiduoArticoloInCollo(
+      righeCollo,
+      r.po_number,
+      r.model_number
+    );
+
+    return (
+      <tr
+        key={`${r.po_number}-${r.model_number}-${idx}`}
+        className="border-b last:border-0"
+      >
+        <td className="py-1 font-semibold text-xs">{r.model_number}</td>
+
+        {/* Prec. = storici */}
+        <td className="py-1 text-center text-base">
+          {storiciQty > 0 ? (
+            <span className="inline-block px-2 py-0.5 rounded bg-blue-50 text-blue-800 font-semibold">
+              {storiciQty}
+            </span>
+          ) : (
+            <span className="text-neutral-300">0</span>
+          )}
+        </td>
+
+        {/* Altri colli = WIP altri colli stessa riga */}
+        <td className="py-1 text-center text-base">
+          {altriColliQty > 0 ? (
+            <span className="inline-block px-2 py-0.5 rounded bg-amber-50 text-amber-800 font-semibold">
+              {altriColliQty}
+            </span>
+          ) : (
+            <span className="text-neutral-300">0</span>
+          )}
+        </td>
+
+        {/* Ord. */}
+        <td className="py-1 text-center text-base">
+          {ordered !== null ? ordered : "-"}
+        </td>
+
+        {/* Residuo live */}
+        <td className="py-1 text-center text-base">
+          <span className="inline-block px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 font-semibold">
+            {residuo}
+          </span>
+        </td>
+
+        {/* Qtà = nel collo corrente */}
+        <td className="py-1 text-center text-base">
+          <input
+            type="number"
+            min={0}
+            className="w-14 border rounded px-3 py-2 text-center text-sm"
+            value={Number(r.quantita)}
+            onChange={e =>
+              aggiornaQuantitaRigaCollo(idx, Number(e.target.value) || 0)
+            }
+            disabled={isBusy}
+          />
+        </td>
+
+        {/* X = elimina riga con conferma + autosave (come già stai facendo) */}
+        <td className="py-1 text-center">
+          <button
+            type="button"
+            className="text-red-500 text-xs font-bold px-1"
+            onClick={() => rimuoviRigaCollo(idx)}
+            disabled={isBusy}
+            title="Rimuovi dal collo"
+          >
+            ✕
+          </button>
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
+
+
+
+
+
+                </table>
+              )}
+            </div>
+
+<div className="flex gap-2 justify-between items-center">
+  <div className="flex-1 max-w-[260px]">
+    {!confirmDeleteCollo ? (
+      // 1ª fase: bottone normale
+      <button
+        type="button"
+        className="px-3 py-2 rounded-lg border text-sm text-red-600 border-red-300 hover:bg-red-50 disabled:opacity-50"
+        onClick={() => setConfirmDeleteCollo(true)}
+        disabled={isBusy}
+      >
+        Elimina collo
+      </button>
+    ) : (
+      // 2ª fase: slide to confirm
+      <SlideToConfirm
+        onConfirm={() => {
+          setConfirmDeleteCollo(false);
+          void eliminaColloCorrente();
+        }}
+        text="Elimina collo"
+        colorClass="bg-red-500"
+        disabled={isBusy}
+      />
+    )}
+  </div>
+
+  <div className="flex gap-2 items-center">
+    {confirmDeleteCollo && (
+      <button
+        type="button"
+        className="px-2 py-1 rounded-lg border text-[11px]"
+        onClick={() => setConfirmDeleteCollo(false)}
+        disabled={isBusy}
+      >
+        Annulla
+      </button>
+    )}
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg border text-sm"
+      onClick={chiudiModaleCollo}
+      disabled={isBusy}
+    >
+      Chiudi
+    </button>
+    <button
+      type="button"
+      className="px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-800 disabled:opacity-50"
+      onClick={salvaColloCorrente}
+      disabled={isBusy}
+    >
+      Salva collo
+    </button>
+  </div>
+</div>
+
+
+          </div>
+        </div>
+      )}
+
+
       {/* MODALE INSERIMENTO PARZIALI */}
           {modaleArticolo && (
             <div
@@ -1212,16 +1956,26 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
 
       {/* RIEPILOGO COLLI */}
       <div className="mt-10">
-        <div className="mb-4 flex justify-end">
-          <button
-            className="px-4 py-2 rounded bg-cyan-700 text-white font-semibold hover:bg-cyan-900"
-            onClick={exportColliPDF}
-            disabled={isBusy}
-          >
-            Esporta PDF colli attuali
-          </button>
+        <div className="mb-4 flex justify-between items-center">
+          <h3 className="font-bold text-lg">Riepilogo colli</h3>
+          <div className="flex gap-2">
+            <button
+              className="px-4 py-2 rounded bg-cyan-700 text-white font-semibold hover:bg-cyan-900"
+              onClick={exportColliPDF}
+              disabled={isBusy}
+            >
+              Esporta PDF colli attuali
+            </button>
+            <button
+              className="px-4 py-2 rounded bg-emerald-600 text-white font-semibold hover:bg-emerald-800"
+              onClick={aggiungiColloVuoto}
+              disabled={isBusy}
+            >
+              + Aggiungi collo
+            </button>
+          </div>
         </div>
-        <h3 className="font-bold text-lg mb-3">Riepilogo colli</h3>
+
         {colliRiepilogo().length === 0 ? (
           <div className="text-neutral-400 text-sm">Nessun collo creato</div>
         ) : (
@@ -1237,7 +1991,9 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     className={`rounded-2xl shadow p-4 min-w-[180px] w-full max-w-xs relative border-2
                       ${collo.confermato ? "border-green-500" : "border-blue-200"}
                       ${containsCurrent ? "bg-yellow-50" : "bg-white"}
+                      ${!collo.confermato ? "cursor-pointer hover:shadow-lg hover:-translate-y-0.5 transition" : ""}
                     `}
+                    onClick={() => !collo.confermato && apriModaleCollo(collo.collo)}
                   >
                 <div className="text-blue-700 font-bold mb-2">Collo {collo.collo}</div>
                 <ul>
@@ -1251,7 +2007,10 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                 <div className="flex gap-2 mt-3">
                   {!collo.confermato ? (
                     <button
-                      onClick={() => confermaUnCollo(collo.collo)}
+                      onClick={e => {
+                        e.stopPropagation();          // 👈 blocca il click dal salire alla card
+                        confermaUnCollo(collo.collo);
+                      }}
                       className="w-full py-2 font-bold rounded-lg shadow bg-blue-600 text-white hover:bg-blue-800 transition"
                       disabled={isBusy}
                     >
@@ -1259,7 +2018,10 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     </button>
                   ) : (
                     <button
-                      onClick={() => annullaConfermaCollo(collo.collo)}
+                      onClick={e => {
+                        e.stopPropagation();          // 👈 idem qui
+                        annullaConfermaCollo(collo.collo);
+                      }}
                       className="w-full py-2 font-bold rounded-lg shadow bg-red-100 text-red-600 hover:bg-red-200 transition"
                       disabled={isBusy}
                     >
@@ -1267,6 +2029,7 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
                     </button>
                   )}
                 </div>
+
                 {collo.confermato && (
                   <div className="absolute top-2 right-2 text-green-500">
                     <CheckCircle size={20} />
@@ -1278,6 +2041,47 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
           </div>
         )}
       </div>
+<audio
+  ref={errorAudioRef}
+  src="/sound/error-170796.mp3"
+  preload="auto"
+/>
+
+{/* POPUP AVVISO ROSSO */}
+{alertMessage && (
+  <div
+    className="fixed inset-0 z-[2147483647] flex items-center justify-center pointer-events-auto"
+    style={{ isolation: "isolate" }}
+  >
+    <div className="absolute inset-0 bg-black/40" />
+    <div className="relative bg-red-600 text-white rounded-2xl min-h-[60%] px-5 py-4 w-[90%] shadow-xl border border-red-300">
+      <div className="flex items-center gap-2 mb-2 border-b border-red-300 pb-2">
+        <div className="flex items-center justify-center w-12 h-12 rounded-full bg-white/100">
+          {/* semplice icona warning testuale */}
+          <span className="text-3xl">⚠️</span>
+        </div>
+        <span className="font-extrabold text-3xl tracking-wide uppercase">
+          ATTENZIONE
+        </span>
+      </div>
+      <div className="text-3xl leading-snug ">
+        {alertMessage}
+      </div>
+      <div className="flex justify-center mt-[20%]">
+        <button
+          type="button"
+          className="px-4 py-1.5 rounded-lg bg-white text-red-700 text-[50px] font-semibold hover:bg-red-50"
+          onClick={() => setAlertMessage(null)}
+        >
+          OK
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+
+
     {/* Toast globale (senza portal, sopra a tutto) */}
     {toast && (
       <div
@@ -1291,7 +2095,35 @@ onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
         </div>
       </div>
     )}
-);
+
+
+    {/* POPUP ALERT BLOCCANTE */}
+    {alertModal && (
+      <div
+        className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/40"
+        style={{ isolation: "isolate" }}
+      >
+        <div className="bg-white rounded-2xl shadow-xl border px-5 py-4 w-full max-w-xs">
+          <div className="mb-3 font-semibold text-base text-blue-800">
+            Attenzione
+          </div>
+          <div className="mb-4 text-sm text-neutral-800 whitespace-pre-line">
+            {alertModal}
+          </div>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-semibold hover:bg-blue-800"
+              onClick={() => setAlertModal(null)}
+            >
+              OK
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+
 
       {/* BOTTONI FINALI SLIDE TO CONFIRM */}
       <div className="mt-12 flex flex-col sm:flex-row justify-end gap-4">

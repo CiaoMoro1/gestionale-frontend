@@ -21,19 +21,45 @@ export type NavSectionType = {
   items: NavItem[];
 };
 
+
 export const navSections: NavSectionType[] = [
   {
     label: "Ordini Sito",
     icon: <ClipboardList size={24} strokeWidth={1.5} />,
     items: [
-      { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/ordini" },
-      { label: "Prelievo", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/prelievo" },
-      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/etichettati" },
+      { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/sito/ordini" },
+      { label: "Prelievo", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/sito/prelievo" },
+      { label: "Pronti per Spedizione", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/sito/ordini-pronti" },
+      { label: "In Lavorazione", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/sito/ordini-lavorazione" },
+      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/sito/etichettati" },
+    ],
+  },
+    {
+    label: "Ordini Seller",
+    icon: (
+      <img
+        src="/icons/Logo_Seller.png"
+        alt="Ordini Seller"
+        className="w-6 h-6 object-contain"
+      />
+    ),
+    items: [
+      { label: "Ordini", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/seller/ordini" },
+      { label: "Prelievo", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/seller/prelievo" },
+      { label: "Pronti per Spedizione", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/seller/ordini-pronti" },
+      { label: "In Lavorazione", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/seller/ordini-lavorazione" },
+      { label: "Etichettati", icon: <ClipboardList size={24} strokeWidth={1.5} />, path: "/seller/ordini/etichettati" },
     ],
   },
   {
     label: "Ordini Vendor",
-    icon: <Boxes size={24} strokeWidth={1.5} />,
+    icon: (
+      <img
+        src="/icons/Logo_Vendor.png"
+        alt="Ordini Vendor"
+        className="w-6 h-6 object-contain"
+      />
+    ),
     items: [
       { label: "Dashboard", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/dashboard" },
       { label: "Prelievo", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/prelievo" },
@@ -41,16 +67,20 @@ export const navSections: NavSectionType[] = [
       { label: "Nuovi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/nuovi" },
       { label: "Parziali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/parziali" },
       { label: "Completi", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/completi" },
-      {
-        label: "Amministrazione",
-        icon: <Boxes size={24} strokeWidth={1.5} />,
-        items: [
-          { label: "Fatture", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturevendor" },
-          { label: "Note Credito - Reso", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/notecreditoreso" },
-        ]
-      },
+    
     ],
   },
+  {
+          label: "Amministrazione",
+        icon: <Boxes size={24} strokeWidth={1.5} />,
+        items: [
+          { label: "Fatture Vendor", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturevendor" },
+          { label: "Fatture Generali", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/fatturegenerali" },
+          { label: "Note Credito - Reso", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/notecreditoreso" },
+          { label: "Note Credito - Coop", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/notacreditocoop" },
+          { label: "Pagamenti Amazon", icon: <Boxes size={24} strokeWidth={1.5} />, path: "/ordini-amazon/pagamenti" },
+        ]
+      },
   {
     label: "Magazzino",
     icon: <Package size={24} strokeWidth={1.5} />,
@@ -64,7 +94,7 @@ export const navSections: NavSectionType[] = [
     label: "Produzione",
     icon: <Factory size={24} strokeWidth={1.5} />,
     items: [
-      { label: "Produzione Vendor", icon: <Factory size={24} strokeWidth={1.5} />, path: "/produzione-new" }
+      { label: "Produzione", icon: <Factory size={24} strokeWidth={1.5} />, path: "/produzione-new" }
     ],
   },
   {

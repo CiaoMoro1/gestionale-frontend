@@ -8,13 +8,14 @@ type Nota = {
   id: number;
   data_nota: string;
   numero_nota: string;
-  po: string;
-  vret: string;
+  po: string;                    // qui oggi hai il tracking, lo lasciamo anche se non lo mostriamo
+  vret: string;                  // QUI c’è il Return ID (ID reso)
   xml_url: string;
   imponibile?: number;
   iva?: number;
   totale?: number;
   articoli?: Articolo[];
+  fattura_collegata?: string;    // <- opzionale: se aggiungi la colonna lato backend
   stato: string;
   created_at: string;
 };
@@ -29,6 +30,15 @@ type JobStatus = {
   finished_at?: string;
 };
 
+// helper: estrai VRET dal nome file XML (es. "notecredito/xml/NC0001_VRET1234.xml")
+const getVretFromXmlUrl = (xmlUrl: string): string => {
+  if (!xmlUrl) return "";
+  const file = xmlUrl.split("/").pop() || "";   // "NC0001_VRET1234.xml"
+  const noExt = file.replace(/\.xml$/i, "");
+  const parts = noExt.split("_");               // ["NC0001", "VRET1234"]
+  return parts.length >= 2 ? parts[1] : "";
+};
+
 export default function NoteCreditoResoPage() {
   const [itemsFile, setItemsFile] = useState<File | null>(null);
   const [summaryFile, setSummaryFile] = useState<File | null>(null);
@@ -41,7 +51,15 @@ export default function NoteCreditoResoPage() {
   const [dateFrom, setDateFrom] = useState<string>("");
   const [dateTo, setDateTo] = useState<string>("");
 
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  // 👉 NUOVO: data nota credito (opzionale)
+  const [dataNota, setDataNota] = useState<string>("");
+
+  // paginazione
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const PAGE_SIZE = 25;
+
+  const pollingRef = useRef<number | null>(null);
+  const headerCbRef = useRef<HTMLInputElement | null>(null);
 
   const handleItemsChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setItemsFile(e.target.files?.[0] || null);
@@ -55,11 +73,13 @@ export default function NoteCreditoResoPage() {
     const formData = new FormData();
     formData.append("return_items", itemsFile);
     if (summaryFile) formData.append("return_summary", summaryFile);
+    if (dataNota) formData.append("data_nota", dataNota); // 👈 NUOVO
 
     setJobStatus(null);
     setNote([]);
     setSelectedIds([]);
     setLastJobId(null);
+    setCurrentPage(1);
 
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/upload`, {
       method: "POST",
@@ -75,13 +95,14 @@ export default function NoteCreditoResoPage() {
   };
 
   const pollJob = (jid: string) => {
-    if (pollingRef.current) clearInterval(pollingRef.current);
-    const interval = setInterval(async () => {
+    if (pollingRef.current) window.clearInterval(pollingRef.current);
+    const interval = window.setInterval(async () => {
       const resp = await fetch(`${API_BASE_URL}/api/jobs/${jid}/status`);
       const data: JobStatus = await resp.json();
       setJobStatus(data);
       if (data.status === "done" || data.status === "failed") {
-        clearInterval(interval);
+        window.clearInterval(interval);
+        pollingRef.current = null;
         // dopo DONE: mostra SOLO quelle di quel job
         fetchNoteList({ job_id: jid });
       }
@@ -99,6 +120,8 @@ export default function NoteCreditoResoPage() {
     const resp = await fetch(`${API_BASE_URL}/api/notecredito_amazon_reso/list${p.toString() ? `?${p}` : ""}`);
     const data: Nota[] = await resp.json();
     setNote(data || []);
+    setSelectedIds([]);
+    setCurrentPage(1); // reset pagina dopo ogni nuova fetch
   };
 
   const downloadXML = (id: number) => {
@@ -134,10 +157,20 @@ export default function NoteCreditoResoPage() {
     return "—";
   };
 
-  // ======= SELEZIONA TUTTI (tri-state su visibili) =======
-  const headerCbRef = useRef<HTMLInputElement | null>(null);
+  // ======= PAGINAZIONE CLIENT-SIDE =======
+  const totalPages = useMemo(
+    () => Math.max(1, Math.ceil(note.length / PAGE_SIZE)),
+    [note.length]
+  );
 
-  const visibleIds = useMemo(() => note.map((n) => n.id), [note]);
+  const paginatedNotes = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE;
+    const end = start + PAGE_SIZE;
+    return note.slice(start, end);
+  }, [note, currentPage]);
+
+  // ======= SELEZIONA TUTTI (solo visibili in pagina) =======
+  const visibleIds = useMemo(() => paginatedNotes.map((n) => n.id), [paginatedNotes]);
 
   const allVisibleSelected = useMemo(
     () => visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id)),
@@ -157,17 +190,28 @@ export default function NoteCreditoResoPage() {
 
   const toggleSelectAllVisible = () => {
     if (allVisibleSelected) {
-      // deseleziona solo i visibili, preserva selezioni su altre liste
+      // deseleziona solo i visibili, preserva selezioni di altre pagine
       setSelectedIds((prev) => prev.filter((id) => !visibleIds.includes(id)));
     } else {
-      // aggiunge tutti i visibili alla selezione corrente (merge, no duplicati)
+      // seleziona tutti i visibili in aggiunta ai già selezionati
       setSelectedIds((prev) => Array.from(new Set([...prev, ...visibleIds])));
     }
   };
-  // ================================================
+
+  const goToPage = (page: number) => {
+    if (page < 1 || page > totalPages) return;
+    setCurrentPage(page);
+  };
+
+  // Cleanup polling all'unmount
+  useEffect(() => {
+    return () => {
+      if (pollingRef.current) window.clearInterval(pollingRef.current);
+    };
+  }, []);
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
+    <div className="max-w-5xl mx-auto p-6">
       <h1 className="text-2xl font-bold mb-4">Note di Credito Amazon Vendor - VRET</h1>
 
       {/* Upload files */}
@@ -176,12 +220,31 @@ export default function NoteCreditoResoPage() {
           <label className="block font-medium mb-2">Carica file Return_Items.csv (obbligatorio)</label>
           <input type="file" accept=".csv" onChange={handleItemsChange} />
         </div>
+        
         <div className="mb-4">
           <label className="block font-medium mb-2">Carica Return_Summary (opzionale: .xls/.xlsx)</label>
           <input type="file" accept=".xls,.xlsx" onChange={handleSummaryChange} />
         </div>
-
-        <button className="bg-blue-600 text-white px-4 py-2 rounded" disabled={!itemsFile} onClick={uploadFiles}>
+        {/* NUOVO: data nota di credito */}
+        <div className="mb-4">
+          <label className="block font-medium mb-2">
+            Data nota di credito (opzionale)
+          </label>
+          <input
+            type="date"
+            value={dataNota}
+            onChange={(e) => setDataNota(e.target.value)}
+            className="border rounded px-2 py-1 w-48"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Se lasci vuoto, verrà usata la data di oggi.
+          </p>
+        </div>
+        <button
+          className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          disabled={!itemsFile}
+          onClick={uploadFiles}
+        >
           Carica e genera note
         </button>
       </div>
@@ -210,20 +273,25 @@ export default function NoteCreditoResoPage() {
           <div className="flex gap-2">
             <button
               className="bg-gray-700 text-white px-3 py-2 rounded w-full"
-              onClick={() => fetchNoteList({ date_from: dateFrom || undefined, date_to: dateTo || undefined })}
+              onClick={() =>
+                fetchNoteList({ date_from: dateFrom || undefined, date_to: dateTo || undefined })
+              }
             >
               Filtra per data
             </button>
           </div>
           <div className="flex gap-2">
-            <button className="bg-gray-400 text-white px-3 py-2 rounded w-full" onClick={() => fetchNoteList()}>
+            <button
+              className="bg-gray-400 text-white px-3 py-2 rounded w-full"
+              onClick={() => fetchNoteList()}
+            >
               Mostra tutte
             </button>
             {lastJobId && (
               <button
                 className="bg-indigo-600 text-white px-3 py-2 rounded w-full"
                 onClick={() => fetchNoteList({ job_id: lastJobId })}
-                title="Mostra solo le note generate dall'ultimo job"
+                title="Mostra solo le note generate dall&apos;ultimo job"
               >
                 Ultimo job
               </button>
@@ -250,60 +318,99 @@ export default function NoteCreditoResoPage() {
           <div className="flex justify-between items-center mb-2">
             <span className="font-semibold">Note di credito: {note.length}</span>
             <button
-              className="bg-green-600 text-white px-3 py-1 rounded"
+              className="bg-green-600 text-white px-3 py-1 rounded disabled:opacity-50"
               disabled={!selectedIds.length}
               onClick={downloadZIP}
             >
               Download ZIP ({selectedIds.length})
             </button>
           </div>
-          <table className="w-full border text-sm">
-            <thead>
-              <tr className="bg-gray-200">
-                <th className="w-10 text-center">
-                  <input
-                    ref={headerCbRef}
-                    type="checkbox"
-                    checked={allVisibleSelected}
-                    onChange={toggleSelectAllVisible}
-                    aria-label="Seleziona tutte le note visibili"
-                  />
-                </th>
-                <th>Numero</th>
-                <th>Data</th>
-                <th>PO</th>
-                <th>VRET</th>
-                <th>Totale</th>
-                <th>Stato</th>
-                <th>Download</th>
-              </tr>
-            </thead>
-            <tbody>
-              {note.map((n) => (
-                <tr key={n.id}>
-                  <td className="text-center">
+
+          <div className="overflow-x-auto">
+            <table className="w-full border text-sm">
+              <thead>
+                <tr className="bg-gray-200">
+                  <th className="w-10 text-center">
                     <input
+                      ref={headerCbRef}
                       type="checkbox"
-                      checked={selectedIds.includes(n.id)}
-                      onChange={() => toggleId(n.id)}
-                      aria-label={`Seleziona nota ${n.numero_nota}`}
+                      checked={allVisibleSelected}
+                      onChange={toggleSelectAllVisible}
+                      aria-label="Seleziona tutte le note visibili"
                     />
-                  </td>
-                  <td>{n.numero_nota}</td>
-                  <td>{n.data_nota}</td>
-                  <td>{n.po}</td>
-                  <td>{n.vret}</td>
-                  <td>{renderTotale(n)}</td>
-                  <td>{n.stato}</td>
-                  <td>
-                    <button className="bg-blue-500 text-white px-2 py-1 rounded" onClick={() => downloadXML(n.id)}>
-                      XML
-                    </button>
-                  </td>
+                  </th>
+                  <th>Numero</th>
+                  <th>Data</th>
+                  <th>Id Reso</th>
+                  <th>VRET</th>
+                  <th>Fattura collegata</th>
+                  <th>Totale</th>
+                  <th>Stato</th>
+                  <th>Download</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {paginatedNotes.map((n) => (
+                  <tr key={n.id} className="border-t">
+                    <td className="text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(n.id)}
+                        onChange={() => toggleId(n.id)}
+                        aria-label={`Seleziona nota ${n.numero_nota}`}
+                      />
+                    </td>
+                    <td>{n.numero_nota}</td>
+                    <td>{n.data_nota}</td>
+                    <td>{n.vret}</td> {/* qui c'è il Return ID */}
+                    <td>{getVretFromXmlUrl(n.xml_url)}</td> {/* qui estraiamo il VRET dal filename */}
+                    <td>{n.fattura_collegata || "—"}</td>
+                    <td>{renderTotale(n)}</td>
+                    <td>{n.stato}</td>
+                    <td>
+                      <button
+                        className="bg-blue-500 text-white px-2 py-1 rounded"
+                        onClick={() => downloadXML(n.id)}
+                      >
+                        XML
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+
+                {paginatedNotes.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="text-center py-4">
+                      Nessuna nota nella pagina corrente.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Controlli paginazione */}
+          <div className="flex justify-between items-center mt-3 text-sm">
+            <span>
+              Pagina {currentPage} di {totalPages}
+            </span>
+            <div className="flex gap-2">
+              <button
+                className="px-2 py-1 border rounded disabled:opacity-50"
+                disabled={currentPage === 1}
+                onClick={() => goToPage(currentPage - 1)}
+              >
+                ‹ Prec
+              </button>
+              <button
+                className="px-2 py-1 border rounded disabled:opacity-50"
+                disabled={currentPage === totalPages}
+                onClick={() => goToPage(currentPage + 1)}
+              >
+                Succ ›
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

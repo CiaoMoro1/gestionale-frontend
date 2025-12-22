@@ -1,3 +1,5 @@
+//src\routes\Ordini.tsx
+
 import { useEffect, useState, useMemo } from "react";
 import { supabase } from "../lib/supabase";
 import SearchInput from "../components/SearchInput";

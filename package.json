@@ -28,6 +28,7 @@
     "lucide-react": "^0.506.0",
     "pdf-lib": "^1.17.1",
     "quagga": "^0.12.1",
+    "qz-tray": "^2.2.5",
     "react": "^19.0.0",
     "react-barcode": "^1.6.1",
     "react-date-range": "^2.0.1",

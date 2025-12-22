@@ -8,7 +8,7 @@ import { useVendorBadgeCounts } from "../../hooks/useVendorBadgeCounts";
 
 export default function Sidebar() {
   const { nuoviCount, parzialiCount } = useVendorBadgeCounts();
-
+  
   const badgeMap: Record<string, number | undefined> = {
     "/ordini-amazon/nuovi": nuoviCount,
     "/ordini-amazon/parziali": parzialiCount,
@@ -20,7 +20,7 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="hidden sm:fixed sm:inset-y-0 sm:left-0 sm:w-54 sm:flex sm:flex-col sm:bg-white sm:shadow-md z-40">
+    <aside className="hidden sm:fixed sm:inset-y-0 sm:left-0 sm:w-[240px] sm:min-w-[240px] sm:max-w-[240px] sm:flex sm:flex-col sm:bg-white sm:shadow-md z-40">
       <div className="flex justify-center items-center h-20 border-b">
         <img src={Logo} alt="Logo" className="h-10" />
       </div>
@@ -31,6 +31,12 @@ export default function Sidebar() {
           label="Home"
           icon={<Home size={24} strokeWidth={1.5} />}
           path="/"
+          layout="horizontal"
+        />
+                <NavLink
+          label="Tracking"
+          icon={<Home size={24} strokeWidth={1.5} />}
+          path="/tracking"
           layout="horizontal"
         />
         {navSections.map((section: NavSectionType) => (
