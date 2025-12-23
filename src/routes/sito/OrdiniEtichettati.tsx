@@ -9,6 +9,7 @@ const API_URL = import.meta.env.VITE_API_URL as string;
 
 type DbOrder = Ordine & {
   label_urls?: string[] | string | null;
+  labels_zpl?: string[] | string | null; // ✅
   parcel_count?: number | null;
 };
 
@@ -33,6 +34,26 @@ function formatCurrency(value: number | null | undefined) {
   if (value == null) return "—";
   return `${Number(value).toFixed(2)} €`;
 }
+
+function normalizeStringArray(value: string[] | string | null | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((x): x is string => typeof x === "string" && x.length > 0);
+
+  if (typeof value === "string" && value.length > 0) {
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+      }
+    } catch {
+      // non è JSON
+    }
+    return [value];
+  }
+  return [];
+}
+
+
 
 function openPdfFromDataUrl(dataUrl: string) {
   try {
@@ -103,7 +124,13 @@ export default function OrdiniEtichettati() {
       setErrorMsg(error.message || "Errore nel caricamento ordini etichettati");
       setOrders([]);
     } else {
-      setOrders((data || []) as DbOrder[]);
+      const mapped = ((data || []) as DbOrder[]).map((o) => ({
+        ...o,
+        label_urls: normalizeStringArray(o.label_urls),
+        labels_zpl: normalizeStringArray(o.labels_zpl),
+      }));
+      setOrders(mapped);
+
     }
 
     // reset selezioni quando ricarico
@@ -210,6 +237,19 @@ export default function OrdiniEtichettati() {
     setErrorMsg(null);
 
     try {
+      const selectedOrders = (selectedIds.length ? orders.filter(o => selectedIds.includes(String(o.id))) : orders);
+
+      const allZpl: string[] = [];
+      for (const o of selectedOrders) {
+        allZpl.push(...normalizeStringArray(o.labels_zpl));
+      }
+
+      if (allZpl.length > 0) {
+        const mod = await import("@/lib/qzPrint");
+        await mod.qzPrintZpl({ zpl: allZpl });
+        return;
+      }
+
       const resp = await fetch(
         `${API_URL}/api/brt/bulk-combined-label`,
         {
