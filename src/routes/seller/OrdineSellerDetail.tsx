@@ -174,6 +174,8 @@ export default function OrdineSellerDetail() {
 
   const [confirmingShipment, setConfirmingShipment] = useState(false);
   const [confirmResultMsg, setConfirmResultMsg] = useState<string | null>(null);
+  const [printMsg, setPrintMsg] = useState<string | null>(null);
+  const [printingZpl, setPrintingZpl] = useState(false);
 
   const [brtParcels, setBrtParcels] = useState<number>(1);
 
@@ -634,6 +636,13 @@ export default function OrdineSellerDetail() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
+
+  useEffect(() => {
+    setPrintMsg(null);
+    setPrintingZpl(false);
+  }, [order?.id, labelUrl, labelsZpl.length]);
+
+
 
   // Genera etichetta BRT (CREATE spedizione) - endpoint Seller
   async function generateBrtLabel() {
@@ -1255,6 +1264,11 @@ setConfirmResultMsg("Etichetta eliminata. Ordine tornato in PRONTO_SPEDIZIONE �
                   {confirmResultMsg}
                 </div>
               )}
+              {printMsg && (
+                <div className="mt-2 rounded-xl px-3 py-2 bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-800 max-w-md">
+                  {printMsg}
+                </div>
+              )}
             </div>
 
             <div className="flex flex-col items-end gap-2 w-full sm:w-auto">
@@ -1342,16 +1356,35 @@ setConfirmResultMsg("Etichetta eliminata. Ordine tornato in PRONTO_SPEDIZIONE �
       <button
         className="px-4 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-semibold hover:bg-black shadow-sm"
         onClick={async () => {
+          if (!labelsZpl.length) return;
+
+          setPrintMsg(null);
+          setPrintingZpl(true);
           try {
+            setPrintMsg(`Connessione a QZ Tray…`);
             const mod = await import("@/lib/qzPrint");
+
+            // (opzionale) se vuoi: await mod.qzEnsureConnected();
+            setPrintMsg(`Invio stampa Zebra: ${labelsZpl.length} etichette…`);
+
             await mod.qzPrintZpl({ zpl: labelsZpl });
+
+            setPrintMsg(`✅ Job inviato a Zebra (${labelsZpl.length} etichette).`);
           } catch (e) {
-            console.error("Stampa ZPL fallita, fallback PDF:", e);
-            openBrtShipment();
+            const msg = e instanceof Error ? e.message : String(e);
+            setPrintMsg(`❌ Errore stampa Zebra: ${msg}`);
+            console.error("Stampa ZPL fallita:", e);
+
+            // ❌ niente PDF
+            // openBrtShipment();
+          } finally {
+            setPrintingZpl(false);
           }
         }}
+        disabled={printingZpl}
+
       >
-        Stampa Zebra (ZPL)
+        {printingZpl ? "Stampo…" : "Stampa Zebra (ZPL)"}
       </button>
     ) : (
       <button
