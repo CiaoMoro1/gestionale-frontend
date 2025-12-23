@@ -12,6 +12,7 @@ type ProductInfo = {
 
 type DbOrder = Ordine & {
   label_urls?: string[] | string | null;
+  labels_zpl?: string[] | string | null; // ✅
   parcel_count?: number | null;
 };
 
@@ -164,7 +165,9 @@ export default function OrdineDetail() {
   const [confirmingShipment, setConfirmingShipment] = useState(false);
   const [confirmResultMsg, setConfirmResultMsg] = useState<string | null>(null);
 
-
+  const [labelsZpl, setLabelsZpl] = useState<string[]>([]);
+  const [printMsg, setPrintMsg] = useState<string | null>(null);
+  const [printingZpl, setPrintingZpl] = useState(false);
 
   const [brtParcels, setBrtParcels] = useState<number>(1);
 
@@ -254,6 +257,24 @@ export default function OrdineDetail() {
 
       setOrder(dbOrder);
       setItems(mapped);
+      // Labels ZPL dal DB
+      const rawLabelsZpl = dbOrder.labels_zpl;
+      let zpls: string[] = [];
+
+      if (Array.isArray(rawLabelsZpl)) {
+        zpls = rawLabelsZpl.filter((z): z is string => typeof z === "string");
+      } else if (typeof rawLabelsZpl === "string" && rawLabelsZpl.length > 0) {
+        try {
+          const parsed = JSON.parse(rawLabelsZpl) as unknown;
+          if (Array.isArray(parsed)) zpls = parsed.filter((z): z is string => typeof z === "string");
+          else zpls = [rawLabelsZpl];
+        } catch {
+          zpls = [rawLabelsZpl];
+        }
+      }
+
+      setLabelsZpl(zpls);
+
 
       // inizializza il form indirizzo con i dati ordine
       setShippingForm({
@@ -548,6 +569,12 @@ export default function OrdineDetail() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order?.id]);
 
+  useEffect(() => {
+    setPrintMsg(null);
+    setPrintingZpl(false);
+  }, [order?.id, labelUrl, labelsZpl.length]);
+
+
   // Genera etichetta BRT (CREATE spedizione)
   async function generateBrtLabel() {
     if (!order) return;
@@ -578,8 +605,10 @@ export default function OrdineDetail() {
         shipment_id?: string;
         label_url?: string;
         label_urls?: string[];
+        labels_zpl?: string[] | string; // ✅ aggiungi
         create?: { code?: number; message?: string };
       };
+
 
       if (data.label_urls && data.label_urls.length > 0) {
         setLabelUrls(data.label_urls);
@@ -590,6 +619,28 @@ export default function OrdineDetail() {
         setLabelUrl(data.label_url);
         openPdfFromDataUrl(data.label_url);
       }
+
+      // ✅ Aggiorna anche ZPL nello state (così compare subito "Stampa Zebra")
+      const raw = data.labels_zpl;
+      let zpls: string[] = [];
+
+      if (Array.isArray(raw)) {
+        zpls = raw.filter((z): z is string => typeof z === "string");
+      } else if (typeof raw === "string" && raw.length > 0) {
+        try {
+          const parsed = JSON.parse(raw) as unknown;
+          if (Array.isArray(parsed)) {
+            zpls = parsed.filter((z): z is string => typeof z === "string");
+          } else {
+            zpls = [raw];
+          }
+        } catch {
+          zpls = [raw];
+        }
+      }
+
+      setLabelsZpl(zpls);
+
 
       // stato ordine → ETICHETTATI
       setOrder((prev) =>
@@ -636,6 +687,8 @@ export default function OrdineDetail() {
       // se ok, pulisci labelUrl localmente
       setLabelUrl(null);
       setLabelUrls([]);
+      setLabelsZpl([]);  // ✅
+      setPrintMsg(null); // ✅
       setOrder((prev) =>
         prev
           ? {
@@ -1173,14 +1226,43 @@ export default function OrdineDetail() {
 
               {labelUrl && (
                 <div className="flex flex-col items-end gap-1 w-full sm:w-auto">
-                  <button
-                    className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm"
-                    onClick={() => openBrtShipment()}
-                  >
-                    {labelUrls.length > 1
-                      ? "Stampa tutte le etichette"
-                      : "Stampa etichetta"}
-                  </button>
+                  {printMsg && (
+                    <div className="mt-2 rounded-xl px-3 py-2 bg-zinc-50 border border-zinc-200 text-[11px] text-zinc-800 max-w-md">
+                      {printMsg}
+                    </div>
+                  )}
+
+                  {labelsZpl.length > 0 ? (
+                    <button
+                      className="px-4 py-1.5 rounded-full bg-zinc-900 text-white text-xs font-semibold hover:bg-black shadow-sm"
+                      disabled={printingZpl}
+                      onClick={async () => {
+                        setPrintMsg(null);
+                        setPrintingZpl(true);
+                        try {
+                          setPrintMsg("Connessione a QZ Tray…");
+                          const mod = await import("@/lib/qzPrint");
+                          setPrintMsg(`Invio stampa Zebra: ${labelsZpl.length} etichette…`);
+                          await mod.qzPrintZpl({ zpl: labelsZpl });
+                          setPrintMsg(`✅ Job inviato a Zebra (${labelsZpl.length} etichette).`);
+                        } catch (e) {
+                          const msg = e instanceof Error ? e.message : String(e);
+                          setPrintMsg(`❌ Errore stampa Zebra: ${msg}`);
+                        } finally {
+                          setPrintingZpl(false);
+                        }
+                      }}
+                    >
+                      {printingZpl ? "Stampo…" : "Stampa Zebra (ZPL)"}
+                    </button>
+                  ) : (
+                    <button
+                      className="px-4 py-1.5 rounded-full bg-blue-600 text-white text-xs font-semibold hover:bg-blue-700 shadow-sm"
+                      onClick={() => openBrtShipment()}
+                    >
+                      {labelUrls.length > 1 ? "Stampa tutte le etichette" : "Stampa etichetta"}
+                    </button>
+                  )}
 
                   {labelUrls.length > 1 && (
                     <div className="flex flex-wrap gap-2 justify-end mt-1">
@@ -1197,6 +1279,7 @@ export default function OrdineDetail() {
                   )}
                 </div>
               )}
+
             </div>
           </div>
         </section>
