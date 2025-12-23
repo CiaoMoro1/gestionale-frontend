@@ -3,13 +3,32 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "../../lib/supabase";
-import type { Ordine } from "../../types/ordini";
 
 const API_URL = import.meta.env.VITE_API_URL as string;
 
-type DbOrderSeller = Ordine & {
+type DbOrderSeller = {
+  id: string;
+  number: string;
+  channel?: string | null;
+
+  customer_name?: string | null;
+  customer_email?: string | null;
+  customer_phone?: string | null;
+
+  shipping_address?: string | null;
+  shipping_zip?: string | null;
+  shipping_city?: string | null;
+  shipping_province?: string | null;
+  shipping_country?: string | null;
+
+  total?: number | null;
+  created_at?: string | null;
+
+  stage?: string | null;
+  order_status_raw?: string | null;
+
   label_urls?: string[] | string | null;
-  parcel_count?: number | null;
+  labels_zpl?: string[] | string | null;
 };
 
 const PAGE_SIZE = 100;
@@ -33,6 +52,26 @@ function formatCurrency(value: number | null | undefined) {
   if (value == null) return "—";
   return `${Number(value).toFixed(2)} €`;
 }
+
+function normalizeStringArray(value: string[] | string | null | undefined): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.filter((x): x is string => typeof x === "string" && x.length > 0);
+
+  if (typeof value === "string" && value.length > 0) {
+    // a volte arriva JSON stringificato
+    try {
+      const parsed = JSON.parse(value) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((x): x is string => typeof x === "string" && x.length > 0);
+      }
+    } catch {
+      // non è JSON, è una stringa singola
+    }
+    return [value];
+  }
+  return [];
+}
+
 
 function openPdfFromDataUrl(dataUrl: string) {
   try {
@@ -90,7 +129,25 @@ export default function OrdiniSellerEtichettati() {
 
     const { data, error } = await supabase
       .from("orders_seller")
-      .select("*")
+      .select(`
+        id,
+        number,
+        channel:sales_channel,
+        customer_name,
+        customer_email,
+        customer_phone,
+        shipping_address,
+        shipping_zip,
+        shipping_city,
+        shipping_province,
+        shipping_country,
+        total,
+        created_at,
+        stage,
+        order_status_raw,
+        label_urls,
+        labels_zpl
+      `)
       .eq("stage", "ETICHETTATO")
       .neq("order_status_raw", "Canceled")
       .order("created_at", { ascending: false })
@@ -101,8 +158,36 @@ export default function OrdiniSellerEtichettati() {
       setErrorMsg(error.message || "Errore nel caricamento ordini Seller etichettati");
       setOrders([]);
     } else {
-      setOrders((data || []) as DbOrderSeller[]);
-    }
+            const rows = (data || []) as unknown as Array<Record<string, unknown>>;
+
+            const mapped: DbOrderSeller[] = rows.map((r) => ({
+              id: String(r.id ?? ""),
+              number: String(r.number ?? ""),
+              channel: (r.channel as string | null) ?? null,
+
+              customer_name: (r.customer_name as string | null) ?? null,
+              customer_email: (r.customer_email as string | null) ?? null,
+              customer_phone: (r.customer_phone as string | null) ?? null,
+
+              shipping_address: (r.shipping_address as string | null) ?? null,
+              shipping_zip: (r.shipping_zip as string | null) ?? null,
+              shipping_city: (r.shipping_city as string | null) ?? null,
+              shipping_province: (r.shipping_province as string | null) ?? null,
+              shipping_country: (r.shipping_country as string | null) ?? null,
+
+              total: (r.total as number | null) ?? null,
+              created_at: (r.created_at as string | null) ?? null,
+
+              stage: (r.stage as string | null) ?? null,
+              order_status_raw: (r.order_status_raw as string | null) ?? null,
+
+              label_urls: normalizeStringArray(r.label_urls as string[] | string | null | undefined),
+              labels_zpl: normalizeStringArray(r.labels_zpl as string[] | string | null | undefined),
+            }));
+
+            setOrders(mapped);
+
+}
 
     setSelectedIds([]);
     setRefreshing(false);
@@ -135,50 +220,50 @@ export default function OrdiniSellerEtichettati() {
     setInfoMsg(null);
 
     try {
-      // Per Seller usiamo bulk-combined-label-seller (da implementare) oppure loop su combined-label-seller.
-      // Per evitare loop frontend, facciamo un semplice loop qui (è ok per 100 max).
-      // Se vuoi, poi ti do anche endpoint bulk server-side.
-      const allUrls: string[] = [];
+      // Prendo solo gli ordini selezionati (nell’ordine della lista)
+      const selectedOrders = orders.filter((o) => ids.includes(String(o.id)));
 
-      for (const id of ids) {
-        const resp = await fetch(`${API_URL}/api/brt/combined-label-seller`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ order_id: id }),
-        });
-
-        const data = (await resp.json().catch(() => ({}))) as {
-          combined_label_url?: string;
-          error?: string;
-        };
-
-        if (!resp.ok || data.error || !data.combined_label_url) {
-          setErrorMsg(data.error || `Errore stampa etichetta per ordine ${id}`);
-          return;
-        }
-
-        allUrls.push(data.combined_label_url);
+      // 1) Se ho ZPL, stampo tutto su Zebra (1 job unico)
+      const allZpl: string[] = [];
+      for (const o of selectedOrders) {
+        const z = normalizeStringArray(o.labels_zpl);
+        if (z.length) allZpl.push(...z);
       }
 
-      // unisco i pdf client-side? no: apriamo il primo e basta (semplice)
-      // ✅ soluzione migliore: endpoint bulk merge server-side.
-      // per ora apriamo il primo se ce n'è uno solo, altrimenti segnaliamo.
-      if (allUrls.length === 1) {
-        openPdfFromDataUrl(allUrls[0]);
-      } else {
-        setInfoMsg(
-          `Ho generato ${allUrls.length} PDF. Consigliato: implementare bulk merge per Seller (come Sito) per avere un unico PDF.`
-        );
-        // apri comunque il primo
-        openPdfFromDataUrl(allUrls[0]);
+      if (allZpl.length > 0) {
+        const mod = await import("@/lib/qzPrint");
+        await mod.qzPrintZpl({ zpl: allZpl }); // ✅ stampa SOLO Zebra (dal tuo qzPrint.ts)
+        setInfoMsg(`Stampate ${allZpl.length} etichette ZPL su Zebra ✅`);
+        return;
       }
+
+      // 2) Altrimenti fallback PDF: apro tutte le etichette (attenzione popup blocker)
+      const pdfs: string[] = [];
+      for (const o of selectedOrders) {
+        const urls = normalizeStringArray(o.label_urls);
+        if (urls.length) pdfs.push(...urls);
+      }
+
+      if (!pdfs.length) {
+        setErrorMsg("Nessuna etichetta trovata (né ZPL né PDF) per gli ordini selezionati.");
+        return;
+      }
+
+      // Apri tutti i PDF (può essere bloccato dal browser se sono tanti)
+      for (const url of pdfs) openPdfFromDataUrl(url);
+
+      setInfoMsg(
+        `ZPL non disponibile: ho aperto ${pdfs.length} PDF. ` +
+        `Se vuoi "1 solo PDF", serve un endpoint bulk-merge lato backend.`
+      );
     } catch (e) {
-      console.error("Errore rete stampa etichette Seller:", e);
-      setErrorMsg(e instanceof Error ? e.message : "Errore rete durante stampa etichette Seller");
+      console.error("Errore stampa etichette Seller:", e);
+      setErrorMsg(e instanceof Error ? e.message : "Errore durante stampa etichette Seller");
     } finally {
       setPrintingLabels(false);
     }
   }
+
 
   async function handleConfirmShipments() {
     if (!selectedIds.length) return;
@@ -278,7 +363,7 @@ export default function OrdiniSellerEtichettati() {
               className="px-3 py-1 rounded-full bg-blue-600 text-white text-xs font-semibold shadow-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {printingLabels
-                ? "Genero PDF…"
+                ? "Genero Etichette…"
                 : selectedIds.length
                 ? `Stampa etichette (${selectedIds.length})`
                 : "Stampa tutte le etichette"}
