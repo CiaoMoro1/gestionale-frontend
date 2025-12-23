@@ -42,8 +42,11 @@ export async function qzSetupSecurity(): Promise<void> {
 export async function qzEnsureConnected(): Promise<void> {
   await qzSetupSecurity();
   if (qz.websocket.isActive()) return;
-  await qz.websocket.connect({ usingSecure: false }); // localhost dev: WS 8182
+
+  const secure = window.location.protocol === "https:";
+  await qz.websocket.connect({ usingSecure: secure });
 }
+
 
 /**
  * In qz-tray 2.2.5 non esiste printers.findAll().
