@@ -179,6 +179,55 @@ export default function OrdineSellerDetail() {
 
   const [brtParcels, setBrtParcels] = useState<number>(1);
 
+
+  function isDesktopDevice(): boolean {
+  const ua = navigator.userAgent || "";
+  const isMobileUA = /Android|iPhone|iPad|iPod/i.test(ua);
+  const hasTouchOnly = navigator.maxTouchPoints > 1 && window.innerWidth < 1024;
+  return !isMobileUA && !hasTouchOnly;
+}
+
+async function enqueueZplToWorker(zpl: string[]) {
+  if (!order) throw new Error("Ordine non disponibile");
+
+  const resp = await fetch(`${API_URL}/api/print-jobs`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      order_id: order.id,
+      channel: "SELLER",
+      printer: "ZEBRA",
+      zpl,
+    }),
+  });
+
+  const data = (await resp.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+  if (!resp.ok || !data.ok) {
+    throw new Error(data.error || "Impossibile inviare alla Print Station");
+  }
+}
+
+  async function smartPrintZpl(zpl: string[]) {
+    if (!zpl.length) throw new Error("Nessuna etichetta ZPL disponibile");
+
+    // 1) Se NON è desktop: vai diretto al worker (tablet/telefono)
+    if (!isDesktopDevice()) {
+      await enqueueZplToWorker(zpl);
+      return { mode: "WORKER" as const };
+    }
+
+    // 2) Desktop: prova QZ (stampa immediata)
+    try {
+      const mod = await import("@/lib/qzPrint");
+      await mod.qzPrintZpl({ zpl });
+      return { mode: "QZ" as const };
+    } catch {
+      // 3) Se QZ fallisce: fallback worker
+      await enqueueZplToWorker(zpl);
+      return { mode: "WORKER" as const, fallback: true as const };
+    }
+  }
+
   const [shippingForm, setShippingForm] = useState({
     address: "",
     city: "",
@@ -1360,27 +1409,29 @@ setConfirmResultMsg("Etichetta eliminata. Ordine tornato in PRONTO_SPEDIZIONE �
 
           setPrintMsg(null);
           setPrintingZpl(true);
+
           try {
-            setPrintMsg(`Connessione a QZ Tray…`);
-            const mod = await import("@/lib/qzPrint");
+            setPrintMsg("Preparazione stampa…");
 
-            // (opzionale) se vuoi: await mod.qzEnsureConnected();
-            setPrintMsg(`Invio stampa Zebra: ${labelsZpl.length} etichette…`);
+            const result = await smartPrintZpl(labelsZpl);
 
-            await mod.qzPrintZpl({ zpl: labelsZpl });
-
-            setPrintMsg(`✅ Job inviato a Zebra (${labelsZpl.length} etichette).`);
+            if (result.mode === "QZ") {
+              setPrintMsg(`✅ Stampato subito da questo PC (${labelsZpl.length} etichette).`);
+            } else {
+              setPrintMsg(
+                "fallback" in result && result.fallback
+                  ? `⚠️ QZ non disponibile: inviato alla Print Station (${labelsZpl.length} etichette).`
+                  : `✅ Inviato alla Print Station (${labelsZpl.length} etichette).`
+              );
+            }
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            setPrintMsg(`❌ Errore stampa Zebra: ${msg}`);
-            console.error("Stampa ZPL fallita:", e);
-
-            // ❌ niente PDF
-            // openBrtShipment();
+            setPrintMsg(`❌ Errore stampa: ${msg}`);
           } finally {
             setPrintingZpl(false);
           }
         }}
+
         disabled={printingZpl}
 
       >
